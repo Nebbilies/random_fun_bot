@@ -1,0 +1,15 @@
+{
+  "name": "Yoshiko",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "nhu tieu de",
+  "type": "module",
+  "dependencies": {
+    "discord-command-cooldown": "^1.0.8",
+    "discord.js": "^14.7.1"
+  }
+}
