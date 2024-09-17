@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, writeFileSync } from "fs";
-import { Client, Events, GatewayIntentBits } from "discord.js";
+import { Client, Events, GatewayIntentBits, ButtonBuilder, ActionRowBuilder, ButtonStyle, ComponentType } from "discord.js";
 import commandCooldown from "discord-command-cooldown";
 import config from "./config.js";
 
@@ -34,8 +34,10 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
         let memberCounterMap = new Map(JSON.parse(readFileSync("./data/counter.txt", "utf-8")));
         const randomInterval = 100;
         setInterval(() => {
-            //Check for run code
-            const setRun = readFileSync('./data/set_run.txt').toString();
+            //Check for run operation code
+            const setRun = readFileSync('./data/set_run.txt', 'utf-8');
+            // Check for minimum number of members in VC
+            const minimumMembers = parseInt(readFileSync('./data/set_minimum_members.txt', 'utf-8'));
 
             if (setRun === "1") {
                 //Get list of members in voice channel, excluding the bot
@@ -47,9 +49,9 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
                     }
                 });
                 //Check if VC is empty
-                if (vcMembersId.length === 0) { // Bot is the only one in VC
+                if (vcMembersId.length < minimumMembers) { // Bot is the only one in VC
                     writeFileSync('./data/set_run.txt', "0");
-                    channel.send("Stopped due to VC is empty.")
+                    channel.send(`⏹️ Stopped due to VC has less than **${minimumMembers}** members.`);
                 }
                 let numOfMembers = vcMembersId.length;
 
