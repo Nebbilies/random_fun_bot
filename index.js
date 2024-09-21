@@ -1,13 +1,14 @@
 import { readdirSync, readFileSync, writeFileSync } from "fs";
-import { Client, Events, GatewayIntentBits, ButtonBuilder, ActionRowBuilder, ButtonStyle, ComponentType } from "discord.js";
+import { Client, Events, Collection, GatewayIntentBits, ButtonBuilder, ActionRowBuilder, ButtonStyle, ComponentType, REST, Routes } from "discord.js";
 import commandCooldown from "discord-command-cooldown";
 import config from "./config.js";
+import checkTimeouts from "./lib/checkTimeouts.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
 // Create a new client instance
 const intents = [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildVoiceStates ];
-const yoshiko = {
+export const yoshiko = {
     client: new Client({ intents }),
     config,
     cooldowns: [],
@@ -91,6 +92,11 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
             }
         }, randomInterval);
     //}
+    //Update daily stats for every user each 2 minutes
+    let dailies = JSON.parse(readFileSync('./data/user_dailies.txt', 'utf-8'));
+    setInterval(() => {
+        checkTimeouts(dailies, 120)
+    }, 120000);
 });
 
 
@@ -118,4 +124,52 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
     },
 );
 
+yoshiko.commands = new Collection();
+const commandFiles = readdirSync("./commands/utility").filter((file) => file.endsWith(".js"));
+for (const file of commandFiles) {
+    const command = await import(`./commands/utility/${file}`);;
+    if ('data' in command & 'execute' in command) {
+        yoshiko.commands.set(command.data.name, command);
+    } else {
+        console.error(`Command ${file} is missing data or execute method`);
+    }
+}
+
+yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    const command = yoshiko.commands.get(interaction.commandName);
+    if (!command) return;
+
+    try {
+        await command.execute(interaction);
+    } catch (error) {
+        console.error(error);
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
+        } else {
+            await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+        }
+    }
+});
+
+// Construct and prepare an instance of the REST module
+const rest = new REST().setToken(config.token);
+
+// Register all commands
+(async () => {
+    try {
+        console.log('Started refreshing application (/) commands.');
+
+        await rest.put(
+            Routes.applicationCommands(config.clientId),
+            { body: yoshiko.commands.map((command) => command.data.toJSON()) },
+        );
+
+        console.log('Successfully reloaded application (/) commands.');
+    } catch (error) {
+        console.error(error);
+    }
+})();
 yoshiko.client.login(config.token).catch((err) => console.error(err));
+
+//FINISHED: DEPLOYED FIRST SLASH COMMAND, TODO: DEPLOY LOGIN SLASH COMMAND WITH OPTIONS, HANDLING WRONG TOKENS AND UIDS.

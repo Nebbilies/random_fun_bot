@@ -1,0 +1,18 @@
+[
+  {
+    "id": "227447542911074304",
+    "ltoken_v2": "v2_CAISDGM5b3FhcTNzM2d1OBokOWZkZDgxN2ItM2Q3ZC00MzExLTkzMDEtNDMxYWFiZTE2ZDJkILfTtbcGKKiz7d4DMIThpQdCC2Jic19vdmVyc2Vh.t2ntZgAAAAAB.MEYCIQDdvJBWMThyarQx3xNmuEkQUfNDcS_doBb6VGMRLv5adgIhANYDZ-Zls9sO5jFtt-y76WEgPsiQtsRLDn8oty7fIue5",
+    "ltuid_v2": "15298692",
+    "hsr": 66397,
+    "zzz": 70081,
+    "gi": "0"
+  },
+  {
+    "id": "246619988050444288",
+    "ltoken_v2": "v2_CAISDGM5b3FhcTNzM2d1OBokZjFhYjFhNjUtN2VhMS00ZWRhLTk4ZjYtMWQ5ZjhiZjM2ZmViINC7u7cGKM38mpIFMLX2-L4BQgtiYnNfb3ZlcnNlYVhq.-N3uZgAAAAAB.MEUCIQDqvyV0V0ge1j0jsvO3w_DmScNmDvP4yofGYqa7sXYs_gIgbXGA7b5C36yTgB0BR09H1t6OiEOzVk2N145gTyky1Ac",
+    "ltuid_v2": "400440117",
+    "hsr": -1,
+    "zzz": 0,
+    "gi": -1
+  }
+]
