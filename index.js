@@ -93,10 +93,7 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
         }, randomInterval);
     //}
     //Update daily stats for every user each 2 minutes
-    let dailies = JSON.parse(readFileSync('./data/user_dailies.txt', 'utf-8'));
-    setInterval(() => {
-        checkTimeouts(dailies, 120)
-    }, 120000);
+    checkTimeouts(120);
 });
 
 

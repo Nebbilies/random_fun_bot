@@ -40,35 +40,39 @@ export async function execute(interaction) {
     let ltuid_v2 = dailies[userIndex].ltuid_v2;
     let ltoken_v2 = dailies[userIndex].ltoken_v2;
 
+    //Check if user has set up their ltoken_v2 and ltuid_v2
+    if (ltuid_v2 === '' || ltoken_v2 === '') {
+        await interaction.reply({content: ':x: **Please set up your ltoken_v2 and ltuid_v2 (/setup) first.**', ephemeral: true});
+        return;
+    }
+
     //Get user's game info
     let giInfo = await getGenshinInfo(ltoken_v2, ltuid_v2);
     let hsrInfo = await getHsrInfo(ltoken_v2, ltuid_v2);
     let zzzInfo = await getZzzInfo(ltoken_v2, ltuid_v2);
-
-    //Check if user has set up their ltoken_v2 and ltuid_v2
-    if (dailies[userIndex].ltoken_v2 === '' || dailies[userIndex].ltuid_v2 === '') {
-        await interaction.reply({content: ':x: **Please set up your ltoken_v2 and ltuid_v2 (/setup) first.**', ephemeral: true});
-        return;
-    }
 
     //Check if user's token and id is invalid
     if (giInfo === -1 || hsrInfo === -1 || zzzInfo === -1) {
         await interaction.reply({content: ':x: **Invalid ltoken_v2 or ltuid_v2.**', ephemeral: true});
         return;
     }
+    if (giInfo === -2 || hsrInfo === -2 || zzzInfo === -2) {
+        await interaction.reply({content: ':x: **Data set to private by user, please re-check your HoYoLAB.**', ephemeral: true});
+        return;
+    }
 
     //Display time left for each game. Set timeout when energy is 5 mins (300 secs) away from full.
-    let giTimeLeft = -1;
-    let hsrTimeLeft = -1;
-    let zzzTimeLeft = -1;
+    let giTimeLeft = dailies[userIndex].gi;
+    let hsrTimeLeft = dailies[userIndex].hsr;
+    let zzzTimeLeft = dailies[userIndex].zzz;
 
-    if (giInfo !== -1 && giInfo !== null) {
+    if (giInfo !== -1 && giInfo !== null && giInfo !== -2) {
         giTimeLeft = parseInt(giInfo.data.resin_recovery_time);
     }
-    if (hsrInfo !== -1 && hsrInfo !== null) {
+    if (hsrInfo !== -1 && hsrInfo !== null && hsrInfo !== -2) {
         hsrTimeLeft = parseInt(hsrInfo.data.stamina_recover_time);
     }
-    if (zzzInfo !== -1 && zzzInfo !== null) {
+    if (zzzInfo !== -1 && zzzInfo !== -2 && zzzInfo !== null) {
         zzzTimeLeft = parseInt(zzzInfo.data.energy.restore);
     }
 
@@ -82,5 +86,11 @@ export async function execute(interaction) {
     })
     await interaction.reply({content: `Now with **LIVE FETCHING** from **HOYOLAB** <:lai:1261757509312446517> <:lai:1261757509312446517> <:lai:1261757509312446517>
 bot will break sometimes so sorry if it does <:ba:1285539663620210739>`, embeds: [embed]});
+
+    //Update user's time left
+    dailies[userIndex].gi = giTimeLeft;
+    dailies[userIndex].hsr = hsrTimeLeft;
+    dailies[userIndex].zzz = zzzTimeLeft;
+    writeFileSync('./data/user_dailies.txt', JSON.stringify(dailies, null, 2));
 }
 
