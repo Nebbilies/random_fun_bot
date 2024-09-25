@@ -37,21 +37,18 @@ export async function execute(interaction) {
         userIndex = dailies.length - 1;
     }
     //Get user's ltoken_v2 and ltuid_v2
-    let ltuid_v2 = dailies[userIndex].ltuid_v2;
-    let ltoken_v2 = dailies[userIndex].ltoken_v2;
-    let account_mid_v2 = dailies[userIndex].account_mid_v2;
-    let cookie_token_v2 = dailies[userIndex].cookie_token_v2;
+    let Cookie = dailies[userIndex].Cookie;
 
     //Check if user has set up their ltoken_v2 and ltuid_v2
-    if (ltuid_v2 === '' || ltoken_v2 === '') {
-        await interaction.reply({content: ':x: **Please set up your ltoken_v2 and ltuid_v2 (/setup) first.**', ephemeral: true});
+    if (Cookie === '') {
+        await interaction.editReply({content: ':x: **Please set up your cookie (/setup) first.**', ephemeral: true});
         return;
     }
 
     //Get user's game info
-    let giInfo = await getGenshinInfo(ltoken_v2, ltuid_v2);
-    let hsrInfo = await getHsrInfo(ltoken_v2, ltuid_v2, account_mid_v2, cookie_token_v2);
-    let zzzInfo = await getZzzInfo(ltoken_v2, ltuid_v2);
+    let giInfo = await getGenshinInfo(Cookie);
+    let hsrInfo = await getHsrInfo(Cookie);
+    let zzzInfo = await getZzzInfo(Cookie);
 
     //Check if user's token and id is invalid
     if (giInfo === -1 || hsrInfo === -1 || zzzInfo === -1) {
