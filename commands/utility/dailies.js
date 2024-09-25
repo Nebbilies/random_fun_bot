@@ -79,13 +79,13 @@ export async function execute(interaction) {
     const embed = new Embed({
         title: "Your Daily Resets",
         color: 0xffff7d,
-        description: `\n <:gi:1285548706690764830> **Genshin Impact**: ${giTimeLeft === -1 ? 'Not Set' : giTimeLeft === 0 ? 'Full' : `<t:${ Math.floor(Date.now() / 1000) + giTimeLeft}>`}, **${200 - Math.ceil(giTimeLeft / 480)}**/200 \n
-        <:hsr:1285538992237969471> **Honkai: Star Rail**: ${hsrTimeLeft === -1 ? 'Not Set' : hsrTimeLeft === 0 ? 'Full' : `<t:${ Math.floor(Date.now() / 1000) + hsrTimeLeft}>`}, **${240 - Math.ceil(hsrTimeLeft / 360)}**/240 \n
-        <:zenless:1285539968487395338> **Zenless Zone Zero**: ${zzzTimeLeft === -1 ? 'Not Set' : zzzTimeLeft === 0 ? 'Full' : `<t:${ Math.floor(Date.now() / 1000) + zzzTimeLeft}>`}, **${240 - Math.ceil(zzzTimeLeft / 360)}**/240 \n
+        description: `\n <:gi:1285548706690764830> **Genshin Impact**: ${giTimeLeft === -1 ? 'Not Set' : giTimeLeft === 0 ? 'Full' : `<t:${ Math.floor(Date.now() / 1000) + giTimeLeft}>`} **${giTimeLeft === -1 ? "" : 200 - Math.ceil(giTimeLeft / 480)}**/200 \n
+        <:hsr:1285538992237969471> **Honkai: Star Rail**: ${hsrTimeLeft === -1 ? 'Not Set' : hsrTimeLeft === 0 ? 'Full' : `<t:${ Math.floor(Date.now() / 1000) + hsrTimeLeft}>`} **${hsrTimeLeft === -1 ? "" : 240 - Math.ceil(hsrTimeLeft / 360)}**/240 \n
+        <:zenless:1285539968487395338> **Zenless Zone Zero**: ${zzzTimeLeft === -1 ? 'Not Set' : zzzTimeLeft === 0 ? 'Full' : `<t:${ Math.floor(Date.now() / 1000) + zzzTimeLeft}>`} **${zzzTimeLeft === -1 ? "" : 240 - Math.ceil(zzzTimeLeft / 360)}**/240 \n
         `,
     })
-    await interaction.editReply({content: `Now with **LIVE FETCHING** from **HOYOLAB** <:lai:1261757509312446517> <:lai:1261757509312446517> <:lai:1261757509312446517>
-bot will break sometimes so sorry if it does <:ba:1285539663620210739>`, embeds: [embed]});
+    await interaction.editReply({content: `Requirements changed, please **/setup** again. 
+Bot will break sometimes so sorry if it does <:ba:1285539663620210739>`, embeds: [embed]});
 
     //Update user's time left
     dailies[userIndex].gi = giTimeLeft;

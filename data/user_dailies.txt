@@ -1,34 +1,11 @@
 [
   {
-    "id": "246619988050444288",
-    "ltoken_v2": "v2_CAISDGM5b3FhcTNzM2d1OBokZjFhYjFhNjUtN2VhMS00ZWRhLTk4ZjYtMWQ5ZjhiZjM2ZmViINC7u7cGKM38mpIFMLX2-L4BQgtiYnNfb3ZlcnNlYVhq.-N3uZgAAAAAB.MEUCIQDqvyV0V0ge1j0jsvO3w_DmScNmDvP4yofGYqa7sXYs_gIgbXGA7b5C36yTgB0BR09H1t6OiEOzVk2N145gTyky1Ac",
-    "ltuid_v2": "400440117",
-    "hsr": -1,
-    "zzz": 0,
-    "gi": -1
-  },
-  {
     "id": "227447542911074304",
     "ltoken_v2": "v2_CAISDGM5b3FhcTNzM2d1OBokOWZkZDgxN2ItM2Q3ZC00MzExLTkzMDEtNDMxYWFiZTE2ZDJkILfTtbcGKKiz7d4DMIThpQdCC2Jic19vdmVyc2Vh.t2ntZgAAAAAB.MEYCIQDdvJBWMThyarQx3xNmuEkQUfNDcS_doBb6VGMRLv5adgIhANYDZ-Zls9sO5jFtt-y76WEgPsiQtsRLDn8oty7fIue5",
     "ltuid_v2": "15298692",
-    "hsr": 73362,
-    "zzz": 70168,
+    "ltmid_v2": "1556uwee5l_hy",
+    "hsr": 28309,
+    "zzz": 1989,
     "gi": 0
-  },
-  {
-    "id": "962963654507106305",
-    "ltoken_v2": "v2_CAISDGNpZWJod3pwcnBxOBokODEzY2ZmODctNjUyYS00NGY0LTk4MTEtM2E3ZWY1NjljMDI2IPnf57YGKNL7_U8wubednQFCDGhrcnBnX2dsb2JhbA.-e_ZZgAAAAAB.MEUCIFSD8mol8D2ZwfpcUqiiv7jIIIGKmIWmtwcLq2jegysnAiEA7z_2e9w-v5-5u-wHPVicvAjA60DbY2spR7etRY_3SEE",
-    "ltuid_v2": "329735097",
-    "hsr": 75737,
-    "zzz": 0,
-    "gi": -1
-  },
-  {
-    "id": "352668108860817418",
-    "ltoken_v2": "v2_CAISDGM5b3FhcTNzM2d1OBokNTRiYmRjNjUtZGNkMy00NDVmLTk2NmQtZDEwNDNhZmM3YTYyIOvowLcGKMnJkGswmv-5IEILYmJzX292ZXJzZWE.azTwZgAAAAAB.MEUCIQC1uIxQh9mEWGBYgpc30l_BjrysojPC7aDzbSOWUelM6AIgIp7xvLIcovXOFHHJvCa9cFLoonElP5io49GmeRfzjjs",
-    "ltuid_v2": "68059034",
-    "hsr": 84251,
-    "zzz": 0,
-    "gi": "0"
   }
 ]

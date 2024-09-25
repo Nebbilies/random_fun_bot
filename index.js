@@ -92,8 +92,8 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
             }
         }, randomInterval);
     //}
-    //Update daily stats for every user each 4 minutes
-    checkTimeouts(240);
+    //Update daily stats for every user each 5 minutes
+    checkTimeouts(300);
 });
 
 
