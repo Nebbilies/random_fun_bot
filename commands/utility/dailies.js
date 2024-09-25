@@ -52,11 +52,11 @@ export async function execute(interaction) {
 
     //Check if user's token and id is invalid
     if (giInfo === -1 || hsrInfo === -1 || zzzInfo === -1) {
-        await interaction.reply({content: ':x: **Invalid ltoken_v2 or ltuid_v2.**', ephemeral: true});
+        await interaction.editReply({content: ':x: **Invalid ltoken_v2 or ltuid_v2.**', ephemeral: true});
         return;
     }
     if (giInfo === -2 || hsrInfo === -2 || zzzInfo === -2) {
-        await interaction.reply({content: ':x: **Data set to private by user, please re-check your HoYoLAB.**', ephemeral: true});
+        await interaction.editReply({content: ':x: **Data set to private by user, please re-check your HoYoLAB.**', ephemeral: true});
         return;
     }
 
