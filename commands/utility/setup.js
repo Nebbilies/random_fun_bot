@@ -19,15 +19,23 @@ export const data = new SlashCommandBuilder()
     )
     //add ltmid_v2
     .addStringOption(option =>
-        option.setName('ltmid_v2')
+        option.setName('account_mid_v2')
             .setRequired(true)
-            .setDescription('Input your ltmid_v2')
+            .setDescription('Input your account_mid_v2')
+    )
+    .addStringOption(option =>
+        option.setName('cookie_token_v2')
+            .setRequired(true)
+            .setDescription('Input your cookie_token_v2')
     );
+
 
 export async function execute(interaction) {
     const ltoken_v2 = interaction.options.getString('ltoken_v2');
     const ltuid_v2 = interaction.options.getString('ltuid_v2');
-    const ltmid_v2 = interaction.options.getString('ltmid_v2');
+    const account_mid_v2 = interaction.options.getString('account_mid_v2');
+    const cookie_token_v2 = interaction.options.getString('cookie_token_v2');
+
     //Read dailies from file, check if file is empty, if yes, generate an array of userDailies objects
     let dailies = readFileSync('./data/user_dailies.txt', 'utf-8');
     if (dailies === '') {
@@ -54,7 +62,9 @@ export async function execute(interaction) {
     }
     dailies[userIndex].ltoken_v2 = ltoken_v2;
     dailies[userIndex].ltuid_v2 = ltuid_v2;
-    dailies[userIndex].ltmid_v2 = ltmid_v2;
+    dailies[userIndex].account_mid_v2 = account_mid_v2;
+    dailies[userIndex].cookie_token_v2 = cookie_token_v2;
+
 
     writeFileSync('./data/user_dailies.txt', JSON.stringify(dailies, null, 2));
     await interaction.reply({content: ':white_check_mark: **Update Successful.**', ephemeral: true});
