@@ -93,7 +93,7 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
         }, randomInterval);
     //}
     //Update daily stats for every user each 5 minutes
-    checkTimeouts(300);
+    //checkTimeouts(300);
 });
 
 
@@ -124,8 +124,8 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
 yoshiko.commands = new Collection();
 const commandFiles = readdirSync("./commands/utility").filter((file) => file.endsWith(".js"));
 for (const file of commandFiles) {
-    const command = await import(`./commands/utility/${file}`);;
-    if ('data' in command & 'execute' in command) {
+    const command = await import(`./commands/utility/${file}`);
+    if ('data' in command && 'execute' in command) {
         yoshiko.commands.set(command.data.name, command);
     } else {
         console.error(`Command ${file} is missing data or execute method`);
