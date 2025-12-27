@@ -3,6 +3,8 @@ import { Client, Events, Collection, GatewayIntentBits, ButtonBuilder, ActionRow
 import commandCooldown from "discord-command-cooldown";
 import config from "./config.js";
 import checkTimeouts from "./lib/checkTimeouts.js";
+import {sendLandmine} from "./commands/utils/send-landmine.js";
+import { TranslationServiceClient } from "@google-cloud/translate";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
@@ -97,10 +99,48 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
 });
 
 
+let activeLandmines = new Map();
+const LANDMINE_LENGTH = 60 * 1000 * 5;
+const LANDMINE_CHANCE = 0.001; //0.1%
+const LANDMINE_CHANNELS = ["1058299699460833301"];
+
 yoshiko.client.on(Events.MessageCreate, async (message) => {
         if (message.author.bot) {
             return;
         }
+        if (!message.guild) {
+            return;
+        }
+
+        const now = Date.now();
+        const userId = message.author.id;
+
+        const expiresAt = activeLandmines.get(userId);
+
+        if (activeLandmines.has(userId)) {
+            if (!LANDMINE_CHANNELS.includes(message.channel.id)) {
+                return;
+            }
+            if (expiresAt) {
+                if (expiresAt < now) {
+                    activeLandmines.delete(userId);
+                } else {
+                    await sendLandmine(message);
+                    return;
+                }
+            }
+        }
+
+    if (Math.random() < LANDMINE_CHANCE) {
+        activeLandmines.set(userId, now + LANDMINE_LENGTH);
+
+        await message.channel.send({
+            content: `thang ngu <@${userId}> da dap min trong 5 phut`,
+        });
+
+        await sendLandmine(message);
+        return;
+    }
 
         const args = message.content.trim().split(/ +/g);
         if (!args[0].startsWith(config.prefix)) {
