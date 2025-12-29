@@ -9,6 +9,9 @@ const GCP_PROJECT_ID = "dark-park-482517-m0";
 const TRANSLATE_LANGS = ["fr", "de", "ja", "es", "ru", "pl", "it", "zh-CN", "ko", "ar"];
 export async function translateText(text) {
     const target = TRANSLATE_LANGS[Math.floor(Math.random() * TRANSLATE_LANGS.length)];
+    if (!text || text.trim() === "") {
+        return text;
+    }
 
     try {
         const [response] = await translationClient.translateText({
