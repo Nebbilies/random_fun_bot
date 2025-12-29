@@ -5,6 +5,7 @@ import config from "./config.js";
 import checkTimeouts from "./lib/checkTimeouts.js";
 import {sendLandmine} from "./commands/utils/send-landmine.js";
 import { TranslationServiceClient } from "@google-cloud/translate";
+import {landmineRuntime} from "./lib/landmineRuntime.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
@@ -101,8 +102,8 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
 
 let activeLandmines = new Map();
 const LANDMINE_LENGTH = 60 * 1000 * 5;
-const LANDMINE_CHANCE = 0.001; //0.1%
 const LANDMINE_CHANNELS = ["1058299699460833301"];
+let currentMessageCount = 0;
 
 yoshiko.client.on(Events.MessageCreate, async (message) => {
         if (message.author.bot) {
@@ -131,7 +132,20 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
             }
         }
 
-    if (Math.random() < LANDMINE_CHANCE) {
+        currentMessageCount++;
+        if (landmineRuntime.pity > 0 && currentMessageCount >= landmineRuntime.pity) {
+            currentMessageCount = 0;
+            activeLandmines.set(userId, now + LANDMINE_LENGTH);
+
+            await message.channel.send({
+                content: `thang ngu <@${userId}> da dap min trong 5 phut`,
+            });
+
+            await sendLandmine(message);
+            return;
+        }
+
+    if (Math.random() < landmineRuntime.chance) {
         activeLandmines.set(userId, now + LANDMINE_LENGTH);
 
         await message.channel.send({
