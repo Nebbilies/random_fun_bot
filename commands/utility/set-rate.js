@@ -5,14 +5,14 @@ import {landmineRuntime} from "../../lib/landmineRuntime.js";
 export const data = new SlashCommandBuilder()
     .setName('set-rate')
     .setDescription('Set ty le dap min')
-    .addIntegerOption(option =>
+    .addNumberOption(option =>
         option.setName('rate')
             .setDescription('Ty le dap min moi (0-10%)')
             .setRequired(true),
 );
 
 export async function execute(interaction) {
-    const newRate = interaction.options.getInteger('rate');
+    const newRate = interaction.options.getNumber('rate');
     if (newRate < 0 || newRate > 10) {
         await interaction.reply({content: 'suc vat ty le phai trong khoang 0-10%', ephemeral: true});
         return;
