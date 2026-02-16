@@ -11,7 +11,7 @@ export const data = new SlashCommandBuilder()
             .setRequired(true),
     );
 
-export async function execute(interaction) {
+export async function execute(client, interaction) {
     const newPity = interaction.options.getInteger('pity');
     if (newPity < 0) {
         await interaction.reply({content: 'pity phai lon hon hoac bang 0', ephemeral: true});

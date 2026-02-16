@@ -11,7 +11,7 @@ export const data = new SlashCommandBuilder()
             .setRequired(true),
 );
 
-export async function execute(interaction) {
+export async function execute(client, interaction) {
     const newRate = interaction.options.getNumber('rate');
     if (newRate < 0 || newRate > 10) {
         await interaction.reply({content: 'suc vat ty le phai trong khoang 0-10%', ephemeral: true});

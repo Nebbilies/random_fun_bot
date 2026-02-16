@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, writeFileSync } from "fs";
-import { Client, Events, Collection, GatewayIntentBits, ButtonBuilder, ActionRowBuilder, ButtonStyle, ComponentType, REST, Routes } from "discord.js";
+import { Client, Events, Collection, GatewayIntentBits, ButtonBuilder, ButtonStyle, ComponentType, REST, Routes } from "discord.js";
 import commandCooldown from "discord-command-cooldown";
 import config from "./config.js";
 import checkTimeouts from "./lib/checkTimeouts.js";
@@ -196,7 +196,7 @@ yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
     if (!command) return;
 
     try {
-        await command.execute(interaction);
+        await command.execute(yoshiko.client, interaction);
     } catch (error) {
         console.error(error);
         if (interaction.replied || interaction.deferred) {

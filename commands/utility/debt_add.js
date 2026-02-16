@@ -46,7 +46,7 @@ export const data = new SlashCommandBuilder()
     )
 ;
 
-async function handleAddCommand(interaction, debt, creditorRecord) {
+async function handleAddCommand(client, interaction, debt, creditorRecord) {
     const debtor = interaction.options.getUser("user"); //con no
     const amount = interaction.options.getInteger("amount");
     if (!creditorRecord.debtors[debtor]) {
