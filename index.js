@@ -11,16 +11,20 @@ const { CommandCooldown, msToMinutes } = commandCooldown;
 
 // Create a new client instance
 const intents = [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildVoiceStates ];
+
+const client = new Client({ intents });
+client.cooldowns = new Collection();
+
 export const yoshiko = {
-    client: new Client({ intents }),
+    client: client,
     config,
-    cooldowns: [],
+    cooldowns: client.cooldowns,
 };
 
-const chooserandomCooldown = new CommandCooldown("chooserandom", 15 * 1000);
-const lixiCooldown = new CommandCooldown("lixi", 15 * 1000);
-yoshiko.cooldowns.push(chooserandomCooldown);
-yoshiko.cooldowns.push(lixiCooldown);
+// const chooserandomCooldown = new CommandCooldown("chooserandom", 15 * 1000);
+// const lixiCooldown = new CommandCooldown("lixi", 15 * 1000);
+// yoshiko.cooldowns.push(chooserandomCooldown);
+// yoshiko.cooldowns.push(lixiCooldown);
 
 // Code tu duoi ready tro di
 yoshiko.client.once(Events.ClientReady, async (c) => {
