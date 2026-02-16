@@ -32,6 +32,6 @@ export async function execute(client, interaction) {
     .filter((member) => !member.user.bot && member.id !== user.id)
     .random().user;
   await interaction.reply({
-    content: `<@${user.id}> đã lì xì **${amount}đ** cho <@${chooseUser.id}>`,
+    content: `<@${user.id}> sẽ lì xì **${amount}đ** cho <@${chooseUser.id}>`,
   });
 }
