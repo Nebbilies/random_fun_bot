@@ -6,6 +6,8 @@ import checkTimeouts from "./lib/checkTimeouts.js";
 import {sendLandmine} from "./commands/utils/send-landmine.js";
 import { TranslationServiceClient } from "@google-cloud/translate";
 import {landmineRuntime} from "./lib/landmineRuntime.js";
+import {BirthdayStore} from "./lib/birthdays.js";
+import {startBirthdayScheduler} from "./lib/birthdayScheduler.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
@@ -30,6 +32,7 @@ export const yoshiko = {
 yoshiko.client.once(Events.ClientReady, async (c) => {
     yoshiko.client.user.setActivity("Se hoat dong khi thay 727");
     console.log("dmLam");
+    startBirthdayScheduler(yoshiko.client, new BirthdayStore());
 
     //while (setRun === "1") {
         const channel = await yoshiko.client.channels.fetch(yoshiko.config.channelId);
@@ -191,12 +194,17 @@ for (const file of commandFiles) {
 }
 
 yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-    const command = yoshiko.commands.get(interaction.commandName);
+    const birthdayButton = interaction.isButton() && interaction.customId.startsWith("birthday:");
+    if (!birthdayButton && !interaction.isChatInputCommand()) return;
+    const command = yoshiko.commands.get(birthdayButton ? "birthday" : interaction.commandName);
     if (!command) return;
 
     try {
-        await command.execute(yoshiko.client, interaction);
+        if (birthdayButton) {
+            await command.handleButton(interaction);
+        } else {
+            await command.execute(yoshiko.client, interaction);
+        }
     } catch (error) {
         console.error(error);
         if (interaction.replied || interaction.deferred) {
