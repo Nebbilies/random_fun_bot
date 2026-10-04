@@ -11,7 +11,7 @@ import {
     nextMidnightUtc7,
 } from "../lib/birthdays.js";
 import { announceBirthdays } from "../lib/birthdayScheduler.js";
-import { execute, handleButton } from "../commands/utility/birthday.js";
+import { data, execute, handleButton } from "../commands/utility/birthday.js";
 
 test("validates yearless birthdays and maps February 29 in non-leap years", () => {
     assert.equal(isValidBirthday(2, 29), true);
@@ -230,6 +230,91 @@ test("accepts a thread and reopens it before an announcement", async () => {
         store.setBirthday("333", "222", 10, 4);
         await announceBirthdays({ channels: { fetch: async () => thread } }, store, new Date("2026-10-03T17:00:00.000Z"));
         assert.deepEqual(events, ["unarchive", "join", "@everyone 🎂 <@222>"]);
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test("lists birthdays in public, sorted pages of 20 lines, and lets anyone turn pages", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "birthday-test-"));
+    try {
+        const store = new BirthdayStore(join(directory, "birthdays.json"));
+        assert.equal(data.toJSON().options.some((option) => option.name === "list"), true);
+        for (let day = 21; day >= 1; day--) {
+            store.setBirthday("333", String(100 + day), 1, day);
+        }
+        store.setBirthday("333", "500", 3, 5);
+        store.setBirthday("333", "600", 12, 25);
+        store.setBirthday("444", "700", 2, 14);
+
+        const replies = [];
+        const interaction = {
+            inGuild: () => true,
+            guildId: "333",
+            user: { id: "111" },
+            options: { getSubcommand: () => "list" },
+            reply: async (message) => replies.push(message),
+        };
+        await execute(null, interaction, store);
+
+        const first = replies[0];
+        assert.equal(first.ephemeral, undefined);
+        assert.deepEqual(first.allowedMentions, { parse: [] });
+        assert.equal(first.embeds[0].data.description.split("\n").length, 20);
+        assert.equal(first.embeds[0].data.description.split("\n")[0], "**January**");
+        assert.equal(first.embeds[0].data.description.split("\n")[1], "1 — <@101>");
+        assert.equal(first.components[0].components[0].data.disabled, true);
+
+        const updates = [];
+        await handleButton({
+            customId: first.components[0].components[1].data.custom_id,
+            guildId: "333",
+            user: { id: "999" },
+            update: async (message) => updates.push(message),
+        }, store);
+
+        const second = updates[0];
+        assert.deepEqual(second.allowedMentions, { parse: [] });
+        assert.equal(second.embeds[0].data.description, [
+            "**January (continued)**",
+            "20 — <@120>",
+            "21 — <@121>",
+            "**March**",
+            "5 — <@500>",
+            "**December**",
+            "25 — <@600>",
+        ].join("\n"));
+        assert.equal(second.embeds[0].data.footer.text, "Page 2 of 2");
+        assert.equal(second.components[0].components[1].data.disabled, true);
+
+        await handleButton({
+            customId: second.components[0].components[0].data.custom_id,
+            guildId: "333",
+            user: { id: "888" },
+            update: async (message) => updates.push(message),
+        }, store);
+        assert.equal(updates[1].embeds[0].data.description, first.embeds[0].data.description);
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test("shows an empty birthday list", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "birthday-test-"));
+    try {
+        const store = new BirthdayStore(join(directory, "birthdays.json"));
+        const replies = [];
+        const interaction = {
+            inGuild: () => true,
+            guildId: "333",
+            user: { id: "111" },
+            options: { getSubcommand: () => "list" },
+            reply: async (message) => replies.push(message),
+        };
+
+        await execute(null, interaction, store);
+        assert.match(replies[0].embeds[0].data.description, /No birthdays/);
+        assert.deepEqual(replies[0].components, []);
     } finally {
         rmSync(directory, { recursive: true, force: true });
     }

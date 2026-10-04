@@ -13,6 +13,11 @@ import { prepareBirthdayChannel, sendBirthdayMessage } from "../../lib/birthdayS
 const store = new BirthdayStore();
 const PROPOSAL_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const TESTER_ID = "227447542911074304";
+const LIST_LINES_PER_PAGE = 20;
+const MONTH_NAMES = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+];
 
 export const data = new SlashCommandBuilder()
     .setName("birthday")
@@ -23,6 +28,9 @@ export const data = new SlashCommandBuilder()
         .addIntegerOption((option) => option.setName("day").setDescription("Day of the month").setRequired(true).setMinValue(1).setMaxValue(31))
         .addIntegerOption((option) => option.setName("month").setDescription("Month of the year").setRequired(true).setMinValue(1).setMaxValue(12))
         .addUserOption((option) => option.setName("user").setDescription("User whose birthday to set (defaults to you)")))
+    .addSubcommand((subcommand) => subcommand
+        .setName("list")
+        .setDescription("View saved birthdays in this server"))
     .addSubcommand((subcommand) => subcommand
         .setName("channel")
         .setDescription("Choose the channel for birthday announcements")
@@ -51,6 +59,55 @@ function proposalButtons(guildId, targetId, month, day) {
     );
 }
 
+function birthdayListPages(users) {
+    const birthdays = Object.entries(users).sort(([firstId, first], [secondId, second]) =>
+        first.month - second.month || first.day - second.day || firstId.localeCompare(secondId));
+    const pages = [];
+    let lines = [];
+    let currentMonth = null;
+
+    for (const [userId, birthday] of birthdays) {
+        const monthName = MONTH_NAMES[birthday.month - 1];
+        if (birthday.month !== currentMonth) {
+            if (lines.length > LIST_LINES_PER_PAGE - 2) {
+                pages.push(lines.join("\n"));
+                lines = [];
+            }
+            lines.push(`**${monthName}**`);
+            currentMonth = birthday.month;
+        } else if (lines.length === LIST_LINES_PER_PAGE) {
+            pages.push(lines.join("\n"));
+            lines = [`**${monthName} (continued)**`];
+        }
+        lines.push(`${birthday.day} — <@${userId}>`);
+    }
+    if (lines.length) pages.push(lines.join("\n"));
+    return pages;
+}
+
+function birthdayListMessage(guildId, users, requestedPage = 0) {
+    const pages = birthdayListPages(users);
+    const page = Math.min(requestedPage, Math.max(pages.length - 1, 0));
+    const embed = new EmbedBuilder()
+        .setTitle("Server birthdays")
+        .setDescription(pages[page] ?? "No birthdays have been saved in this server.");
+    if (pages.length) embed.setFooter({ text: `Page ${page + 1} of ${pages.length}` });
+
+    const components = pages.length > 1 ? [new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`birthday:list:${guildId}:${page - 1}`)
+            .setLabel("Previous")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(page === 0),
+        new ButtonBuilder()
+            .setCustomId(`birthday:list:${guildId}:${page + 1}`)
+            .setLabel("Next")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(page === pages.length - 1),
+    )] : [];
+    return { embeds: [embed], components, allowedMentions: { parse: [] } };
+}
+
 export async function execute(client, interaction, birthdayStore = store) {
     const subcommand = interaction.options.getSubcommand();
     if (subcommand === "test" && interaction.user.id !== TESTER_ID) {
@@ -59,6 +116,11 @@ export async function execute(client, interaction, birthdayStore = store) {
     }
     if (!interaction.inGuild()) {
         await interaction.reply({ content: "Use this command in a server.", ephemeral: true });
+        return;
+    }
+
+    if (subcommand === "list") {
+        await interaction.reply(birthdayListMessage(interaction.guildId, birthdayStore.getGuild(interaction.guildId).users));
         return;
     }
 
@@ -144,6 +206,17 @@ export async function execute(client, interaction, birthdayStore = store) {
 
 export async function handleButton(interaction, birthdayStore = store) {
     const [prefix, action, guildId, targetId, monthText, dayText, createdText] = interaction.customId.split(":");
+    if (action === "list") {
+        const page = Number(targetId);
+        if (prefix !== "birthday" || !/^\d+$/.test(guildId ?? "") ||
+            !/^\d+$/.test(targetId ?? "") || !Number.isSafeInteger(page) ||
+            interaction.guildId !== guildId) {
+            await interaction.reply({ content: "This birthday list is invalid.", ephemeral: true });
+            return;
+        }
+        await interaction.update(birthdayListMessage(guildId, birthdayStore.getGuild(guildId).users, page));
+        return;
+    }
     const month = Number(monthText);
     const day = Number(dayText);
     const createdAt = Number(createdText);
