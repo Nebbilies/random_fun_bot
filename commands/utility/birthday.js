@@ -54,7 +54,7 @@ function proposalButtons(guildId, targetId, month, day) {
 export async function execute(client, interaction, birthdayStore = store) {
     const subcommand = interaction.options.getSubcommand();
     if (subcommand === "test" && interaction.user.id !== TESTER_ID) {
-        await interaction.reply({ content: `YOU ARE NOT <@${TESTER_ID}>` });
+        await interaction.reply({ content: "You can't test this command." });
         return;
     }
     if (!interaction.inGuild()) {

@@ -182,6 +182,16 @@ test("limits channel configuration to server managers", async () => {
     }
 });
 
+test("denies unauthorized birthday tests without mentioning another user", async () => {
+    const replies = [];
+    await execute(null, {
+        options: { getSubcommand: () => "test" },
+        user: { id: "111" },
+        reply: async (message) => replies.push(message),
+    });
+    assert.equal(replies[0].content, "You can't test this command.");
+});
+
 test("accepts a thread and reopens it before an announcement", async () => {
     const directory = mkdtempSync(join(tmpdir(), "birthday-test-"));
     try {
