@@ -9,6 +9,7 @@ import {
     birthdaysOnDate,
     isValidBirthday,
     nextMidnightUtc7,
+    upcomingBirthdays,
 } from "../lib/birthdays.js";
 import { announceBirthdays } from "../lib/birthdayScheduler.js";
 import { data, execute, handleButton } from "../commands/utility/birthday.js";
@@ -315,6 +316,104 @@ test("shows an empty birthday list", async () => {
         await execute(null, interaction, store);
         assert.match(replies[0].embeds[0].data.description, /No birthdays/);
         assert.deepEqual(replies[0].components, []);
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test("removes only your birthday from the current server", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "birthday-test-"));
+    try {
+        const store = new BirthdayStore(join(directory, "birthdays.json"));
+        store.setChannel("333", "555");
+        store.setBirthday("333", "111", 10, 5);
+        store.setBirthday("333", "222", 12, 25);
+        store.setBirthday("444", "111", 2, 28);
+        const replies = [];
+        const interaction = {
+            inGuild: () => true,
+            guildId: "333",
+            user: { id: "111" },
+            options: { getSubcommand: () => "remove" },
+            reply: async (message) => replies.push(message),
+        };
+
+        await execute(null, interaction, store);
+        assert.equal(replies[0].content, "Your birthday was removed.");
+        assert.equal(replies[0].ephemeral, undefined);
+        assert.equal(store.getGuild("333").users["111"], undefined);
+        assert.equal(store.getGuild("333").users["222"].day, 25);
+        assert.equal(store.getGuild("333").channelId, "555");
+        assert.equal(store.getGuild("444").users["111"].day, 28);
+
+        await execute(null, interaction, store);
+        assert.equal(replies[1].content, "You don't have a saved birthday in this server.");
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test("finds upcoming birthdays across years and celebrates February 29 on February 28", () => {
+    const users = {
+        today: { month: 12, day: 31 },
+        tomorrow: { month: 1, day: 1 },
+        lastDay: { month: 1, day: 29 },
+        outside: { month: 1, day: 30 },
+    };
+    assert.deepEqual(upcomingBirthdays(users, new Date("2026-12-31T16:59:59.000Z")), [
+        { userId: "today", month: 12, day: 31, daysAway: 0 },
+        { userId: "tomorrow", month: 1, day: 1, daysAway: 1 },
+        { userId: "lastDay", month: 1, day: 29, daysAway: 29 },
+    ]);
+    assert.deepEqual(upcomingBirthdays({ leap: { month: 2, day: 29 } }, new Date("2026-02-27T17:00:00.000Z"))[0],
+        { userId: "leap", month: 2, day: 28, daysAway: 0 });
+    assert.deepEqual(upcomingBirthdays({ leap: { month: 2, day: 29 } }, new Date("2028-02-27T17:00:00.000Z"))[0],
+        { userId: "leap", month: 2, day: 29, daysAway: 1 });
+});
+
+test("shows upcoming birthdays publicly with pagination and no pings", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "birthday-test-"));
+    try {
+        const store = new BirthdayStore(join(directory, "birthdays.json"));
+        assert.equal(data.toJSON().options.some((option) => option.name === "remove"), true);
+        assert.equal(data.toJSON().options.some((option) => option.name === "upcoming"), true);
+        for (let userId = 101; userId <= 121; userId++) {
+            store.setBirthday("333", String(userId), 10, 5);
+        }
+        store.setBirthday("333", "500", 11, 4);
+        const replies = [];
+        const now = new Date("2026-10-04T17:00:00.000Z");
+        const interaction = {
+            inGuild: () => true,
+            guildId: "333",
+            createdAt: now,
+            options: { getSubcommand: () => "upcoming" },
+            reply: async (message) => replies.push(message),
+        };
+
+        await execute(null, interaction, store);
+        const first = replies[0];
+        assert.equal(first.ephemeral, undefined);
+        assert.deepEqual(first.allowedMentions, { parse: [] });
+        assert.equal(first.embeds[0].data.description.split("\n").length, 20);
+        assert.match(first.embeds[0].data.description, /5 October.*<@101>.*today/);
+        assert.doesNotMatch(first.embeds[0].data.description, /<@500>/);
+
+        const updates = [];
+        await handleButton({
+            customId: first.components[0].components[1].data.custom_id,
+            guildId: "333",
+            createdAt: now,
+            user: { id: "999" },
+            update: async (message) => updates.push(message),
+        }, store);
+        assert.equal(updates[0].embeds[0].data.description, "**5 October** — <@121> (today)");
+        assert.equal(updates[0].embeds[0].data.footer.text, "Page 2 of 2");
+
+        interaction.guildId = "444";
+        await execute(null, interaction, store);
+        assert.equal(replies[1].embeds[0].data.description, "No birthdays in the next 30 days.");
+        assert.deepEqual(replies[1].components, []);
     } finally {
         rmSync(directory, { recursive: true, force: true });
     }

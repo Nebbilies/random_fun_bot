@@ -7,7 +7,7 @@ import {
     PermissionFlagsBits,
     SlashCommandBuilder,
 } from "discord.js";
-import { BirthdayStore, isValidBirthday } from "../../lib/birthdays.js";
+import { BirthdayStore, isValidBirthday, upcomingBirthdays } from "../../lib/birthdays.js";
 import { prepareBirthdayChannel, sendBirthdayMessage } from "../../lib/birthdayScheduler.js";
 
 const store = new BirthdayStore();
@@ -31,6 +31,12 @@ export const data = new SlashCommandBuilder()
     .addSubcommand((subcommand) => subcommand
         .setName("list")
         .setDescription("View saved birthdays in this server"))
+    .addSubcommand((subcommand) => subcommand
+        .setName("remove")
+        .setDescription("Remove your saved birthday from this server"))
+    .addSubcommand((subcommand) => subcommand
+        .setName("upcoming")
+        .setDescription("View birthdays in the next 30 days"))
     .addSubcommand((subcommand) => subcommand
         .setName("channel")
         .setDescription("Choose the channel for birthday announcements")
@@ -85,27 +91,44 @@ function birthdayListPages(users) {
     return pages;
 }
 
-function birthdayListMessage(guildId, users, requestedPage = 0) {
-    const pages = birthdayListPages(users);
+function birthdayPageMessage(guildId, pages, requestedPage, action, title, emptyMessage) {
     const page = Math.min(requestedPage, Math.max(pages.length - 1, 0));
     const embed = new EmbedBuilder()
-        .setTitle("Server birthdays")
-        .setDescription(pages[page] ?? "No birthdays have been saved in this server.");
+        .setTitle(title)
+        .setDescription(pages[page] ?? emptyMessage);
     if (pages.length) embed.setFooter({ text: `Page ${page + 1} of ${pages.length}` });
 
     const components = pages.length > 1 ? [new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`birthday:list:${guildId}:${page - 1}`)
+            .setCustomId(`birthday:${action}:${guildId}:${page - 1}`)
             .setLabel("Previous")
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(page === 0),
         new ButtonBuilder()
-            .setCustomId(`birthday:list:${guildId}:${page + 1}`)
+            .setCustomId(`birthday:${action}:${guildId}:${page + 1}`)
             .setLabel("Next")
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(page === pages.length - 1),
     )] : [];
     return { embeds: [embed], components, allowedMentions: { parse: [] } };
+}
+
+function birthdayListMessage(guildId, users, requestedPage = 0) {
+    return birthdayPageMessage(guildId, birthdayListPages(users), requestedPage,
+        "list", "Server birthdays", "No birthdays have been saved in this server.");
+}
+
+function birthdayUpcomingMessage(guildId, users, requestedPage = 0, now = new Date()) {
+    const entries = upcomingBirthdays(users, now);
+    const pages = [];
+    for (let index = 0; index < entries.length; index += LIST_LINES_PER_PAGE) {
+        pages.push(entries.slice(index, index + LIST_LINES_PER_PAGE).map(({ userId, month, day, daysAway }) => {
+            const when = daysAway === 0 ? "today" : `in ${daysAway} ${daysAway === 1 ? "day" : "days"}`;
+            return `**${day} ${MONTH_NAMES[month - 1]}** — <@${userId}> (${when})`;
+        }).join("\n"));
+    }
+    return birthdayPageMessage(guildId, pages, requestedPage,
+        "upcoming", "Upcoming birthdays", "No birthdays in the next 30 days.");
 }
 
 export async function execute(client, interaction, birthdayStore = store) {
@@ -121,6 +144,20 @@ export async function execute(client, interaction, birthdayStore = store) {
 
     if (subcommand === "list") {
         await interaction.reply(birthdayListMessage(interaction.guildId, birthdayStore.getGuild(interaction.guildId).users));
+        return;
+    }
+
+    if (subcommand === "upcoming") {
+        await interaction.reply(birthdayUpcomingMessage(interaction.guildId,
+            birthdayStore.getGuild(interaction.guildId).users, 0, interaction.createdAt ?? new Date()));
+        return;
+    }
+
+    if (subcommand === "remove") {
+        const removed = birthdayStore.removeBirthday(interaction.guildId, interaction.user.id);
+        await interaction.reply({ content: removed
+            ? "Your birthday was removed."
+            : "You don't have a saved birthday in this server." });
         return;
     }
 
@@ -206,7 +243,7 @@ export async function execute(client, interaction, birthdayStore = store) {
 
 export async function handleButton(interaction, birthdayStore = store) {
     const [prefix, action, guildId, targetId, monthText, dayText, createdText] = interaction.customId.split(":");
-    if (action === "list") {
+    if (action === "list" || action === "upcoming") {
         const page = Number(targetId);
         if (prefix !== "birthday" || !/^\d+$/.test(guildId ?? "") ||
             !/^\d+$/.test(targetId ?? "") || !Number.isSafeInteger(page) ||
@@ -214,7 +251,11 @@ export async function handleButton(interaction, birthdayStore = store) {
             await interaction.reply({ content: "This birthday list is invalid.", ephemeral: true });
             return;
         }
-        await interaction.update(birthdayListMessage(guildId, birthdayStore.getGuild(guildId).users, page));
+        const users = birthdayStore.getGuild(guildId).users;
+        const message = action === "list"
+            ? birthdayListMessage(guildId, users, page)
+            : birthdayUpcomingMessage(guildId, users, page, interaction.createdAt ?? new Date());
+        await interaction.update(message);
         return;
     }
     const month = Number(monthText);
