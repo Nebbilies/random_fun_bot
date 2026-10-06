@@ -224,7 +224,7 @@ const rest = new REST().setToken(config.token);
         console.log('Started refreshing application (/) commands.');
 
         await rest.put(
-            Routes.applicationCommands(config.clientId),
+            Routes.applicationGuildCommands(config.clientId, config.guildId),
             { body: yoshiko.commands.map((command) => command.data.toJSON()) },
         );
 
