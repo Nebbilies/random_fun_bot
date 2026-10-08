@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Character tag review</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.45 system-ui, sans-serif; background: #111827; color: #f3f4f6; }
+    body { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    h1, h2 { margin: 0 0 12px; }
+    a { color: #93c5fd; }
+    button, input { font: inherit; }
+    button { background: #2563eb; color: white; border: 0; border-radius: 6px; padding: 9px 14px; cursor: pointer; }
+    button.secondary { background: #374151; }
+    button.danger { background: #9f1239; }
+    input[type=text], input[type=number] { background: #1f2937; color: white; border: 1px solid #4b5563; border-radius: 6px; padding: 8px; }
+    input[type=text] { width: min(100%, 350px); }
+    #jumpRank { width: 7ch; }
+    .panel { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 18px; margin-top: 16px; }
+    .grid { display: grid; grid-template-columns: minmax(220px, 330px) 1fr; gap: 20px; }
+    .portrait { width: 100%; max-height: 420px; object-fit: contain; background: #111827; }
+    .muted { color: #9ca3af; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+    .candidate { display: block; padding: 7px; border-bottom: 1px solid #374151; overflow-wrap: anywhere; }
+    .candidate:hover { background: #374151; }
+    #candidates { max-height: 330px; overflow-y: auto; }
+    .previews { display: flex; flex-wrap: wrap; gap: 8px; min-height: 40px; }
+    .previews img { max-width: 170px; max-height: 190px; object-fit: contain; background: #111827; }
+    .preview-query { display: block; margin-bottom: 12px; overflow-wrap: anywhere; }
+    #message { min-height: 24px; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } .portrait { max-height: 280px; } }
+  </style>
+</head>
+<body>
+  <h1>Character tag review</h1>
+  <p class="muted">Approve uncertain matches and a sample of automatic matches. Images are general-rated Danbooru previews.</p>
+  <div id="status" class="panel" aria-live="polite">Loading queue…</div>
+  <nav class="row" aria-label="Review queue navigation">
+    <button id="first" class="secondary">First</button>
+    <button id="back" class="secondary">Back</button>
+    <label for="jumpRank">After rank</label>
+    <input id="jumpRank" type="number" min="0" step="1" required aria-label="Find next character after rank">
+    <button id="jump" class="secondary">Go</button>
+    <button id="forward" class="secondary">Forward</button>
+    <button id="last" class="secondary">Last</button>
+    <span id="position" class="muted"></span>
+  </nav>
+  <div class="panel grid">
+    <section>
+      <img id="portrait" class="portrait" alt="Character portrait" hidden>
+      <h2 id="name"></h2>
+      <div id="details"></div>
+      <a id="anilist" target="_blank" rel="noopener noreferrer" hidden>Open on AniList</a>
+    </section>
+    <section>
+      <h2>Danbooru character tags</h2>
+      <div id="candidates"></div>
+      <div class="row">
+        <input id="custom" type="text" placeholder="Enter or search another tag" aria-label="Another Danbooru tag">
+        <button id="search" class="secondary">Search</button>
+        <button id="preview" class="secondary">Preview</button>
+      </div>
+      <div id="searchResults"></div>
+      <section class="panel">
+        <h2>Selected tag previews</h2>
+        <code id="previewQuery" class="preview-query muted"></code>
+        <div id="previews" class="previews" aria-live="polite"></div>
+      </section>
+      <section class="panel">
+        <h2>Selected tag + solo</h2>
+        <code id="soloQuery" class="preview-query muted"></code>
+        <div id="soloPreviews" class="previews" aria-live="polite"></div>
+      </section>
+      <div class="row">
+        <button id="approve">Approve selected tag</button>
+        <button id="noMatch" class="danger">No match</button>
+      </div>
+      <p id="message" role="status"></p>
+    </section>
+  </div>
+  <script>
+    const byId = (id) => document.getElementById(id);
+    let current = null;
+    let after = Math.max(0, Number(localStorage.getItem('character-review-rank')) || 0);
+    let selected = '';
+    let previewRequest = 0;
+    let navigationRequest = 0;
+    function advance(rank) { after = rank; localStorage.setItem('character-review-rank', String(rank)); }
+    const safeUrl = (value) => { try { const url = new URL(value); return url.protocol === 'https:' ? url.href : ''; } catch { return ''; } };
+    async function read(url, options) {
+      const response = await fetch(url, options);
+      const value = await response.json();
+      if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
+      return value;
+    }
+    async function status() {
+      const data = await read('/api/status');
+      byId('status').textContent = `${data.queue} to review · ${data.manual} manual decisions · ${data.automatic} automatic matches · ${data.matched}/${data.total} searched`;
+    }
+    function tagOption(tag, container) {
+      const label = document.createElement('label');
+      label.className = 'candidate';
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'tag';
+      radio.value = tag.name;
+      radio.checked = tag.name === selected;
+      radio.addEventListener('change', () => { selected = tag.name; byId('custom').value = ''; preview(); });
+      label.append(radio, document.createTextNode(` ${tag.name} · ${tag.postCount ?? tag.post_count ?? 0} posts`));
+      if (tag.reason) label.append(document.createTextNode(` · ${tag.reason}`));
+      container.append(label);
+    }
+    async function navigate(direction = 'resume') {
+      previewRequest++;
+      const request = ++navigationRequest;
+      byId('message').textContent = '';
+      const rank = direction === 'jump' ? Number(byId('jumpRank').value) : current?.rank ?? after;
+      const url = direction === 'first' ? '/api/next?after=0'
+        : direction === 'last' ? '/api/next?last=1'
+        : direction === 'back' ? `/api/next?before=${current ? rank : rank + 1}`
+        : `/api/next?after=${direction === 'resume' ? after : rank}`;
+      const row = await read(url);
+      if (request !== navigationRequest) return;
+      if (!row && direction === 'back') {
+        byId('message').textContent = 'Beginning of queue.';
+        return;
+      }
+      if (!row && (direction === 'forward' || direction === 'jump')) advance(rank);
+      current = row;
+      byId('candidates').replaceChildren();
+      byId('previews').replaceChildren();
+      byId('soloPreviews').replaceChildren();
+      byId('previewQuery').textContent = '';
+      byId('soloQuery').textContent = '';
+      byId('searchResults').replaceChildren();
+      byId('custom').value = '';
+      selected = row?.decision?.tag_name || row?.candidates?.[0]?.name || '';
+      if (!row) {
+        byId('name').textContent = direction === 'first' || direction === 'last' ? 'Queue empty' : 'End of queue';
+        byId('position').textContent = '';
+        byId('details').textContent = 'Use Back or First to revisit characters.';
+        byId('portrait').hidden = true;
+        byId('anilist').hidden = true;
+        return;
+      }
+      advance(row.rank - 1);
+      byId('name').textContent = `#${row.rank} ${row.name}`;
+      byId('position').textContent = `Rank ${row.rank}`;
+      byId('details').textContent = `${row.nativeName || ''}\n${row.animeTitles.join(' · ')}\n${row.favourites} AniList favourites${row.adultAnime ? ' · adult anime' : ''}${row.decision?.source === 'automatic' ? ' · automatic match audit' : ''}`;
+      byId('details').style.whiteSpace = 'pre-line';
+      byId('portrait').src = safeUrl(row.imageUrl);
+      byId('portrait').hidden = !safeUrl(row.imageUrl);
+      byId('anilist').href = safeUrl(row.siteUrl);
+      byId('anilist').hidden = !safeUrl(row.siteUrl);
+      row.candidates.forEach((tag) => tagOption(tag, byId('candidates')));
+      if (!row.candidates.length) byId('candidates').textContent = 'No candidates found. Search or mark no match.';
+      if (selected) await preview();
+    }
+    async function preview() {
+      const tag = byId('custom').value.trim() || selected;
+      const request = ++previewRequest;
+      const show = async (solo, container, queryLabel) => {
+        queryLabel.textContent = tag ? `${tag} order:score${solo ? ' · filtered to solo posts' : ''}` : '';
+        container.textContent = tag ? 'Loading previews…' : 'Select a tag to preview.';
+        if (!tag) return;
+        try {
+          const urls = await read(`/api/preview?tag=${encodeURIComponent(tag)}${solo ? '&solo=1' : ''}`);
+          if (request !== previewRequest) return;
+          container.replaceChildren();
+          if (!urls.length) container.textContent = solo ? 'No solo preview found among the top scored posts checked.' : 'No preview found.';
+          urls.forEach((url) => { const img = document.createElement('img'); img.src = safeUrl(url); img.alt = `${tag}${solo ? ' solo' : ''} preview`; container.append(img); });
+        } catch (error) { if (request === previewRequest) container.textContent = error.message; }
+      };
+      await Promise.all([
+        show(false, byId('previews'), byId('previewQuery')),
+        show(true, byId('soloPreviews'), byId('soloQuery')),
+      ]);
+    }
+    async function decide(decision) {
+      if (!current) return;
+      const tag = byId('custom').value.trim() || selected;
+      if (decision === 'approve' && !tag) { byId('message').textContent = 'Select or enter a tag.'; return; }
+      try {
+        await read('/api/decision', { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ characterId: current.id, status: decision, tag }) });
+        await status();
+        await navigate('forward');
+      } catch (error) { byId('message').textContent = error.message; }
+    }
+    byId('search').addEventListener('click', async () => {
+      try {
+        const tags = await read(`/api/search?query=${encodeURIComponent(byId('custom').value.trim())}`);
+        byId('searchResults').replaceChildren();
+        tags.forEach((tag) => tagOption(tag, byId('searchResults')));
+        if (!tags.length) byId('searchResults').textContent = 'No matching character tags.';
+      } catch (error) { byId('message').textContent = error.message; }
+    });
+    byId('preview').addEventListener('click', preview);
+    byId('approve').addEventListener('click', () => decide('approve'));
+    byId('noMatch').addEventListener('click', () => decide('no_match'));
+    for (const direction of ['first', 'back', 'forward', 'last']) {
+      byId(direction).addEventListener('click', () => navigate(direction).catch((error) => { byId('message').textContent = error.message; }));
+    }
+    const jump = () => {
+      if (!byId('jumpRank').reportValidity()) return;
+      navigate('jump').catch((error) => { byId('message').textContent = error.message; });
+    };
+    byId('jump').addEventListener('click', jump);
+    byId('jumpRank').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); jump(); }
+    });
+    status().then(() => navigate()).catch((error) => { byId('message').textContent = error.message; });
+  </script>
+</body>
+</html>

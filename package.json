@@ -2,7 +2,10 @@
   "name": "Yoshiko",
   "version": "1.0.0",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "catalog:import": "node scripts/importCharacterCatalog.js",
+    "catalog:match": "node scripts/matchCharacterTags.js",
+    "catalog:review": "node scripts/reviewCharacterTags.js"
   },
   "author": "",
   "license": "ISC",
