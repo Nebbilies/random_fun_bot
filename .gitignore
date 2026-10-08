@@ -141,3 +141,6 @@ jspm_packages/
 .pnp.*
 
 # config files
+data/bot.sqlite*
+/service-account.json
+*.sqlite*
