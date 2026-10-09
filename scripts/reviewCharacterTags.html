@@ -50,7 +50,10 @@
       <img id="portrait" class="portrait" alt="Character portrait" hidden>
       <h2 id="name"></h2>
       <div id="details"></div>
-      <a id="anilist" target="_blank" rel="noopener noreferrer" hidden>Open on AniList</a>
+      <div class="row">
+        <a id="anilist" target="_blank" rel="noopener noreferrer" hidden>Open on AniList</a>
+        <button id="googleSearch" class="secondary" type="button" hidden>Search on Google</button>
+      </div>
     </section>
     <section>
       <h2>Danbooru character tags</h2>
@@ -141,6 +144,7 @@
         byId('details').textContent = 'Use Back or First to revisit characters.';
         byId('portrait').hidden = true;
         byId('anilist').hidden = true;
+        byId('googleSearch').hidden = true;
         return;
       }
       advance(row.rank - 1);
@@ -152,6 +156,7 @@
       byId('portrait').hidden = !safeUrl(row.imageUrl);
       byId('anilist').href = safeUrl(row.siteUrl);
       byId('anilist').hidden = !safeUrl(row.siteUrl);
+      byId('googleSearch').hidden = false;
       row.candidates.forEach((tag) => tagOption(tag, byId('candidates')));
       if (!row.candidates.length) byId('candidates').textContent = 'No candidates found. Search or mark no match.';
       if (selected) await preview();
@@ -196,6 +201,13 @@
       } catch (error) { byId('message').textContent = error.message; }
     });
     byId('preview').addEventListener('click', preview);
+    byId('googleSearch').addEventListener('click', () => {
+      if (!current) return;
+      const query = [current.name, current.animeTitles[0], 'danbooru'].filter(Boolean).join(' ');
+      const url = new URL('https://www.google.com/search');
+      url.searchParams.set('q', query);
+      window.open(url.href, '_blank', 'noopener,noreferrer');
+    });
     byId('approve').addEventListener('click', () => decide('approve'));
     byId('noMatch').addEventListener('click', () => decide('no_match'));
     for (const direction of ['first', 'back', 'forward', 'last']) {
