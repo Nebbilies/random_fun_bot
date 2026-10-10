@@ -5,6 +5,7 @@
     "start": "node index.js",
     "catalog:import": "node scripts/importCharacterCatalog.js",
     "catalog:match": "node scripts/matchCharacterTags.js",
+    "catalog:duckduckgo-match": "node scripts/matchDuckDuckGoTags.js",
     "catalog:review": "node scripts/reviewCharacterTags.js"
   },
   "author": "",
