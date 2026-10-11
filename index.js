@@ -8,6 +8,8 @@ import { TranslationServiceClient } from "@google-cloud/translate";
 import {landmineRuntime} from "./lib/landmineRuntime.js";
 import {BirthdayStore} from "./lib/birthdays.js";
 import {startBirthdayScheduler} from "./lib/birthdayScheduler.js";
+import {openCatalog} from "./lib/catalogDb.js";
+import {getGuildPrefix} from "./lib/guildPrefix.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
@@ -16,6 +18,7 @@ const intents = [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, Gat
 
 const client = new Client({ intents });
 client.cooldowns = new Collection();
+client.catalogDb = openCatalog();
 
 export const yoshiko = {
     client: client,
@@ -164,12 +167,13 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
     }
 
         const args = message.content.trim().split(/ +/g);
-        if (!args[0].startsWith(config.prefix)) {
+        const prefix = getGuildPrefix(client.catalogDb, message.guild.id, config.prefix);
+        if (!args[0].startsWith(prefix)) {
             return;
         } // W!CHOOSERANDOM A
 
-        args[0] = args[0].slice(config.prefix.length).toLowerCase();
-        const ctx = { yoshiko, message, args };
+        args[0] = args[0].slice(prefix.length).toLowerCase();
+        const ctx = { yoshiko, message, args, prefix };
 
         const commands = readdirSync("./commands").map((command) => command.split(".").shift());
         if (!commands.includes(args[0])) {
