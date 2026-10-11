@@ -35,9 +35,11 @@ test('character command shows catalog metadata and approved image', async (t) =>
   };
   await characterCommand(ctx);
   const embed = reply.embeds[0].toJSON();
-  assert.match(embed.title, /#1 Satoru Gojou/);
+  assert.equal(embed.title, 'Satoru Gojou');
   assert.match(embed.description, /JUJUTSU KAISEN/);
-  assert.match(embed.description, /999/);
+  assert.match(embed.description, /\*\*Other names:\*\*\n• 五条悟\n• Satoru Gojo/);
+  assert.match(embed.description, /\*\*Rank:\*\* #1/);
+  assert.match(embed.description, /\*\*Favorites:\*\* 999/);
   assert.doesNotMatch(embed.description, /Gender|Birthday|Age|Description/);
   assert.equal(embed.image.url, 'https://cdn.donmai.us/image.jpg');
   assert.equal(reply.allowedMentions.parse.length, 0);
