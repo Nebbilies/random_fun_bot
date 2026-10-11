@@ -10,6 +10,9 @@ import {BirthdayStore} from "./lib/birthdays.js";
 import {startBirthdayScheduler} from "./lib/birthdayScheduler.js";
 import {openCatalog} from "./lib/catalogDb.js";
 import {getGuildPrefix} from "./lib/guildPrefix.js";
+import {loadCharacterIndex} from "./lib/gameCharacterLookup.js";
+import {createCharacterImagePicker} from "./lib/characterImages.js";
+import {run as runCharacterLookup} from "./commands/char.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
@@ -24,6 +27,9 @@ export const yoshiko = {
     client: client,
     config,
     cooldowns: client.cooldowns,
+    catalogDb: client.catalogDb,
+    characterIndex: loadCharacterIndex(client.catalogDb),
+    imagePicker: createCharacterImagePicker(),
 };
 
 // const chooserandomCooldown = new CommandCooldown("chooserandom", 15 * 1000);
@@ -123,6 +129,19 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
             return;
         }
 
+        const prefix = getGuildPrefix(client.catalogDb, message.guild.id, config.prefix);
+        const args = message.content.trim().split(/ +/g);
+        if (args[0].startsWith(prefix) && args[0].slice(prefix.length).toLowerCase() === 'char') {
+            args[0] = 'char';
+            try {
+                await runCharacterLookup({ yoshiko, message, args, prefix });
+            } catch (error) {
+                console.error('Character lookup failed:', error);
+                await message.reply('Character lookup failed. Please try again later.').catch(console.error);
+            }
+            return;
+        }
+
         const now = Date.now();
         const userId = message.author.id;
 
@@ -166,8 +185,6 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         return;
     }
 
-        const args = message.content.trim().split(/ +/g);
-        const prefix = getGuildPrefix(client.catalogDb, message.guild.id, config.prefix);
         if (!args[0].startsWith(prefix)) {
             return;
         } // W!CHOOSERANDOM A
