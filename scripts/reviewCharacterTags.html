@@ -28,6 +28,7 @@
     .previews img { max-width: 170px; max-height: 190px; object-fit: contain; background: #111827; }
     .preview-query { display: block; margin-bottom: 12px; overflow-wrap: anywhere; }
     #message { min-height: 24px; }
+    [hidden] { display: none !important; }
     @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } .portrait { max-height: 280px; } }
   </style>
 </head>
@@ -35,7 +36,21 @@
   <h1>Character tag review</h1>
   <p class="muted">Approve uncertain matches and a sample of automatic matches. Images are general-rated Danbooru previews.</p>
   <div id="status" class="panel" aria-live="polite">Loading queue…</div>
-  <nav class="row" aria-label="Review queue navigation">
+  <div class="row">
+    <button id="showUndecided">Undecided characters</button>
+    <button id="showReported" class="secondary">Reported characters</button>
+  </div>
+  <section id="reportedSection" class="panel" hidden>
+    <h2>Reported characters</h2>
+    <p id="reportDetails" class="muted"></p>
+    <p><strong>Current tag:</strong> <code id="currentTag"></code></p>
+    <details>
+      <summary>Resolved report history</summary>
+      <div id="reportHistory"></div>
+      <button id="moreHistory" class="secondary">Load more</button>
+    </details>
+  </section>
+  <nav id="undecidedNavigation" class="row" aria-label="Review queue navigation">
     <button id="first" class="secondary">First</button>
     <button id="back" class="secondary">Back</button>
     <label for="jumpRank">After rank</label>
@@ -74,9 +89,13 @@
         <code id="soloQuery" class="preview-query muted"></code>
         <div id="soloPreviews" class="previews" aria-live="polite"></div>
       </section>
-      <div class="row">
+      <div id="undecidedActions" class="row">
         <button id="approve">Approve selected tag</button>
         <button id="noMatch" class="danger">No match</button>
+      </div>
+      <div id="reportedActions" class="row" hidden>
+        <button id="correct">Save corrected tag</button>
+        <button id="dismiss" class="secondary">Dismiss report</button>
       </div>
       <p id="message" role="status"></p>
     </section>
@@ -86,6 +105,8 @@
     let current = null;
     let after = Math.max(0, Number(localStorage.getItem('character-review-rank')) || 0);
     let selected = '';
+    let mode = 'undecided';
+    let historyOffset = 0;
     let previewRequest = 0;
     let navigationRequest = 0;
     function advance(rank) { after = rank; localStorage.setItem('character-review-rank', String(rank)); }
@@ -98,7 +119,7 @@
     }
     async function status() {
       const data = await read('/api/status');
-      byId('status').textContent = `${data.queue} to review · ${data.manual} manual decisions · ${data.automatic} automatic matches · ${data.matched}/${data.total} searched`;
+      byId('status').textContent = `${data.reports} reported characters · ${data.queue} undecided · ${data.manual} manual decisions · ${data.automatic} automatic matches · ${data.matched}/${data.total} searched`;
     }
     function tagOption(tag, container) {
       const label = document.createElement('label');
@@ -118,17 +139,17 @@
       const request = ++navigationRequest;
       byId('message').textContent = '';
       const rank = direction === 'jump' ? Number(byId('jumpRank').value) : current?.rank ?? after;
-      const url = direction === 'first' ? '/api/next?after=0'
+      const url = mode === 'reported' ? '/api/reports/next' : direction === 'first' ? '/api/next?after=0'
         : direction === 'last' ? '/api/next?last=1'
         : direction === 'back' ? `/api/next?before=${current ? rank : rank + 1}`
         : `/api/next?after=${direction === 'resume' ? after : rank}`;
       const row = await read(url);
       if (request !== navigationRequest) return;
-      if (!row && direction === 'back') {
+      if (!row && mode === 'undecided' && direction === 'back') {
         byId('message').textContent = 'Beginning of queue.';
         return;
       }
-      if (!row && (direction === 'forward' || direction === 'jump')) advance(rank);
+      if (!row && mode === 'undecided' && (direction === 'forward' || direction === 'jump')) advance(rank);
       current = row;
       byId('candidates').replaceChildren();
       byId('previews').replaceChildren();
@@ -138,16 +159,18 @@
       byId('searchResults').replaceChildren();
       byId('custom').value = '';
       selected = row?.decision?.tag_name || row?.candidates?.[0]?.name || '';
+      byId('reportDetails').textContent = row ? `${row.reportCount} report${row.reportCount === 1 ? '' : 's'} · oldest ${new Date(row.firstReportedAt).toLocaleString()}` : 'No open reports.';
+      byId('currentTag').textContent = row?.decision?.tag_name || 'No tag';
       if (!row) {
-        byId('name').textContent = direction === 'first' || direction === 'last' ? 'Queue empty' : 'End of queue';
+        byId('name').textContent = mode === 'reported' || direction === 'first' || direction === 'last' ? 'Queue empty' : 'End of queue';
         byId('position').textContent = '';
-        byId('details').textContent = 'Use Back or First to revisit characters.';
+        byId('details').textContent = mode === 'reported' ? 'No reported characters need review.' : 'Use Back or First to revisit characters.';
         byId('portrait').hidden = true;
         byId('anilist').hidden = true;
         byId('googleSearch').hidden = true;
         return;
       }
-      advance(row.rank - 1);
+      if (mode === 'undecided') advance(row.rank - 1);
       byId('name').textContent = `#${row.rank} ${row.name}`;
       byId('position').textContent = `Rank ${row.rank}`;
       byId('details').textContent = `${row.nativeName || ''}\n${row.animeTitles.join(' · ')}\n${row.favourites} AniList favourites${row.adultAnime ? ' · adult anime' : ''}${row.decision?.source === 'automatic' ? ' · automatic match audit' : ''}`;
@@ -184,13 +207,42 @@
     async function decide(decision) {
       if (!current) return;
       const tag = byId('custom').value.trim() || selected;
-      if (decision === 'approve' && !tag) { byId('message').textContent = 'Select or enter a tag.'; return; }
+      if ((decision === 'approve' || decision === 'corrected') && !tag) { byId('message').textContent = 'Select or enter a tag.'; return; }
       try {
-        await read('/api/decision', { method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ characterId: current.id, status: decision, tag }) });
+        await read(mode === 'reported' ? '/api/reports/resolve' : '/api/decision', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(mode === 'reported'
+            ? { characterId: current.id, outcome: decision, tag }
+            : { characterId: current.id, status: decision, tag }),
+        });
         await status();
         await navigate('forward');
+        if (mode === 'reported') await loadHistory(true);
       } catch (error) { byId('message').textContent = error.message; }
+    }
+    async function loadHistory(reset = false) {
+      if (reset) { historyOffset = 0; byId('reportHistory').replaceChildren(); }
+      const rows = await read(`/api/reports/history?offset=${historyOffset}`);
+      for (const row of rows) {
+        const entry = document.createElement('p');
+        entry.textContent = `${row.name} · ${row.reportCount} report${row.reportCount === 1 ? '' : 's'} · ${row.outcome} · ${new Date(row.resolvedAt).toLocaleString()}`;
+        byId('reportHistory').append(entry);
+      }
+      historyOffset += rows.length;
+      byId('moreHistory').hidden = rows.length < 50;
+      if (!historyOffset) byId('reportHistory').textContent = 'No resolved reports yet.';
+    }
+    async function showMode(nextMode) {
+      mode = nextMode;
+      current = null;
+      byId('reportedSection').hidden = mode !== 'reported';
+      byId('undecidedNavigation').hidden = mode === 'reported';
+      byId('undecidedActions').hidden = mode === 'reported';
+      byId('reportedActions').hidden = mode !== 'reported';
+      byId('showUndecided').className = mode === 'undecided' ? '' : 'secondary';
+      byId('showReported').className = mode === 'reported' ? '' : 'secondary';
+      await navigate();
+      if (mode === 'reported') await loadHistory(true);
     }
     byId('search').addEventListener('click', async () => {
       try {
@@ -210,6 +262,11 @@
     });
     byId('approve').addEventListener('click', () => decide('approve'));
     byId('noMatch').addEventListener('click', () => decide('no_match'));
+    byId('correct').addEventListener('click', () => decide('corrected'));
+    byId('dismiss').addEventListener('click', () => decide('dismissed'));
+    byId('showUndecided').addEventListener('click', () => showMode('undecided').catch((error) => { byId('message').textContent = error.message; }));
+    byId('showReported').addEventListener('click', () => showMode('reported').catch((error) => { byId('message').textContent = error.message; }));
+    byId('moreHistory').addEventListener('click', () => loadHistory().catch((error) => { byId('message').textContent = error.message; }));
     for (const direction of ['first', 'back', 'forward', 'last']) {
       byId(direction).addEventListener('click', () => navigate(direction).catch((error) => { byId('message').textContent = error.message; }));
     }

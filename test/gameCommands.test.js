@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
-import { ComponentType, MessageFlags } from 'discord.js';
+import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js';
 import { openCatalog, saveDecision } from '../lib/catalogDb.js';
 import { loadCharacterIndex } from '../lib/gameCharacterLookup.js';
 import { run as characterCommand } from '../commands/char.js';
@@ -143,6 +143,12 @@ test('rank lookup uses the V2 card and shared image navigation', async () => {
   const card = () => payload.components[0].toJSON();
   assert.equal(payload.flags, MessageFlags.IsComponentsV2);
   assert.equal(card().components[2].items[0].media.url, 'https://cdn.donmai.us/1.jpg');
+  const imageButtons = card().components.at(-1).components;
+  assert.deepEqual(imageButtons.slice(1).map((button) => button.emoji.name), ['⬅️', '➡️']);
+  assert.deepEqual(imageButtons.slice(1).map((button) => button.style), [ButtonStyle.Primary, ButtonStyle.Success]);
+  assert.equal(imageButtons[0].disabled, false);
+  assert.equal(imageButtons[1].disabled, true);
+  assert.equal(imageButtons[2].disabled, false);
   const collect = async (id) => collector.listeners('collect')[0]({
     customId: id, user: { id: 'other-user' }, deferUpdate: async () => {},
   });
@@ -152,5 +158,41 @@ test('rank lookup uses the V2 card and shared image navigation', async () => {
   assert.equal(card().components[2].items[0].media.url, 'https://cdn.donmai.us/1.jpg');
   collector.emit('end');
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(card().components.at(-1).components[1].disabled, true);
+  assert.equal(card().components.at(-1).components[2].disabled, true);
+});
+
+test('every character card lets viewers privately report a tag once', async (t) => {
+  const db = fixture(t);
+  db.prepare(`INSERT INTO characters (id, rank, favourites, name_full) VALUES (8, 1, 1, 'No Tag')`).run();
+  const collector = new EventEmitter();
+  let payload;
+  const sent = {
+    edit: async (value) => { payload = value; },
+    createMessageComponentCollector: () => collector,
+  };
+  await characterCommand({
+    args: ['char', '#1'], prefix: '!',
+    message: { author: { id: 'owner' }, guildId: '1', reply: async (value) => { payload = value; return sent; } },
+    yoshiko: {
+      characterIndex: loadCharacterIndex(db), catalogDb: db,
+      imagePicker: { pick: async () => ({ url: null, source: 'none', poolSize: 0 }) },
+    },
+  });
+  const controls = () => payload.components[0].toJSON().components.at(-1).components;
+  assert.equal(controls()[0].custom_id, 'char:report');
+  const confirmations = [];
+  const report = async (user) => collector.listeners('collect')[0]({
+    customId: 'char:report', user: { id: user },
+    reply: async (value) => { confirmations.push(value); },
+  });
+  await report('viewer');
+  await report('viewer');
+  await report('another-viewer');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM character_tag_reports WHERE resolved_at IS NULL').get().n, 2);
+  assert.match(confirmations[0].content, /saved/);
+  assert.match(confirmations[1].content, /already reported/);
+  assert.equal(confirmations[0].flags, MessageFlags.Ephemeral);
+  collector.emit('end');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controls()[0].disabled, true);
 });

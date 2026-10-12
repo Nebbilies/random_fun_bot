@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { DANBOORU_USER_AGENT, DanbooruApi } from '../lib/danbooruApi.js';
-import { getMeta, openCatalog, saveDecision } from '../lib/catalogDb.js';
+import { getMeta, openCatalog, resolveCharacterTagReports, saveDecision, transaction } from '../lib/catalogDb.js';
 
 const html = readFileSync(new URL('./reviewCharacterTags.html', import.meta.url));
 const previewCache = new Map();
@@ -14,14 +14,7 @@ function json(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-function reviewRow(db, rank, direction = 'forward') {
-  const reverse = direction !== 'forward';
-  const boundary = direction === 'last' ? '' : `c.rank ${reverse ? '<' : '>'} ? AND `;
-  const statement = db.prepare(`SELECT c.* FROM characters c
-    LEFT JOIN tag_decisions d ON d.character_id = c.id
-    WHERE ${boundary}d.character_id IS NULL
-    ORDER BY c.rank ${reverse ? 'DESC' : 'ASC'} LIMIT 1`);
-  const row = direction === 'last' ? statement.get() : statement.get(rank);
+function characterRow(db, row) {
   if (!row) return null;
   return {
     id: row.id, rank: row.rank, favourites: row.favourites,
@@ -33,6 +26,26 @@ function reviewRow(db, rank, direction = 'forward') {
     decision: db.prepare('SELECT status, tag_name, source FROM tag_decisions WHERE character_id = ?').get(row.id) ?? null,
     candidates: db.prepare('SELECT tag_name AS name, post_count AS postCount, reason FROM tag_candidates WHERE character_id = ? ORDER BY post_count DESC LIMIT 25').all(row.id),
   };
+}
+
+function reviewRow(db, rank, direction = 'forward') {
+  const reverse = direction !== 'forward';
+  const boundary = direction === 'last' ? '' : `c.rank ${reverse ? '<' : '>'} ? AND `;
+  const statement = db.prepare(`SELECT c.* FROM characters c
+    LEFT JOIN tag_decisions d ON d.character_id = c.id
+    WHERE ${boundary}d.character_id IS NULL
+    ORDER BY c.rank ${reverse ? 'DESC' : 'ASC'} LIMIT 1`);
+  const row = direction === 'last' ? statement.get() : statement.get(rank);
+  return characterRow(db, row);
+}
+
+function reportedRow(db) {
+  const report = db.prepare(`SELECT character_id, COUNT(*) AS report_count, MIN(reported_at) AS first_reported
+    FROM character_tag_reports WHERE resolved_at IS NULL GROUP BY character_id
+    ORDER BY first_reported, MIN(id) LIMIT 1`).get();
+  if (!report) return null;
+  const row = db.prepare('SELECT * FROM characters WHERE id = ?').get(report.character_id);
+  return { ...characterRow(db, row), reportCount: report.report_count, firstReportedAt: report.first_reported };
 }
 
 async function readJsonBody(request) {
@@ -81,6 +94,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
           matched: count('SELECT COUNT(*) AS n FROM tag_match_progress'),
           automatic: count("SELECT COUNT(*) AS n FROM tag_decisions WHERE source = 'automatic'"),
           manual: count("SELECT COUNT(*) AS n FROM tag_decisions WHERE source = 'manual'"),
+          reports: count(`SELECT COUNT(DISTINCT character_id) AS n FROM character_tag_reports WHERE resolved_at IS NULL`),
           queue: count(`SELECT COUNT(*) AS n FROM characters c LEFT JOIN tag_decisions d ON d.character_id = c.id
             WHERE d.character_id IS NULL`),
         });
@@ -91,6 +105,18 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
         const rank = Number(before ?? url.searchParams.get('after') ?? 0);
         if (!Number.isInteger(rank) || rank < 0) return json(response, 400, { error: 'Invalid rank' });
         json(response, 200, reviewRow(db, rank, last ? 'last' : before !== null ? 'back' : 'forward'));
+      } else if (request.method === 'GET' && url.pathname === '/api/reports/next') {
+        json(response, 200, reportedRow(db));
+      } else if (request.method === 'GET' && url.pathname === '/api/reports/history') {
+        const offset = Number(url.searchParams.get('offset') || 0);
+        if (!Number.isInteger(offset) || offset < 0) return json(response, 400, { error: 'Invalid offset' });
+        json(response, 200, db.prepare(`SELECT r.character_id AS characterId,
+          COALESCE(MAX(c.name_full), 'Character #' || r.character_id) AS name,
+          r.resolved_at AS resolvedAt, r.outcome, COUNT(*) AS reportCount
+          FROM character_tag_reports r LEFT JOIN characters c ON c.id = r.character_id
+          WHERE r.resolved_at IS NOT NULL
+          GROUP BY r.character_id, r.resolved_at, r.outcome
+          ORDER BY MAX(r.id) DESC LIMIT 50 OFFSET ?`).all(offset));
       } else if (request.method === 'GET' && url.pathname === '/api/search') {
         const query = url.searchParams.get('query') || '';
         if (query.length < 2 || query.length > 80) return json(response, 400, { error: 'Search needs 2-80 characters' });
@@ -140,6 +166,30 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
             return json(response, 400, { error: 'Tag must be an active Danbooru character tag' });
         }
         saveDecision(db, characterId, status, canonicalTag?.name ?? null, 'manual');
+        json(response, 200, { saved: true });
+      } else if (request.method === 'POST' && url.pathname === '/api/reports/resolve') {
+        if (request.headers.origin && request.headers.origin !== requestOrigin)
+          return json(response, 403, { error: 'Invalid origin' });
+        if (!request.headers['content-type']?.startsWith('application/json'))
+          return json(response, 415, { error: 'JSON required' });
+        const { characterId, outcome, tag } = await readJsonBody(request);
+        if (!Number.isInteger(characterId) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
+          return json(response, 400, { error: 'Unknown character' });
+        if (!['corrected', 'dismissed'].includes(outcome)) return json(response, 400, { error: 'Invalid resolution' });
+        if (!db.prepare(`SELECT 1 FROM character_tag_reports WHERE character_id = ? AND resolved_at IS NULL`).get(characterId))
+          return json(response, 409, { error: 'No open reports for this character' });
+        let canonicalTag = null;
+        if (outcome === 'corrected') {
+          if (typeof tag !== 'string' || tag.length > 120)
+            return json(response, 400, { error: 'Tag must be an active Danbooru character tag' });
+          canonicalTag = await api.exactTag(tag);
+          if (!canonicalTag)
+            return json(response, 400, { error: 'Tag must be an active Danbooru character tag' });
+        }
+        transaction(db, () => {
+          if (outcome === 'corrected') saveDecision(db, characterId, 'approve', canonicalTag.name, 'manual');
+          resolveCharacterTagReports(db, characterId, outcome);
+        });
         json(response, 200, { saved: true });
       } else {
         json(response, 404, { error: 'Not found' });

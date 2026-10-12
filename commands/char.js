@@ -4,6 +4,7 @@ import {
   ModalBuilder, StringSelectMenuBuilder, TextDisplayBuilder, TextInputBuilder, TextInputStyle,
 } from 'discord.js';
 import { findCharacters } from '../lib/gameCharacterLookup.js';
+import { reportCharacterTag } from '../lib/catalogDb.js';
 
 const PAGE_SIZE = 25;
 const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
@@ -80,17 +81,17 @@ function cardComponents(character, image, position, hasMoreImages, canGoBack, di
       `[Image source](https://safebooru.donmai.us/posts/${image.postId})`,
     ));
   }
-  if (hasMoreImages || canGoBack) {
-    const controls = [];
-    if (hasMoreImages) {
-      controls.push(
-        button('char:image:prev', 'Previous image', disabled || position === 0),
-        button('char:image:next', 'Next image', disabled),
-      );
-    }
-    if (canGoBack) controls.push(button('char:back', 'Back to results', disabled));
-    container.addActionRowComponents(new ActionRowBuilder().addComponents(controls));
+  const controls = [button('char:report', 'Report tag', disabled)];
+  if (hasMoreImages) {
+    controls.push(
+      new ButtonBuilder().setCustomId('char:image:prev').setEmoji('⬅️')
+        .setStyle(ButtonStyle.Primary).setDisabled(disabled || position === 0),
+      new ButtonBuilder().setCustomId('char:image:next').setEmoji('➡️')
+        .setStyle(ButtonStyle.Success).setDisabled(disabled),
+    );
   }
+  if (canGoBack) controls.push(button('char:back', 'Back to results', disabled));
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(controls));
   return [container];
 }
 
@@ -148,7 +149,7 @@ export async function run(ctx) {
     components: selected ? renderCard() : chooserComponents(matches, page),
     allowedMentions: { parse: [], repliedUser: false },
   });
-  if (!reply?.createMessageComponentCollector || (selected && !(history[0].poolSize > 1))) return;
+  if (!reply?.createMessageComponentCollector) return;
 
   const collector = reply.createMessageComponentCollector({ time: CONTROL_LIFETIME_MS });
   const ownerId = ctx.message.author.id;
@@ -187,6 +188,14 @@ export async function run(ctx) {
   collector.on('collect', async (interaction) => {
     try {
       const id = interaction.customId;
+      if (id === 'char:report' && selected && !expired) {
+        const created = reportCharacterTag(ctx.yoshiko.catalogDb, selected.id, interaction.user.id);
+        await interaction.reply({
+          content: created ? 'Tag report saved for review.' : 'You already reported this character, or it is no longer in the catalog.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
       if (!id.startsWith('char:image:') && interaction.user.id !== ownerId) {
         await interaction.deferUpdate();
         return;

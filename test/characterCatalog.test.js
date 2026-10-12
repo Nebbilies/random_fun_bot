@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
-import { openCatalog, keepCandidate, publishCatalog, saveDecision, getMeta, setMeta } from '../lib/catalogDb.js';
+import { openCatalog, keepCandidate, publishCatalog, reportCharacterTag, saveDecision, getMeta, setMeta } from '../lib/catalogDb.js';
 import { chooseTag, chooseTagByCount, normalizeTag, searchNames } from '../lib/danbooruTagMatcher.js';
 import { hydrateOneBatch, scanOnePage } from '../scripts/importCharacterCatalog.js';
 import { approveSearchedByCount } from '../scripts/matchCharacterTags.js';
@@ -207,6 +207,51 @@ test('localhost review exposes candidates and saves a validated manual choice', 
     assert.equal(response.status, 200);
     assert.equal(db.prepare('SELECT source FROM tag_decisions WHERE character_id = 1').get().source, 'manual');
     assert.equal(db.prepare('SELECT tag_name FROM tag_decisions WHERE character_id = 1').get().tag_name, 'example_(anime)');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('reported tags deduplicate viewers, resolve through review, and retain history', async (t) => {
+  const db = fixture(t);
+  setMeta(db, 'import_phase', 'complete');
+  db.prepare(`INSERT INTO characters (id, rank, favourites, name_full, anime_titles)
+    VALUES (1, 1, 10, 'Wrong Tag', '[]'), (2, 2, 5, 'Missing Tag', '[]')`).run();
+  saveDecision(db, 1, 'approve', 'old_tag', 'automatic');
+  assert.equal(reportCharacterTag(db, 1, 'viewer-a'), true);
+  assert.equal(reportCharacterTag(db, 1, 'viewer-a'), false);
+  assert.equal(reportCharacterTag(db, 1, 'viewer-b'), true);
+  assert.equal(reportCharacterTag(db, 2, 'viewer-a'), true);
+  const server = createReviewServer({ db, port: 0,
+    api: { exactTag: async (tag) => tag === 'correct_tag' ? { name: tag } : null },
+  });
+  await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (body) => fetch(`${base}/api/reports/resolve`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  try {
+    assert.equal((await (await fetch(`${base}/api/status`)).json()).reports, 2);
+    const first = await (await fetch(`${base}/api/reports/next`)).json();
+    assert.equal(first.name, 'Wrong Tag');
+    assert.equal(first.decision.tag_name, 'old_tag');
+    assert.equal(first.reportCount, 2);
+    assert.equal((await post({ characterId: 1, outcome: 'corrected', tag: 'invalid' })).status, 400);
+    assert.equal((await post({ characterId: 1, outcome: 'corrected', tag: 'correct_tag' })).status, 200);
+    assert.deepEqual({ ...db.prepare('SELECT tag_name, source FROM tag_decisions WHERE character_id = 1').get() },
+      { tag_name: 'correct_tag', source: 'manual' });
+    assert.equal((await (await fetch(`${base}/api/reports/next`)).json()).name, 'Missing Tag');
+    assert.equal((await post({ characterId: 2, outcome: 'dismissed' })).status, 200);
+    assert.equal(await (await fetch(`${base}/api/reports/next`)).json(), null);
+    const history = await (await fetch(`${base}/api/reports/history`)).json();
+    assert.deepEqual(history.map((row) => row.outcome), ['dismissed', 'corrected']);
+    assert.equal(history[1].reportCount, 2);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM character_tag_reports WHERE reporter_id = ?').get('viewer-a').n, 2);
+    assert.equal(reportCharacterTag(db, 1, 'viewer-a'), true);
+    keepCandidate(db, { id: 2, favourites: 5 });
+    db.prepare(`UPDATE stage_characters SET name_full = 'Missing Tag' WHERE id = 2`).run();
+    publishCatalog(db);
+    assert.equal(db.prepare(`SELECT outcome FROM character_tag_reports WHERE character_id = 1 ORDER BY id DESC LIMIT 1`).get().outcome, 'unavailable');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
