@@ -5,3 +5,7 @@
 # Discord UI convention
 
 - Use Discord Components V2 when they greatly enhance the user experience.
+
+# Commit convention
+
+- When committing, include commit messages only, don't include co-author metadata and related information.

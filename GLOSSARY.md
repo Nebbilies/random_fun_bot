@@ -1,8 +1,24 @@
-# Character Tag Review
+# Character Game
 
-Language for checking the tags used to find character images.
+Language for the character catalog, ownership, and tag review.
 
 ## Language
+
+**Character identity**:
+The stable AniList ID of a character, independent of its popularity rank or current catalog membership.
+_Avoid_: Rank, catalog position
+
+**Character ownership**:
+The association of one player with a character in one Discord server. A character has at most one owner per server.
+_Avoid_: Global ownership, character copy
+
+**Character catalog**:
+The current set of eligible characters and their display metadata. Membership and popularity rank can change on refresh.
+_Avoid_: Ownership registry
+
+**Retained character**:
+An owned character no longer in the current catalog. It remains usable for trading and battles and keeps its last known name, AniList portrait, and approved tag mapping.
+_Avoid_: Deleted character
 
 **Character tag mapping**:
 The association between a character and a tag used to find that character's images.
