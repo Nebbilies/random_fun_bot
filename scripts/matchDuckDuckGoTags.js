@@ -7,11 +7,11 @@ import { getMeta, openCatalog, openCatalogReadOnly, saveDecision, transaction } 
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
-function queryFor(row) {
+function characterQueryFor(row) {
   return [row.name_full, 'danbooru'].join(' ');
 }
 
-function fallbackQueryFor(row) {
+function animeQueryFor(row) {
   const firstAnime = JSON.parse(row.anime_titles || '[]')[0];
   return [row.name_full, firstAnime, 'danbooru'].filter(Boolean).join(' ');
 }
@@ -110,7 +110,7 @@ function saveAttempt(db, row, searches, outcome, suggestions) {
         (character_id, tag_name, post_count, reason) VALUES (?, ?, ?, ?)`);
       for (const { tag, resultIndex, searchIndex } of suggestions)
         insert.run(row.id, tag.name, tag.post_count ?? 0,
-          `DuckDuckGo ${searchIndex ? 'anime fallback' : 'name'} result #${resultIndex}`);
+          `DuckDuckGo ${searchIndex === 0 ? 'anime query' : 'character-only query'} result #${resultIndex}`);
     }
     return true;
   });
@@ -123,7 +123,7 @@ export async function matchDuckDuckGoTags({ db, api, fetchImpl = fetch, limit = 
   const summary = { searched: 0, approved: 0, manual: 0 };
   for (const [index, row] of pending.entries()) {
     if (index) await sleep(delayMs);
-    const queries = [...new Set([queryFor(row), fallbackQueryFor(row)])];
+    const queries = [...new Set([animeQueryFor(row), characterQueryFor(row)])];
     const searches = [];
     const reasons = [];
     const suggestions = [];
@@ -160,7 +160,7 @@ export async function matchDuckDuckGoTags({ db, api, fetchImpl = fetch, limit = 
     summary.searched++;
     if (match) {
       summary.approved++;
-      log(`Character #${row.rank}: ${row.name_full} - ${apply ? 'auto approved' : 'would auto approve'} ${match.tag} from ${match.searchIndex ? 'anime fallback' : 'name'} result #${match.resultIndex} (${match.url}).`);
+      log(`Character #${row.rank}: ${row.name_full} - ${apply ? 'auto approved' : 'would auto approve'} ${match.tag} from ${match.searchIndex ? 'character-only query' : 'anime query'} result #${match.resultIndex} (${match.url}).`);
     } else {
       summary.manual++;
       log(`Character #${row.rank}: ${row.name_full} - left for manual review - ${outcome.details}`);
