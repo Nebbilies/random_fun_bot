@@ -48,3 +48,27 @@ Character cards also have a **Report tag** button for wrong or missing mappings.
 The default bind address and port are `127.0.0.1:8787`. To use a VPS port opened for your friend, start the reviewer with `npm run catalog:review -- --host=0.0.0.0 --port=8787 --public-host=YOUR_VPS_IP`, then visit `http://YOUR_VPS_IP:8787`. Replace `8787` with the opened port. `--public-host` must match the IP address or domain in the browser URL; it keeps the request host check when the server binds all interfaces. The review page has no authentication; restrict that port to trusted IP addresses or put it behind an authenticated HTTPS proxy. For private access instead, keep the default bind address and use an SSH tunnel: `ssh -L 8787:127.0.0.1:8787 ubuntu@YOUR_VPS_IP`.
 
 The matcher and reviewer only read/write `data/bot.sqlite`; they do not register Discord commands. No character roll, claim, or leaderboard behavior is included in this slice.
+
+## Anime appearances and franchise lookups
+
+The franchise enrichment uses the AniList character IDs already in the published character catalog. It saves every direct anime appearance for each current catalog character, including specials and low-popularity titles. Anime records include AniList ID, title variants, synonyms, genres, tags, dates, season year, format, status, average score, popularity, adult label, cover image, and AniList URL. This separate enrichment does not change character eligibility or the ranked character catalog.
+
+AniList has no canonical franchise ID. The importer builds local franchise groups from anime-to-anime `PREQUEL`, `SEQUEL`, `PARENT`, `SIDE_STORY`, `SPIN_OFF`, `ALTERNATIVE`, `SUMMARY`, and `COMPILATION` relations. Loose character/shared-universe links and cross-media adaptations do not join groups. Relation data can be incomplete or inconsistent, so these groups are game data and may need local correction.
+
+After a permitted character-catalog import or refresh completes, run the franchise enrichment with the same written-permission prerequisite:
+
+```sh
+npm run franchise:import -- --permission-confirmed
+```
+
+Use `--refresh` to restart enrichment from the current character snapshot. A failed run can be restarted without `--refresh`; it resumes from the last fully saved character batch. The previous published franchise snapshot remains intact until the replacement has been completely fetched and grouped. If the character catalog has changed, `!ima` and `!imar` report that the franchise data needs refresh and do not return stale results. Restart the bot after a successful enrichment to make it available in Discord.
+
+`!ima <franchise>` shows current catalog character names. `!imar <franchise>` shows the same characters in catalog rank order as `#rank - name`. Both combine appearances across a franchise and count each character once. When a title matches more than one franchise, the player can choose which result to view.
+
+Review groups and save corrections locally:
+
+```sh
+npm run franchise:review
+```
+
+Visit `http://127.0.0.1:8788`. The page shows member anime, source relation labels, and current catalog character counts. It supports renaming groups, aliases, merges, splits, moving anime, and removing anime from all groups. Manually excluded anime remain in a separate list where they can be restored to a group. Manual decisions are retained across enrichment refreshes. The reviewer has no authentication; keep it bound to localhost or restrict remote access to trusted users as described for the tag review page above.
