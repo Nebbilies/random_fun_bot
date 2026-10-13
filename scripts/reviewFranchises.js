@@ -109,6 +109,42 @@ function applyCorrection(db, body) {
   return { saved: true };
 }
 
+export async function handleFranchiseReviewRequest({ db, request, response, url, origin, mountPath = '/franchise' }) {
+  const prefix = mountPath.replace(/\/+$/, '');
+  const route = (path) => `${prefix}${path}`;
+  try {
+    if (request.method === 'GET' && (url.pathname === (prefix || '/') || url.pathname === `${prefix}/`)) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      response.end(html);
+    } else if (request.method === 'GET' && url.pathname === route('/api/franchises')) {
+      const query = url.searchParams.get('query') || '';
+      if (query.length > 80) { json(response, 400, { error: 'Search must be 80 characters or fewer' }); return true; }
+      json(response, 200, listFranchises(db, query));
+    } else if (request.method === 'GET' && url.pathname === route('/api/unassigned')) {
+      json(response, 200, listUnassigned(db));
+    } else if (request.method === 'GET' && url.pathname === route('/api/franchise')) {
+      const id = Number(url.searchParams.get('id'));
+      if (!Number.isSafeInteger(id) || id < 1) { json(response, 400, { error: 'Invalid franchise ID' }); return true; }
+      const details = franchiseDetails(db, id);
+      json(response, details ? 200 : 404, details ?? { error: 'Unknown franchise' });
+    } else if (request.method === 'POST' && url.pathname === route('/api/correction')) {
+      if (request.headers.origin && request.headers.origin !== origin) {
+        json(response, 403, { error: 'Invalid origin' }); return true;
+      }
+      if (!request.headers['content-type']?.startsWith('application/json')) {
+        json(response, 415, { error: 'JSON required' }); return true;
+      }
+      const body = await readJsonBody(request);
+      try { json(response, 200, applyCorrection(db, body)); }
+      catch (error) { json(response, 400, { error: error.message }); }
+    } else return false;
+    return true;
+  } catch (error) {
+    json(response, 400, { error: error.message });
+    return true;
+  }
+}
+
 export function createFranchiseReviewServer({ db, host = '127.0.0.1', publicHost = host, port = 8788 }) {
   if (!publicHost || publicHost === '0.0.0.0') throw new Error('Set a public host when listening on all interfaces');
   const server = createServer(async (request, response) => {
@@ -124,29 +160,8 @@ export function createFranchiseReviewServer({ db, host = '127.0.0.1', publicHost
         origin = authority.origin;
       } catch { return json(response, 403, { error: 'Invalid host' }); }
       const url = new URL(request.url, origin);
-      if (request.method === 'GET' && url.pathname === '/') {
-        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-        response.end(html);
-      } else if (request.method === 'GET' && url.pathname === '/api/franchises') {
-        const query = url.searchParams.get('query') || '';
-        if (query.length > 80) return json(response, 400, { error: 'Search must be 80 characters or fewer' });
-        json(response, 200, listFranchises(db, query));
-      } else if (request.method === 'GET' && url.pathname === '/api/unassigned') {
-        json(response, 200, listUnassigned(db));
-      } else if (request.method === 'GET' && url.pathname === '/api/franchise') {
-        const id = Number(url.searchParams.get('id'));
-        if (!Number.isSafeInteger(id) || id < 1) return json(response, 400, { error: 'Invalid franchise ID' });
-        const details = franchiseDetails(db, id);
-        json(response, details ? 200 : 404, details ?? { error: 'Unknown franchise' });
-      } else if (request.method === 'POST' && url.pathname === '/api/correction') {
-        if (request.headers.origin && request.headers.origin !== origin)
-          return json(response, 403, { error: 'Invalid origin' });
-        if (!request.headers['content-type']?.startsWith('application/json'))
-          return json(response, 415, { error: 'JSON required' });
-        const body = await readJsonBody(request);
-        try { json(response, 200, applyCorrection(db, body)); }
-        catch (error) { json(response, 400, { error: error.message }); }
-      } else json(response, 404, { error: 'Not found' });
+      if (!await handleFranchiseReviewRequest({ db, request, response, url, origin, mountPath: '' }))
+        json(response, 404, { error: 'Not found' });
     } catch (error) { json(response, 400, { error: error.message }); }
   });
   server.listen(port, host);

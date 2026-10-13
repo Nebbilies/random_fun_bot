@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { request } from 'node:http';
-import { openCatalog } from '../lib/catalogDb.js';
+import { openCatalog, setMeta } from '../lib/catalogDb.js';
+import { createFranchise } from '../lib/franchiseCatalog.js';
 import { createFranchiseReviewServer } from '../scripts/reviewFranchises.js';
+import { createReviewServer } from '../scripts/reviewCharacterTags.js';
 
 async function post(origin, path, body) {
   const response = await fetch(`${origin}${path}`, {
@@ -64,4 +66,26 @@ test('local franchise review rejects a foreign Host header', async (t) => {
     req.end();
   });
   assert.equal(response, 403);
+});
+
+test('catalog review server mounts franchise review and API under one port', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'combined-review-'));
+  const db = openCatalog(join(directory, 'catalog.sqlite'));
+  t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
+  setMeta(db, 'import_phase', 'complete');
+  const id = createFranchise(db, 'Sword Art Online');
+  const server = createReviewServer({ db, port: 0 });
+  t.after(() => server.close());
+  await once(server, 'listening');
+  const origin = `http://127.0.0.1:${server.address().port}`;
+
+  const catalogPage = await fetch(`${origin}/`).then((response) => response.text());
+  assert.match(catalogPage, /href="\/franchise"/);
+  const page = await fetch(`${origin}/franchise`).then((response) => response.text());
+  assert.match(page, /href="\/"/);
+  const rows = await fetch(`${origin}/franchise/api/franchises`).then((response) => response.json());
+  assert.deepEqual(rows.map((row) => row.name), ['Sword Art Online']);
+  const response = await post(origin, '/franchise/api/correction', { action: 'rename', franchiseId: id, name: 'SAO' });
+  assert.equal(response.status, 200);
+  assert.equal(db.prepare('SELECT display_name FROM franchises WHERE id = ?').get(id).display_name, 'SAO');
 });

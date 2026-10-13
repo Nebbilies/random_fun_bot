@@ -65,10 +65,10 @@ Use `--refresh` to restart enrichment from the current character snapshot. A fai
 
 `!ima <franchise>` shows current catalog character names. `!imar <franchise>` shows the same characters in catalog rank order as `#rank - name`. Both combine appearances across a franchise and count each character once. When a title matches more than one franchise, the player can choose which result to view.
 
-Review groups and save corrections locally:
+The catalog review server hosts both review pages on one port. Start it once:
 
 ```sh
-npm run franchise:review
+npm run catalog:review
 ```
 
-Visit `http://127.0.0.1:8788`. The page shows member anime, source relation labels, and current catalog character counts. It supports renaming groups, aliases, merges, splits, moving anime, and removing anime from all groups. Manually excluded anime remain in a separate list where they can be restored to a group. Manual decisions are retained across enrichment refreshes. The reviewer has no authentication; keep it bound to localhost or restrict remote access to trusted users as described for the tag review page above.
+Use `http://127.0.0.1:8787` for character-tag review and `http://127.0.0.1:8787/franchise` for franchise review. On a VPS, expose the existing catalog-review port and visit its `/franchise` path; no second open port is needed. The franchise page shows member anime, source relation labels, and current catalog character counts. It supports renaming groups, aliases, merges, splits, moving anime, and removing anime from all groups. Manually excluded anime remain in a separate list where they can be restored to a group. Manual decisions are retained across enrichment refreshes. The reviewer has no authentication; keep it bound to localhost or restrict remote access to trusted users as described above. `npm run franchise:review` remains available for a standalone server on port `8788`.

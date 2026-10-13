@@ -18,6 +18,7 @@
     .panel { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 16px; margin: 12px 0; }
     .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
     .muted { color: #9ca3af; }
+    a { color: #93c5fd; }
     #list { max-height: 75vh; overflow: auto; }
     .franchise { width: 100%; display: block; text-align: left; background: transparent; border-bottom: 1px solid #374151; border-radius: 0; }
     .franchise:hover, .franchise.selected { background: #374151; }
@@ -32,6 +33,7 @@
 <body>
   <h1>Anime franchise review</h1>
   <p class="muted">Review locally generated groups and save corrections for the next catalog refresh.</p>
+  <p><a href="/">Character tag review</a></p>
   <div class="row">
     <input id="search" type="text" placeholder="Search franchise or anime title" aria-label="Search franchises">
     <button id="create" class="secondary">Create franchise</button>
@@ -81,6 +83,7 @@
   </div>
   <script>
     const byId = (id) => document.getElementById(id);
+    const apiBase = location.pathname.startsWith('/franchise') ? '/franchise' : '';
     let franchises = [];
     let currentId = null;
     async function read(url, options) {
@@ -90,13 +93,13 @@
       return value;
     }
     async function correct(body) {
-      await read('/api/correction', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      await read(`${apiBase}/api/correction`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       byId('message').textContent = 'Saved.';
       await loadList();
       if (currentId && franchises.some((item) => item.id === currentId)) await loadDetails(currentId);
     }
     async function loadList() {
-      franchises = await read(`/api/franchises?query=${encodeURIComponent(byId('search').value.trim())}`);
+      franchises = await read(`${apiBase}/api/franchises?query=${encodeURIComponent(byId('search').value.trim())}`);
       byId('list').replaceChildren();
       if (!franchises.length) byId('list').textContent = 'No matching franchises.';
       for (const item of franchises) {
@@ -123,7 +126,7 @@
     }
     async function loadDetails(id) {
       currentId = id;
-      const data = await read(`/api/franchise?id=${id}`);
+      const data = await read(`${apiBase}/api/franchise?id=${id}`);
       byId('empty').hidden = true;
       byId('details').hidden = false;
       byId('name').textContent = data.name;
@@ -172,7 +175,7 @@
         const splitButton = document.createElement('button'); splitButton.className = 'secondary'; splitButton.textContent = 'Split into new group';
         splitButton.addEventListener('click', async () => {
           try {
-            const result = await read('/api/correction', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create', name: splitName.value }) });
+            const result = await read(`${apiBase}/api/correction`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create', name: splitName.value }) });
             currentId = result.franchiseId;
             byId('search').value = '';
             await correct({ action: 'move_anime', animeId: member.id, franchiseId: result.franchiseId });
@@ -189,7 +192,7 @@
       await loadList();
     }
     async function loadExcluded() {
-      const [items, allGroups] = await Promise.all([read('/api/unassigned'), read('/api/franchises')]);
+      const [items, allGroups] = await Promise.all([read(`${apiBase}/api/unassigned`), read(`${apiBase}/api/franchises`)]);
       byId('excluded').replaceChildren();
       if (!items.length) { byId('excluded').textContent = 'No manually excluded anime.'; return; }
       for (const item of items) {
@@ -210,7 +213,7 @@
       const name = window.prompt('Name for the new franchise:');
       if (!name) return;
       try {
-        const result = await read('/api/correction', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create', name }) });
+        const result = await read(`${apiBase}/api/correction`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create', name }) });
         await loadList(); await loadDetails(result.franchiseId);
       } catch (error) { showError(error); }
     });
