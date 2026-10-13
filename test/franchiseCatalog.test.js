@@ -155,10 +155,15 @@ test('enrichment imports every character anime page and follows related anime in
     },
     animeDetails: async (ids) => ids.map((id) => details.get(id)).filter(Boolean),
   };
+  const logs = [];
 
-  await runFranchiseImport({ db, api, log: () => {} });
+  await runFranchiseImport({ db, api, log: (message) => logs.push(message) });
 
   assert.deepEqual(pages, [[1, 1], [1, 2]]);
+  assert.ok(logs.some((message) => message.includes('Character #1: Kirito')));
+  assert.ok(logs.some((message) => message.includes('Anime page 2') && message.includes('20594')));
+  assert.ok(logs.some((message) => message.includes('Anime #11757: Sword Art Online')));
+  assert.ok(logs.some((message) => message.includes('Relation SEQUEL: #11757 → #20594')));
   assert.equal(getMeta(db, 'franchise_source_published_at'), 'catalog-snapshot-1');
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM anime').get().n, 3);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM character_anime').get().n, 2);

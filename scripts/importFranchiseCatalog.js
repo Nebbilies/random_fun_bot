@@ -10,7 +10,7 @@ function stageAnimeIds(db) {
   return new Set(db.prepare('SELECT id FROM stage_anime').all().map((row) => row.id));
 }
 
-async function characterAppearances(api, characterId) {
+async function characterAppearances(api, characterId, characterName, log) {
   const ids = [];
   for (let page = 1; ; page++) {
     if (page > PAGE_LIMIT) throw new Error(`AniList anime depth exceeded for character ${characterId}`);
@@ -21,17 +21,23 @@ async function characterAppearances(api, characterId) {
       if (!Number.isInteger(item.id)) throw new Error(`Invalid anime ID for character ${characterId}`);
       ids.push(item.id);
     }
+    log(`  Anime page ${page} — ${characterName} (#${characterId}): ${connection.nodes.length} anime${connection.nodes.length ? ` (IDs ${connection.nodes.map((item) => item.id).join(', ')})` : ''}${connection.pageInfo.hasNextPage ? ', more pages' : ', last page'}.`);
     if (!connection.pageInfo.hasNextPage) return [...new Set(ids)];
   }
 }
 
-async function relatedMedia(api, startIds, knownIds) {
+function animeTitle(item) {
+  return item.title?.english || item.title?.romaji || item.title?.native || `Anime #${item.id}`;
+}
+
+async function relatedMedia(api, startIds, knownIds, log) {
   const queue = [...startIds].filter((id) => !knownIds.has(id));
   const queued = new Set(queue);
   const fetched = [];
   const relations = [];
   while (queue.length) {
     const batch = queue.splice(0, 25);
+    log(`  Fetching anime metadata batch (${batch.length} IDs): ${batch.join(', ')}.`);
     const media = await api.animeDetails(batch);
     if (!Array.isArray(media)) throw new Error('AniList returned an invalid anime detail batch');
     const returned = new Set(media.map((item) => item.id));
@@ -40,11 +46,13 @@ async function relatedMedia(api, startIds, knownIds) {
     for (const item of media) {
       if (!Number.isInteger(item.id)) throw new Error('AniList returned an invalid anime record');
       fetched.push(item);
+      log(`    Anime #${item.id}: ${animeTitle(item)}.`);
       for (const edge of item.relations?.edges ?? []) {
         if (edge.node?.type !== 'ANIME' || !Number.isInteger(edge.node.id)) continue;
         const relationType = edge.typeV3 ?? edge.typeV2 ?? edge.relationType;
         if (!relationType) continue;
         relations.push([item.id, edge.node.id, relationType]);
+        log(`      Relation ${relationType}: #${item.id} → #${edge.node.id}${isFranchiseRelation(relationType) ? ' (queued for franchise metadata)' : ''}.`);
         if (isFranchiseRelation(relationType) && !knownIds.has(edge.node.id) && !queued.has(edge.node.id)) {
           queued.add(edge.node.id);
           queue.push(edge.node.id);
@@ -78,18 +86,26 @@ export async function runFranchiseImport({ db, api, refresh = false, batchSize =
 
   const knownIds = stageAnimeIds(db);
   let cursor = Number(getMeta(db, 'franchise_character_cursor') ?? 0);
+  const totalCharacters = db.prepare('SELECT COUNT(*) AS n FROM characters').get().n;
+  const alreadyProcessed = db.prepare('SELECT COUNT(*) AS n FROM characters WHERE id <= ?').get(cursor).n;
+  log(`==== ${phase === 'running' && !refresh ? 'Resuming' : 'Starting'} franchise import: ${totalCharacters} catalog characters; ${alreadyProcessed} already processed; cursor ${cursor}. ====`);
   for (;;) {
-    const characters = db.prepare('SELECT id FROM characters WHERE id > ? ORDER BY id LIMIT ?').all(cursor, batchSize);
+    const characters = db.prepare('SELECT id, name_full FROM characters WHERE id > ? ORDER BY id LIMIT ?').all(cursor, batchSize);
     if (!characters.length) break;
+    log(`==== Processing ${characters.length} characters (${characters[0].id}-${characters.at(-1).id}) ====`);
     const appearances = [];
     const appearanceIds = new Set();
-    for (const { id } of characters) {
-      for (const animeId of await characterAppearances(api, id)) {
+    for (const { id, name_full: name } of characters) {
+      log(`Character #${id}: ${name || `Character ${id}`}`);
+      const characterAnimeIds = await characterAppearances(api, id, name || `Character ${id}`, log);
+      log(`  Found ${characterAnimeIds.length} unique anime appearances.`);
+      for (const animeId of characterAnimeIds) {
         appearances.push([id, animeId]);
         appearanceIds.add(animeId);
       }
     }
-    const { media, relations } = await relatedMedia(api, appearanceIds, knownIds);
+    log(`Fetching metadata for ${appearanceIds.size} distinct anime across this character batch.`);
+    const { media, relations } = await relatedMedia(api, appearanceIds, knownIds, log);
     cursor = characters.at(-1).id;
     stageFranchiseBatch(db, { media, appearances, relations, cursor });
     log(`Saved anime metadata for ${media.length} new entries and ${appearances.length} appearances through character ${cursor}.`);
