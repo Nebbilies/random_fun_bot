@@ -12,6 +12,14 @@ _Avoid_: Rank, catalog position
 The association of one player with a character in one Discord server. A character has at most one owner per server.
 _Avoid_: Global ownership, character copy
 
+**Marry**:
+To become a character's owner in one Discord server.
+_Avoid_: Claim
+
+**Divorce**:
+To end character ownership in one Discord server.
+_Avoid_: Release
+
 **Character catalog**:
 The growing set of published characters and their display metadata. Published characters remain in the catalog, while popularity ranks can change on refresh.
 _Avoid_: Ownership registry

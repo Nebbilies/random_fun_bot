@@ -12,7 +12,6 @@ import {openCatalog} from "./lib/catalogDb.js";
 import {getGuildPrefix} from "./lib/guildPrefix.js";
 import {loadCharacterIndex} from "./lib/gameCharacterLookup.js";
 import {createCharacterImagePicker} from "./lib/characterImages.js";
-import {run as runCharacterLookup} from "./commands/char.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
@@ -131,13 +130,15 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
 
         const prefix = getGuildPrefix(client.catalogDb, message.guild.id, config.prefix);
         const args = message.content.trim().split(/ +/g);
-        if (args[0].startsWith(prefix) && args[0].slice(prefix.length).toLowerCase() === 'char') {
-            args[0] = 'char';
+        const gameCommand = args[0].startsWith(prefix) ? args[0].slice(prefix.length).toLowerCase() : '';
+        if (['char', 'divorce', 'mm', 'mymarry', 'mmr'].includes(gameCommand)) {
+            args[0] = gameCommand;
             try {
-                await runCharacterLookup({ yoshiko, message, args, prefix });
+                const command = await import(`./commands/${gameCommand}.js`);
+                await command.run({ yoshiko, message, args, prefix });
             } catch (error) {
-                console.error('Character lookup failed:', error);
-                await message.reply('Character lookup failed. Please try again later.').catch(console.error);
+                console.error('Character game command failed:', error);
+                await message.reply('Character game command failed. Please try again later.').catch(console.error);
             }
             return;
         }

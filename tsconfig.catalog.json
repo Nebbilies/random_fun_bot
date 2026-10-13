@@ -12,7 +12,10 @@
   },
   "include": [
     "lib/catalogDb.js",
+    "lib/characterMarriage.js",
     "lib/gameCharacterLookup.js",
-    "test/characterIdentity.test.js"
+    "test/characterIdentity.test.js",
+    "test/characterMarriage.test.js",
+    "test/marriageCommands.test.js"
   ]
 }
