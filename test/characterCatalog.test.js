@@ -251,7 +251,7 @@ test('reported tags deduplicate viewers, resolve through review, and retain hist
     keepCandidate(db, { id: 2, favourites: 5 });
     db.prepare(`UPDATE stage_characters SET name_full = 'Missing Tag' WHERE id = 2`).run();
     publishCatalog(db);
-    assert.equal(db.prepare(`SELECT outcome FROM character_tag_reports WHERE character_id = 1 ORDER BY id DESC LIMIT 1`).get().outcome, 'unavailable');
+    assert.equal(db.prepare(`SELECT outcome FROM character_tag_reports WHERE character_id = 1 ORDER BY id DESC LIMIT 1`).get().outcome, null);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

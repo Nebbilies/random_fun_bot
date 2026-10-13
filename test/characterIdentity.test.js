@@ -39,7 +39,7 @@ test('opening a version-1 catalog preserves its character identity', (t) => {
   });
 });
 
-test('catalog refresh retains a departed character and its approved tag', (t) => {
+test('catalog refresh retains a published character and its approved tag', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'character-identity-'));
   const db = catalog.openCatalog(join(directory, 'catalog.sqlite'));
   t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
@@ -54,7 +54,7 @@ test('catalog refresh retains a departed character and its approved tag', (t) =>
     id: 42,
     name: 'Example Character',
     portraitUrl: 'https://anilist.co/img/example.jpg',
-    inCatalog: false,
+    inCatalog: true,
     tagName: 'example_tag',
   });
 
@@ -69,7 +69,7 @@ test('catalog refresh retains a departed character and its approved tag', (t) =>
   });
 });
 
-test('ordinary character lookup searches only the current catalog', (t) => {
+test('ordinary character lookup still finds a published character after refresh', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'character-identity-'));
   const db = catalog.openCatalog(join(directory, 'catalog.sqlite'));
   t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
@@ -79,8 +79,8 @@ test('ordinary character lookup searches only the current catalog', (t) => {
   db.exec('DELETE FROM stage_characters');
   catalog.publishCatalog(db);
 
-  assert.equal(catalog.getCharacterIdentity(db, 42)?.inCatalog, false);
-  assert.deepEqual(findCharacters(loadCharacterIndex(db), 'Example Character'), []);
+  assert.equal(catalog.getCharacterIdentity(db, 42)?.inCatalog, true);
+  assert.deepEqual(findCharacters(loadCharacterIndex(db), 'Example Character').map((row) => row.id), [42]);
 });
 
 test('failed publication keeps prior identities and current catalog', (t) => {

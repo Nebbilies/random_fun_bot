@@ -57,7 +57,8 @@ export async function scanOnePage(db, api, log = () => {}) {
     }
   }
   transaction(db, () => {
-    const stageLimit = Number(getMeta(db, 'stage_limit') ?? TARGET_COUNT);
+    const growing = getMeta(db, 'scan_mode') === 'growing';
+    const stageLimit = growing ? null : Number(getMeta(db, 'stage_limit') ?? TARGET_COUNT);
     for (const character of characters) keepCandidate(db, character, stageLimit);
     setMeta(db, 'scan_range_start', result.pageInfo.hasNextPage ? start : start + RANGE_SIZE);
     setMeta(db, 'scan_page', result.pageInfo.hasNextPage ? page + 1 : 1);
@@ -65,7 +66,7 @@ export async function scanOnePage(db, api, log = () => {}) {
     setMeta(db, 'scanned_media', Number(getMeta(db, 'scanned_media') ?? 0) + eligibleMedia.length);
     setMeta(db, 'scanned_pages', Number(getMeta(db, 'scanned_pages') ?? 0) + 1);
   });
-  log(`Saved page: ${eligibleMedia.length} eligible anime, ${characters.length} character links; ${getMeta(db, 'scanned_media')} anime scanned total, ${db.prepare('SELECT COUNT(*) AS n FROM stage_characters').get().n} top candidates kept.`);
+  log(`Saved page: ${eligibleMedia.length} eligible anime, ${characters.length} character links; ${getMeta(db, 'scanned_media')} anime scanned total, ${db.prepare('SELECT COUNT(*) AS n FROM stage_characters').get().n} candidates kept.`);
   return true;
 }
 
@@ -100,7 +101,10 @@ async function qualifyingMedia(api, character) {
 }
 
 export async function hydrateOneBatch(db, api, log = () => {}) {
-  const ids = db.prepare('SELECT id FROM stage_characters WHERE name_full IS NULL ORDER BY id LIMIT 25').all().map((row) => row.id);
+  const ids = db.prepare(`SELECT stage.id FROM stage_characters AS stage
+    WHERE stage.name_full IS NULL AND NOT EXISTS
+      (SELECT 1 FROM characters WHERE characters.id = stage.id)
+    ORDER BY stage.id LIMIT 25`).all().map((row) => row.id);
   if (!ids.length) return false;
   log(`==== Fetching character metadata for ${ids.length} finalists (IDs ${ids[0]}-${ids.at(-1)}) ====`);
   const details = await api.characterDetails(ids);
@@ -141,7 +145,7 @@ export async function runImport({ db, api, refresh = false, log = console.log })
       setMeta(db, 'scanned_media', 0);
       setMeta(db, 'scanned_pages', 0);
       setMeta(db, 'scan_scope', FILTER_SCOPE);
-      setMeta(db, 'stage_limit', TARGET_COUNT);
+      setMeta(db, 'scan_mode', 'growing');
       setMeta(db, 'legacy_unfiltered_range_start', 0);
       setMeta(db, 'import_phase', 'scan');
     });
@@ -167,7 +171,7 @@ export async function runImport({ db, api, refresh = false, log = console.log })
       pages++;
       if (pages % 25 === 0) log(`Scanned through media ID ${getMeta(db, 'scan_range_start')}, page ${getMeta(db, 'scan_page')}; ${getMeta(db, 'scanned_media')} anime found.`);
     }
-    log(`==== Anime scan complete: ${getMeta(db, 'scanned_media')} anime, ${db.prepare('SELECT COUNT(*) AS n FROM stage_characters').get().n} top candidates ====`);
+    log(`==== Anime scan complete: ${getMeta(db, 'scanned_media')} anime, ${db.prepare('SELECT COUNT(*) AS n FROM stage_characters').get().n} candidates ====`);
     phase = 'hydrate';
   }
   if (phase === 'hydrate') {
@@ -183,15 +187,17 @@ export async function runImport({ db, api, refresh = false, log = console.log })
   if (phase === 'publish') {
     log('==== Publishing completed character catalog ====');
     const count = db.prepare('SELECT COUNT(*) AS n FROM stage_characters').get().n;
-    if (count < TARGET_COUNT) throw new Error(`Expected at least ${TARGET_COUNT} eligible characters, found ${count}; catalog not published`);
-    transaction(db, () => db.prepare(`DELETE FROM stage_characters WHERE id NOT IN
+    const growing = getMeta(db, 'scan_mode') === 'growing';
+    if (growing && count === 0) throw new Error('No eligible characters found; catalog not published');
+    if (!growing && count < TARGET_COUNT)
+      throw new Error(`Expected at least ${TARGET_COUNT} eligible characters, found ${count}; catalog not published`);
+    if (!growing) transaction(db, () => db.prepare(`DELETE FROM stage_characters WHERE id NOT IN
       (SELECT id FROM stage_characters ORDER BY favourites DESC, id ASC LIMIT ?)`).run(TARGET_COUNT));
     const published = publishCatalog(db);
     setMeta(db, 'scan_finished_at', new Date().toISOString());
     setMeta(db, 'import_phase', 'complete');
-    const cutoff = db.prepare('SELECT favourites FROM characters WHERE rank = ?').get(TARGET_COUNT)?.favourites;
     log(JSON.stringify({ published, filter: FILTER_SCOPE, approximate: getMeta(db, 'scan_scope') === MIXED_SCOPE,
-      cutoffFavourites: cutoff, startedAt: getMeta(db, 'scan_started_at'),
+      startedAt: getMeta(db, 'scan_started_at'),
       finishedAt: getMeta(db, 'scan_finished_at'), maxAnimeId: Number(getMeta(db, 'scan_max_id')),
       scannedAnime: Number(getMeta(db, 'scanned_media')), scannedPages: Number(getMeta(db, 'scanned_pages')) }, null, 2));
   }
