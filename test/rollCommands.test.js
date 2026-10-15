@@ -13,7 +13,7 @@ function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'roll-command-'));
   const db = openCatalog(join(dir, 'catalog.sqlite'));
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
-  db.exec("INSERT INTO characters (id,rank,favourites,name_full,gender,image_url) VALUES (1,1,100,'A <@999>','Female','https://example.com/a.png'),(2,2,90,'B','Male','https://example.com/b.png')");
+  db.exec("INSERT INTO characters (id,rank,favourites,name_full,gender,image_url,anime_titles) VALUES (1,1,100,'A <@999>','Female','https://example.com/a.png','[\"A Show\"]'),(2,2,90,'B','Male','https://example.com/b.png','[\"B Show\"]')");
   const sent = [];
   const reacted = [];
   const channel = { send: async (value) => { sent.push(value); } };
@@ -24,19 +24,25 @@ function fixture(t) {
   return { db, sent, reacted, channel, card, message, yoshiko };
 }
 
-test('card has only agreed fields and report button', () => {
-  const card = rollCard({ name_full: 'A', rank: 12, favourites: 1234 }, { url: 'https://example.com/a.png' });
+test('card shows anime under the name and keeps one report button', () => {
+  const card = rollCard({ name_full: 'A', anime_titles: '["A Show"]', rank: 12, favourites: 1234 }, { url: 'https://example.com/a.png' });
   const content = JSON.stringify(card.components.map((component) => component.toJSON()));
-  assert.match(content, /Rank: #12/);
-  assert.match(content, /Likes: 1,234/);
+  assert.match(content, /A Show/);
+  assert.ok(content.indexOf('A Show') > content.indexOf('# A'));
+  assert.ok(content.indexOf('A Show') < content.indexOf('**Rank:** #12'));
+  assert.match(content, /\*\*Rank:\*\* #12/);
+  assert.match(content, /\*\*Likes:\*\* 1,234/);
   assert.match(content, /Report tag/);
-  assert.doesNotMatch(content, /Anime:|Other names:|Image source|Next|Previous/);
+  assert.doesNotMatch(content, /Other names:|Image source|Next|Previous/);
   assert.equal((content.match(/Report tag/g) || []).length, 1);
+  const unknown = rollCard({ name_full: 'B', anime_titles: null, rank: 13, favourites: 0 }, null);
+  assert.match(JSON.stringify(unknown.components.map((component) => component.toJSON())), /Unknown anime/);
 });
 
 test('roll publishes before reacting; heart claims immediately and report stays usable', async (t) => {
   const x = fixture(t);
   await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w');
+  assert.match(JSON.stringify(x.sent[0].components.map((component) => component.toJSON())), /A Show/);
   assert.deepEqual(x.reacted, ['❤️']);
   assert.equal(getRoll(x.db, '1', '10', '500').state, 'open');
   const reaction = { emoji: { name: '❤️' }, message: { id: '500', guildId: '1', channelId: '10', channel: x.channel } };

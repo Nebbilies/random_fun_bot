@@ -17,4 +17,6 @@ Every divorce asks for confirmation. The prompt is tied to the exact marriage se
 
 Rolls choose equally among currently unowned characters. Duplicate active cards may show the same character, but only one can award the marriage. Old cards stay closed after divorce. Roll and claim usage and active windows survive a restart until their original expiry. Hearts added while the bot was offline cannot be reconstructed in order; users must remove and add the heart again while the bot is online. Empty pools do not spend a roll. A failed card delivery or heart reaction still spends the reserved roll. Divorce does not refund a claim.
 
+Each roll card shows the character name, the first catalog anime title beneath it, rank, likes, and image. If the catalog has no anime title, it shows “Unknown anime.”
+
 Marriages use AniList character IDs internally. Only published characters can be married. The first successful database write wins if multiple users try to marry the same character in one server. Ranks can change after catalog imports, so commands display the current catalog rank rather than treating rank as identity.
