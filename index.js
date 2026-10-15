@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, writeFileSync } from "fs";
-import { Client, Events, Collection, GatewayIntentBits, ButtonBuilder, ButtonStyle, ComponentType, REST, Routes } from "discord.js";
+import { Client, Events, Collection, GatewayIntentBits, Partials, ButtonBuilder, ButtonStyle, ComponentType, REST, Routes } from "discord.js";
 import commandCooldown from "discord-command-cooldown";
 import config from "./config.js";
 import checkTimeouts from "./lib/checkTimeouts.js";
@@ -12,13 +12,14 @@ import {openCatalog} from "./lib/catalogDb.js";
 import {getGuildPrefix} from "./lib/guildPrefix.js";
 import {loadCharacterIndex} from "./lib/gameCharacterLookup.js";
 import {createCharacterImagePicker} from "./lib/characterImages.js";
+import {onRollReaction, onRollReport, recoverRollRuntime} from "./lib/characterRollRuntime.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
 // Create a new client instance
-const intents = [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildVoiceStates ];
+const intents = [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessageReactions ];
 
-const client = new Client({ intents });
+const client = new Client({ intents, partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
 client.cooldowns = new Collection();
 client.catalogDb = openCatalog();
 
@@ -30,6 +31,11 @@ export const yoshiko = {
     characterIndex: loadCharacterIndex(client.catalogDb),
     imagePicker: createCharacterImagePicker(),
 };
+recoverRollRuntime(client.catalogDb);
+
+client.on(Events.MessageReactionAdd, (reaction, user) => {
+    onRollReaction(yoshiko, reaction, user).catch((error) => console.error('Roll reaction failed:', error));
+});
 
 // const chooserandomCooldown = new CommandCooldown("chooserandom", 15 * 1000);
 // const lixiCooldown = new CommandCooldown("lixi", 15 * 1000);
@@ -131,7 +137,7 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const prefix = getGuildPrefix(client.catalogDb, message.guild.id, config.prefix);
         const args = message.content.trim().split(/ +/g);
         const gameCommand = args[0].startsWith(prefix) ? args[0].slice(prefix.length).toLowerCase() : '';
-        if (['char', 'ima', 'imar', 'divorce', 'mm', 'mymarry', 'mmr'].includes(gameCommand)) {
+        if (['char', 'ima', 'imar', 'divorce', 'mm', 'mymarry', 'mmr', 'w', 'h'].includes(gameCommand)) {
             args[0] = gameCommand;
             try {
                 const command = await import(`./commands/${gameCommand}.js`);
@@ -216,6 +222,15 @@ for (const file of commandFiles) {
 }
 
 yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
+    if (interaction.isButton() && interaction.customId === 'roll:report') {
+        try {
+            await onRollReport(yoshiko.catalogDb, interaction);
+        } catch (error) {
+            console.error('Roll report failed:', error);
+            if (!interaction.replied) await interaction.reply({ content: 'Report failed. Please try again later.', ephemeral: true }).catch(console.error);
+        }
+        return;
+    }
     const birthdayButton = interaction.isButton() && interaction.customId.startsWith("birthday:");
     if (!birthdayButton && !interaction.isChatInputCommand()) return;
     const command = yoshiko.commands.get(birthdayButton ? "birthday" : interaction.commandName);

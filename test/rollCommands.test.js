@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { openCatalog } from '../lib/catalogDb.js';
+import { getRoll } from '../lib/characterRolls.js';
+import { onRollReaction, onRollReport, rollCard, runRoll } from '../lib/characterRollRuntime.js';
+
+function fixture(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'roll-command-'));
+  const db = openCatalog(join(dir, 'catalog.sqlite'));
+  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
+  db.exec("INSERT INTO characters (id,rank,favourites,name_full,gender,image_url) VALUES (1,1,100,'A <@999>','Female','https://example.com/a.png'),(2,2,90,'B','Male','https://example.com/b.png')");
+  const sent = [];
+  const reacted = [];
+  const channel = { send: async (value) => { sent.push(value); } };
+  const card = { id: '500', channel, react: async (emoji) => { reacted.push(emoji); } };
+  const message = { id: '100', guildId: '1', channelId: '10', author: { id: '101' }, channel,
+    reply: async (value) => { sent.push(value); return card; } };
+  const yoshiko = { catalogDb: db, imagePicker: { pick: async () => ({ url: 'https://example.com/a.png' }) } };
+  return { db, sent, reacted, channel, card, message, yoshiko };
+}
+
+test('card has only agreed fields and report button', () => {
+  const card = rollCard({ name_full: 'A', rank: 12, favourites: 1234 }, { url: 'https://example.com/a.png' });
+  const content = JSON.stringify(card.components.map((component) => component.toJSON()));
+  assert.match(content, /Rank: #12/);
+  assert.match(content, /Likes: 1,234/);
+  assert.match(content, /Report tag/);
+  assert.doesNotMatch(content, /Anime:|Other names:|Image source|Next|Previous/);
+  assert.equal((content.match(/Report tag/g) || []).length, 1);
+});
+
+test('roll publishes before reacting; heart claims immediately and report stays usable', async (t) => {
+  const x = fixture(t);
+  await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w');
+  assert.deepEqual(x.reacted, ['❤️']);
+  assert.equal(getRoll(x.db, '1', '10', '500').state, 'open');
+  const reaction = { emoji: { name: '❤️' }, message: { id: '500', guildId: '1', channelId: '10', channel: x.channel } };
+  await onRollReaction(x.yoshiko, reaction, { id: '102', bot: false });
+  assert.equal(x.db.prepare("SELECT owner_id FROM marriages WHERE character_id = 1").get()?.owner_id, '102');
+  assert.equal(x.sent.at(-1).content, '<@102> has married A <@999> 🎉');
+  assert.deepEqual(x.sent.at(-1).allowedMentions.users, ['102']);
+  const replies = [];
+  const interaction = { isButton: () => true, customId: 'roll:report', guildId: '1', channelId: '10',
+    message: { id: '500' }, user: { id: '103' }, reply: async (value) => { replies.push(value); } };
+  assert.equal(await onRollReport(x.db, interaction), true);
+  assert.match(replies[0].content, /saved/);
+});
+
+test('failed heart closes card but consumes roll', async (t) => {
+  const x = fixture(t);
+  x.card.react = async () => { throw new Error('Missing permissions'); };
+  const previous = console.error;
+  console.error = () => {};
+  try { await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w'); }
+  finally { console.error = previous; }
+  assert.equal(getRoll(x.db, '1', '10', '500').state, 'failed');
+  assert.equal(x.db.prepare("SELECT used FROM roll_allowances WHERE guild_id = '1' AND user_id = '101'").get()?.used, 1);
+});
