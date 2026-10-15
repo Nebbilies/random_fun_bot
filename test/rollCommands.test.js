@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { openCatalog } from '../lib/catalogDb.js';
 import { getRoll } from '../lib/characterRolls.js';
 import { onRollReaction, onRollReport, rollCard, runRoll } from '../lib/characterRollRuntime.js';
+import { run as mu } from '../commands/mu.js';
+import { run as ru } from '../commands/ru.js';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'roll-command-'));
@@ -58,4 +60,27 @@ test('failed heart closes card but consumes roll', async (t) => {
   finally { console.error = previous; }
   assert.equal(getRoll(x.db, '1', '10', '500').state, 'failed');
   assert.equal(x.db.prepare("SELECT used FROM roll_allowances WHERE guild_id = '1' AND user_id = '101'").get()?.used, 1);
+});
+
+test('mu and ru show available and exhausted allowances with reset countdowns', async (t) => {
+  const x = fixture(t);
+  const now = Date.parse('2026-10-15T17:30:00Z');
+  const originalNow = Date.now;
+  Date.now = () => now;
+  try {
+    await mu({ message: x.message, yoshiko: x.yoshiko });
+    await ru({ message: x.message, yoshiko: x.yoshiko });
+    assert.equal(x.sent[0], 'You can claim right now! The next claim reset is in **2h 30 min**.');
+    assert.equal(x.sent[1], 'You have 7 rolls left. Next rolls reset in **30 min**.');
+    x.db.prepare('INSERT INTO claim_allowances (guild_id,user_id,period) VALUES (?,?,?)')
+      .run('1', '101', Math.floor((now + 7 * 3_600_000) / (3 * 3_600_000)));
+    x.db.prepare('INSERT INTO roll_allowances (guild_id,user_id,period,used) VALUES (?,?,?,?)')
+      .run('1', '101', Math.floor(now / 3_600_000), 5);
+    await mu({ message: x.message, yoshiko: x.yoshiko });
+    await ru({ message: x.message, yoshiko: x.yoshiko });
+    assert.equal(x.sent[2], "You can't claim right now. The next claim reset is in **2h 30 min**.");
+    assert.equal(x.sent[3], 'You have 2 rolls left. Next rolls reset in **30 min**.');
+  } finally {
+    Date.now = originalNow;
+  }
 });

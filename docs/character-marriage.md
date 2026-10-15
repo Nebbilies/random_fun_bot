@@ -9,6 +9,7 @@ Use the server's existing message-command prefix. With `!` as the prefix:
 - `!mm @user` and `!mmr @user` show another member's marriages. Anyone in the server may view them.
 - `!divorce <character name>` ends one of your marriages after confirmation. If the name matches several of your characters, choose one from the picker first.
 - `!w` rolls a female character; `!h` rolls a male character. Other or missing gender metadata appears in both. Both commands share 7 rolls per user per server, resetting every hour on the hour (Vietnam time). Unused rolls do not carry over.
+- `!ru` shows your remaining rolls and minutes until the next hourly reset. `!mu` shows whether you can claim and the hours and minutes until the next three-hour claim reset.
 - Each user can claim one character per server every three hours. Claims reset at 00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, and 21:00 Vietnam time. Any user with an available claim may react to a roll. First eligible reaction processed wins immediately; the bot posts the winner. Unused claims do not carry over.
 - A server Administrator may use `!divorce @user <character name>` or `!divorce <user ID> <character name>` to end another user's marriage. A raw user ID works when the owner has left the server. Administrator permission is checked again when confirming.
 

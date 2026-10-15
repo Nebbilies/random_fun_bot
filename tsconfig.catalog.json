@@ -17,6 +17,8 @@
     "lib/characterRollRuntime.js",
     "commands/w.js",
     "commands/h.js",
+    "commands/mu.js",
+    "commands/ru.js",
     "lib/gameCharacterLookup.js",
     "test/characterIdentity.test.js",
     "test/characterMarriage.test.js",

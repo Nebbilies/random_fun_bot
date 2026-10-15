@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openCatalog } from '../lib/catalogDb.js';
-import { claimRoll, failRoll, getRoll, markClaimNotice, nextClaimReset, publishRoll, recoverRolls, reserveRoll } from '../lib/characterRolls.js';
+import { claimRoll, failRoll, getClaimStatus, getRoll, getRollStatus, markClaimNotice, nextClaimReset, publishRoll, recoverRolls, reserveRoll } from '../lib/characterRolls.js';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'character-rolls-'));
@@ -102,4 +102,20 @@ test('version 4 upgrade preserves existing marriage and prefix', (t) => {
   assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 5);
   assert.equal(db.prepare("SELECT owner_id FROM marriages WHERE guild_id = '1'").get()?.owner_id, '101');
   assert.equal(db.prepare("SELECT prefix FROM guild_prefixes WHERE guild_id = '1'").get()?.prefix, '?');
+});
+
+test('status checks show current allowances and reset without spending them', (t) => {
+  const db = fixture(t);
+  assert.deepEqual(getRollStatus(db, '1', '101', midnight), { remaining: 7, resetAt: midnight + 3_600_000 });
+  assert.deepEqual(getClaimStatus(db, '1', '101', midnight), { canClaim: true, resetAt: midnight + 3 * 3_600_000 });
+  const roll = reserve(db, '901');
+  publishRoll(db, roll.rollId, '902', midnight);
+  assert.equal(claimRoll(db, { guildId: '1', channelId: '10', messageId: '902', userId: '101', now: midnight }).status, 'married');
+  assert.equal(getRollStatus(db, '1', '101', midnight).remaining, 6);
+  assert.equal(getClaimStatus(db, '1', '101', midnight).canClaim, false);
+  assert.equal(getRollStatus(db, '2', '101', midnight).remaining, 7);
+  assert.equal(getClaimStatus(db, '2', '101', midnight).canClaim, true);
+  assert.equal(getRollStatus(db, '1', '101', midnight + 3_600_000).remaining, 7);
+  assert.equal(getClaimStatus(db, '1', '101', midnight + 3 * 3_600_000).canClaim, true);
+  assert.equal(db.prepare("SELECT used FROM roll_allowances WHERE guild_id = '1' AND user_id = '101'").get()?.used, 1);
 });
