@@ -1,8 +1,8 @@
 import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, escapeMarkdown,
-  MessageFlags, StringSelectMenuBuilder, TextDisplayBuilder,
+  MessageFlags, SectionBuilder, StringSelectMenuBuilder, TextDisplayBuilder, ThumbnailBuilder,
 } from 'discord.js';
-import { findFranchises, isFranchiseCatalogCurrent, loadFranchiseCharacters, loadFranchiseIndex } from '../../lib/franchiseLookup.js';
+import { findFranchises, isFranchiseCatalogCurrent, loadFranchiseCharacters, loadFranchiseCover, loadFranchiseIndex } from '../../lib/franchiseLookup.js';
 
 const PAGE_SIZE = 25;
 const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
@@ -44,6 +44,7 @@ export async function runFranchiseCommand(ctx) {
   let franchisePage = 0;
   let selected = franchises.length === 1 ? franchises[0] : null;
   let characters = selected ? loadFranchiseCharacters(db, selected.id) : [];
+  let cover = selected ? loadFranchiseCover(db, selected.id) : null;
   if (selected && !characters.length) {
     await ctx.message.reply('No current catalog characters found in that franchise.');
     return;
@@ -70,8 +71,13 @@ export async function runFranchiseCommand(ctx) {
     const pages = Math.max(1, Math.ceil(characters.length / PAGE_SIZE));
     const lines = characters.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((character) =>
       showRank ? `#${character.rank} - ${escapeMarkdown(character.name_full)}` : escapeMarkdown(character.name_full));
-    return [container(`## ${escapeMarkdown(selected.name)}\n${characters.length.toLocaleString('en-US')} characters • Page ${page + 1} of ${pages}\n\n${lines.join('\n')}`)
-      .addActionRowComponents(new ActionRowBuilder().addComponents(
+    const content = `## ${escapeMarkdown(selected.name)}\n${characters.length.toLocaleString('en-US')} characters • Page ${page + 1} of ${pages}\n\n${lines.join('\n')}`;
+    const result = new ContainerBuilder().setAccentColor(0x5865f2);
+    if (cover) result.addSectionComponents(new SectionBuilder()
+      .addTextDisplayComponents(new TextDisplayBuilder().setContent(content))
+      .setThumbnailAccessory(new ThumbnailBuilder().setURL(cover)));
+    else result.addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
+    return [result.addActionRowComponents(new ActionRowBuilder().addComponents(
         button('franchise:characters:prev', 'Previous', disabled || page === 0),
         button('franchise:characters:next', 'Next', disabled || page === pages - 1),
       ))];
@@ -97,6 +103,7 @@ export async function runFranchiseCommand(ctx) {
         selected = franchises.find((item) => String(item.id) === interaction.values?.[0]) ?? null;
         if (selected) {
           characters = loadFranchiseCharacters(db, selected.id);
+          cover = loadFranchiseCover(db, selected.id);
           page = 0;
         }
       } else if (interaction.customId === 'franchise:franchise:prev' && franchisePage > 0) franchisePage--;

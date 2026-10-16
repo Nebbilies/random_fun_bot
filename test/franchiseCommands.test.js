@@ -20,9 +20,11 @@ function setup(t) {
     (10, 'Sword Art Online', 'now'), (20, 'Sword Art Online Alternative', 'now')`).run();
   db.prepare(`INSERT INTO franchise_aliases (franchise_id, alias, normalized_alias, source) VALUES
     (10, 'SAO', 'sao', 'manual'), (20, 'SAO', 'sao', 'manual')`).run();
-  db.prepare(`INSERT INTO anime (id, title_english, fetched_at) VALUES
-    (100, 'Sword Art Online', 'now'), (200, 'Sword Art Online Alternative: Gun Gale Online', 'now')`).run();
-  db.prepare(`INSERT INTO franchise_anime (franchise_id, anime_id) VALUES (10, 100), (20, 200)`).run();
+  db.prepare(`INSERT INTO anime (id, title_english, format, popularity, cover_image, fetched_at) VALUES
+    (100, 'Sword Art Online', 'TV', 100, 'https://example.com/sao.jpg', 'now'),
+    (101, 'Sword Art Online Special', 'SPECIAL', 200, 'https://example.com/special.jpg', 'now'),
+    (200, 'Sword Art Online Alternative: Gun Gale Online', 'TV', 50, NULL, 'now')`).run();
+  db.prepare(`INSERT INTO franchise_anime (franchise_id, anime_id) VALUES (10, 100), (10, 101), (20, 200)`).run();
   db.prepare(`INSERT INTO character_anime (character_id, anime_id) VALUES (1, 100), (2, 100)`).run();
   return db;
 }
@@ -39,9 +41,12 @@ test('!ima shows franchise characters by name without rank metadata', async (t) 
   assert.equal(payload.flags, MessageFlags.IsComponentsV2);
   const container = payload.components[0].toJSON();
   assert.equal(container.type, ComponentType.Container);
-  assert.match(container.components[0].content, /Kirito/);
-  assert.match(container.components[0].content, /Asuna/);
-  assert.doesNotMatch(container.components[0].content, /#1|#2/);
+  assert.equal(container.components[0].type, ComponentType.Section);
+  assert.equal(container.components[0].accessory.media.url, 'https://example.com/sao.jpg');
+  const content = container.components[0].components[0].content;
+  assert.match(content, /Kirito/);
+  assert.match(content, /Asuna/);
+  assert.doesNotMatch(content, /#1|#2/);
 });
 
 test('!imar lets the player choose between matching franchises and displays character ranks', async (t) => {
@@ -64,7 +69,9 @@ test('!imar lets the player choose between matching franchises and displays char
     deferUpdate: async () => {},
   };
   await collector.listeners('collect')[0](interaction);
-  const result = payload.components[0].toJSON().components[0].content;
+  const section = payload.components[0].toJSON().components[0];
+  assert.equal(section.accessory.media.url, 'https://example.com/sao.jpg');
+  const result = section.components[0].content;
   assert.match(result, /#1 - Kirito/);
   assert.match(result, /#2 - Asuna/);
 });
