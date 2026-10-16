@@ -4,7 +4,8 @@ import {
 } from 'discord.js';
 import { findFranchises, isFranchiseCatalogCurrent, loadFranchiseCharacters, loadFranchiseCover, loadFranchiseIndex } from '../../lib/franchiseLookup.js';
 
-const PAGE_SIZE = 25;
+const CHARACTER_PAGE_SIZE = 15;
+const FRANCHISE_PAGE_SIZE = 25;
 const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
 
 function short(value, length = 100) {
@@ -19,6 +20,16 @@ function button(id, label, disabled) {
 function container(content) {
   return new ContainerBuilder().setAccentColor(0x5865f2)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
+}
+
+function fittedCoverUrl(cover) {
+  const url = new URL('https://wsrv.nl/');
+  url.searchParams.set('url', cover);
+  url.searchParams.set('w', '300');
+  url.searchParams.set('h', '300');
+  url.searchParams.set('fit', 'contain');
+  url.searchParams.set('cbg', '2b2d31');
+  return url.toString();
 }
 
 export async function runFranchiseCommand(ctx) {
@@ -40,10 +51,11 @@ export async function runFranchiseCommand(ctx) {
   }
 
   const showRank = Boolean(ctx.showRank);
+  const guildId = ctx.message.guildId ?? null;
   let page = 0;
   let franchisePage = 0;
   let selected = franchises.length === 1 ? franchises[0] : null;
-  let characters = selected ? loadFranchiseCharacters(db, selected.id) : [];
+  let characters = selected ? loadFranchiseCharacters(db, selected.id, guildId) : [];
   let cover = selected ? loadFranchiseCover(db, selected.id) : null;
   if (selected && !characters.length) {
     await ctx.message.reply('No current catalog characters found in that franchise.');
@@ -52,8 +64,8 @@ export async function runFranchiseCommand(ctx) {
 
   const render = (disabled = false) => {
     if (!selected) {
-      const pages = Math.ceil(franchises.length / PAGE_SIZE);
-      const options = franchises.slice(franchisePage * PAGE_SIZE, (franchisePage + 1) * PAGE_SIZE).map((item) => ({
+      const pages = Math.ceil(franchises.length / FRANCHISE_PAGE_SIZE);
+      const options = franchises.slice(franchisePage * FRANCHISE_PAGE_SIZE, (franchisePage + 1) * FRANCHISE_PAGE_SIZE).map((item) => ({
         label: short(item.name), value: String(item.id),
       }));
       return [container(`## Choose a franchise\n${franchises.length.toLocaleString('en-US')} matches • Page ${franchisePage + 1} of ${pages}`)
@@ -68,14 +80,17 @@ export async function runFranchiseCommand(ctx) {
     }
 
     if (!characters.length) return [container(`## ${escapeMarkdown(selected.name)}\nNo current catalog characters found in this franchise.`)];
-    const pages = Math.max(1, Math.ceil(characters.length / PAGE_SIZE));
-    const lines = characters.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((character) =>
-      showRank ? `#${character.rank} - ${escapeMarkdown(character.name_full)}` : escapeMarkdown(character.name_full));
+    const pages = Math.max(1, Math.ceil(characters.length / CHARACTER_PAGE_SIZE));
+    const lines = characters.slice(page * CHARACTER_PAGE_SIZE, (page + 1) * CHARACTER_PAGE_SIZE).map((character) => {
+      const name = `${character.married ? '💞 ' : ''}${escapeMarkdown(character.name_full)}`;
+      return showRank ? `#${character.rank} - ${name}` : name;
+    });
     const content = `## ${escapeMarkdown(selected.name)}\n${characters.length.toLocaleString('en-US')} characters • Page ${page + 1} of ${pages}\n\n${lines.join('\n')}`;
     const result = new ContainerBuilder().setAccentColor(0x5865f2);
     if (cover) result.addSectionComponents(new SectionBuilder()
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(content))
-      .setThumbnailAccessory(new ThumbnailBuilder().setURL(cover)));
+      .setThumbnailAccessory(new ThumbnailBuilder().setURL(fittedCoverUrl(cover))
+        .setDescription(`${selected.name} cover`)));
     else result.addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
     return [result.addActionRowComponents(new ActionRowBuilder().addComponents(
         button('franchise:characters:prev', 'Previous', disabled || page === 0),
@@ -102,16 +117,16 @@ export async function runFranchiseCommand(ctx) {
       if (interaction.customId === 'franchise:choose' && !selected) {
         selected = franchises.find((item) => String(item.id) === interaction.values?.[0]) ?? null;
         if (selected) {
-          characters = loadFranchiseCharacters(db, selected.id);
+          characters = loadFranchiseCharacters(db, selected.id, guildId);
           cover = loadFranchiseCover(db, selected.id);
           page = 0;
         }
       } else if (interaction.customId === 'franchise:franchise:prev' && franchisePage > 0) franchisePage--;
       else if (interaction.customId === 'franchise:franchise:next'
-        && (franchisePage + 1) * PAGE_SIZE < franchises.length) franchisePage++;
+        && (franchisePage + 1) * FRANCHISE_PAGE_SIZE < franchises.length) franchisePage++;
       else if (interaction.customId === 'franchise:characters:prev' && page > 0) page--;
       else if (interaction.customId === 'franchise:characters:next'
-        && selected && (page + 1) * PAGE_SIZE < characters.length) page++;
+        && selected && (page + 1) * CHARACTER_PAGE_SIZE < characters.length) page++;
       await sent.edit({ components: render(expired), allowedMentions: { parse: [] } });
       collector.resetTimer?.();
     } catch (error) {
