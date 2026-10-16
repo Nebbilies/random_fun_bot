@@ -22,16 +22,6 @@ function container(content) {
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
 }
 
-function fittedCoverUrl(cover) {
-  const url = new URL('https://wsrv.nl/');
-  url.searchParams.set('url', cover);
-  url.searchParams.set('w', '300');
-  url.searchParams.set('h', '300');
-  url.searchParams.set('fit', 'contain');
-  url.searchParams.set('cbg', '2b2d31');
-  return url.toString();
-}
-
 export async function runFranchiseCommand(ctx) {
   const { catalogDb: db } = ctx.yoshiko;
   const query = ctx.args.slice(1).join(' ').trim();
@@ -89,8 +79,7 @@ export async function runFranchiseCommand(ctx) {
     const result = new ContainerBuilder().setAccentColor(0x5865f2);
     if (cover) result.addSectionComponents(new SectionBuilder()
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(content))
-      .setThumbnailAccessory(new ThumbnailBuilder().setURL(fittedCoverUrl(cover))
-        .setDescription(`${selected.name} cover`)));
+      .setThumbnailAccessory(new ThumbnailBuilder().setURL(cover)));
     else result.addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
     return [result.addActionRowComponents(new ActionRowBuilder().addComponents(
         button('franchise:characters:prev', 'Previous', disabled || page === 0),

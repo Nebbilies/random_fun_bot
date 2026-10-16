@@ -44,11 +44,7 @@ test('!ima shows franchise characters by name without rank metadata', async (t) 
   const container = payload.components[0].toJSON();
   assert.equal(container.type, ComponentType.Container);
   assert.equal(container.components[0].type, ComponentType.Section);
-  const coverUrl = new URL(container.components[0].accessory.media.url);
-  assert.equal(coverUrl.hostname, 'wsrv.nl');
-  assert.equal(coverUrl.searchParams.get('url'), 'https://example.com/sao.jpg');
-  assert.equal(coverUrl.searchParams.get('fit'), 'contain');
-  assert.equal(coverUrl.searchParams.get('w'), coverUrl.searchParams.get('h'));
+  assert.equal(container.components[0].accessory.media.url, 'https://example.com/sao.jpg');
   const content = container.components[0].components[0].content;
   assert.match(content, /Kirito/);
   assert.match(content, /💞 Asuna/);
@@ -77,7 +73,7 @@ test('!imar lets the player choose between matching franchises and displays char
   };
   await collector.listeners('collect')[0](interaction);
   const section = payload.components[0].toJSON().components[0];
-  assert.equal(new URL(section.accessory.media.url).searchParams.get('url'), 'https://example.com/sao.jpg');
+  assert.equal(section.accessory.media.url, 'https://example.com/sao.jpg');
   const result = section.components[0].content;
   assert.match(result, /#1 - Kirito/);
   assert.match(result, /#2 - 💞 Asuna/);
