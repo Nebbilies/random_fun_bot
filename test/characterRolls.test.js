@@ -25,11 +25,17 @@ function reserve(db, messageId, pool = 'w', user = '101', guild = '1', now = mid
 
 test('pools, shared hourly quota, and no carryover', (t) => {
   const db = fixture(t);
-  assert.equal(reserve(db, '100', 'w').character.name_full, 'Female');
+  const first = reserve(db, '100', 'w');
+  assert.equal(first.character.name_full, 'Female');
+  assert.equal(first.remaining, 6);
   assert.equal(reserve(db, '101', 'h').character.name_full, 'Male');
   assert.equal(reserve(db, '112', 'w', '102', '1', midnight, () => 0.5).character.name_full, 'Other');
   assert.equal(reserve(db, '113', 'h', '102', '1', midnight, () => 0.99).character.name_full, 'Unknown');
-  for (let i = 2; i < 7; i++) assert.equal(reserve(db, String(100 + i)).status, 'reserved');
+  for (let i = 2; i < 7; i++) {
+    const result = reserve(db, String(100 + i));
+    assert.equal(result.status, 'reserved');
+    assert.equal(result.remaining, 6 - i);
+  }
   assert.equal(reserve(db, '107').status, 'exhausted');
   assert.equal(reserve(db, '100').status, 'duplicate');
   assert.equal(reserve(db, '108', 'h', '101', '1', midnight + 3_600_000).status, 'reserved');
