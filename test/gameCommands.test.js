@@ -20,7 +20,7 @@ test('character command shows catalog metadata and approved image', async (t) =>
   const db = fixture(t);
   db.prepare(`INSERT INTO characters
     (id, rank, favourites, name_full, name_native, name_alternatives, anime_titles, image_url, site_url)
-    VALUES (1, 1, 999, 'Satoru Gojou', '五条悟', '["Satoru Gojo"]', '["JUJUTSU KAISEN"]',
+    VALUES (1, 1234, 999, 'Satoru Gojou', '五条悟', '["Satoru Gojo"]', '["JUJUTSU KAISEN"]',
     'https://anilist.co/portrait.jpg', 'https://anilist.co/character/1')`).run();
   saveDecision(db, 1, 'approve', 'gojou_satoru');
   let reply;
@@ -42,7 +42,7 @@ test('character command shows catalog metadata and approved image', async (t) =>
   assert.match(card.components[0].content, /Satoru Gojou/);
   assert.match(card.components[1].content, /JUJUTSU KAISEN/);
   assert.match(card.components[1].content, /\*\*Other names:\*\*\n• 五条悟\n• Satoru Gojo/);
-  assert.match(card.components[1].content, /\*\*Rank:\*\* #1/);
+  assert.match(card.components[1].content, /\*\*Rank:\*\* #1,234/);
   assert.match(card.components[1].content, /\*\*Favorites:\*\* 999/);
   assert.doesNotMatch(card.components[1].content, /Gender|Birthday|Age|Description/);
   assert.equal(card.components[2].items[0].media.url, 'https://cdn.donmai.us/image.jpg');
@@ -56,6 +56,7 @@ test('ambiguous lookup pages through matches, selects a character, and returns t
     name_full: `Sora ${index + 1}`, name_native: null, name_alternatives: '[]',
     anime_titles: `["Anime ${index + 1}"]`, image_url: null, site_url: null,
   }));
+  characters[26].rank = 1234;
   const collector = new EventEmitter();
   let resets = 0;
   collector.resetTimer = () => { resets++; };
@@ -96,6 +97,7 @@ test('ambiguous lookup pages through matches, selects a character, and returns t
   assert.match(chooser().components[0].content, /Page 2 of 2/);
   assert.equal(chooser().components[1].components[0].options.length, 2);
   assert.equal(chooser().components[1].components[0].options[0].label, '#26 • Sora 26 (Anime 26)');
+  assert.equal(chooser().components[1].components[0].options[1].label, '#1,234 • Sora 27 (Anime 27)');
 
   await collect(act('char:page:prev'));
   assert.match(chooser().components[0].content, /Page 1 of 2/);

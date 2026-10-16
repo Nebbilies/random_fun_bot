@@ -1,6 +1,7 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
   escapeMarkdown, MessageFlags, TextDisplayBuilder } from 'discord.js';
 import { listMarriages } from '../lib/characterMarriage.js';
+import { formatNumber } from '../lib/formatNumber.js';
 
 const PAGE_SIZE = 20;
 const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
@@ -20,7 +21,7 @@ function pageComponents(rows, targetId, sort, page, disabled = false) {
   const start = page * PAGE_SIZE;
   const lines = rows.slice(start, start + PAGE_SIZE).map((row) => {
     const name = escapeMarkdown(short(row.name_full || `Character ${row.characterId}`));
-    return sort === 'rank' ? `#${row.rank} - ${name}` : name;
+    return sort === 'rank' ? `#${formatNumber(row.rank)} - ${name}` : name;
   });
   const container = new ContainerBuilder().setAccentColor(0x5865f2)
     .addTextDisplayComponents(

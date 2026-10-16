@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { DanbooruApi } from '../lib/danbooruApi.js';
 import { chooseTag, chooseTagByCount } from '../lib/danbooruTagMatcher.js';
 import { getMeta, openCatalog, saveDecision, transaction } from '../lib/catalogDb.js';
+import { formatNumber } from '../lib/formatNumber.js';
 
 export function removeSavedAliasSources(db, log = console.log) {
   const removed = db.prepare(`DELETE FROM tag_candidates
@@ -35,7 +36,7 @@ export function approveSearchedByCount(db, log = console.log) {
     const verdict = chooseTagByCount(character, tags);
     if (!verdict) continue;
     saveDecision(db, row.id, 'approve', verdict.tag, 'automatic');
-    log(`Character #${row.rank}: ${row.name_full} - auto approved ${verdict.tag} (saved match).`);
+    log(`Character #${formatNumber(row.rank)}: ${row.name_full} - auto approved ${verdict.tag} (saved match).`);
     approved++;
   }
   if (approved) log(`Approved ${approved} previously searched characters by post counts.`);
@@ -88,14 +89,14 @@ export async function matchTags({ db, api, limit = Infinity, log = console.log }
         .run(row.id, new Date().toISOString());
     });
     if (verdict.status === 'automatic') {
-      log(`Character #${row.rank}: ${row.name_full} - auto approved ${verdict.tag}.`);
+      log(`Character #${formatNumber(row.rank)}: ${row.name_full} - auto approved ${verdict.tag}.`);
     } else {
       const candidates = tags.slice(0, 3).map((tag) => `${tag.name} (${tag.post_count})`).join(', ') || 'none';
       const more = tags.length > 3 ? `, +${tags.length - 3} more` : '';
-      log(`Character #${row.rank}: ${row.name_full} - left for manual approval - tags: ${candidates}${more}.`);
+      log(`Character #${formatNumber(row.rank)}: ${row.name_full} - left for manual approval - tags: ${candidates}${more}.`);
     }
     processed++;
-    if (processed % 100 === 0) log(`Matched ${processed} characters this run; latest rank ${row.rank}.`);
+    if (processed % 100 === 0) log(`Matched ${processed} characters this run; latest rank ${formatNumber(row.rank)}.`);
   }
   log(`Processed ${processed} characters. Remaining: ${db.prepare(`SELECT COUNT(*) AS n FROM characters c
     LEFT JOIN tag_match_progress p ON p.character_id = c.id

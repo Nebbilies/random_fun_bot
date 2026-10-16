@@ -3,6 +3,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
   TextDisplayBuilder } from 'discord.js';
 import { divorceCharacter, getMarriage, listMarriages } from '../lib/characterMarriage.js';
 import { findCharacters } from '../lib/gameCharacterLookup.js';
+import { formatNumber } from '../lib/formatNumber.js';
 
 const PAGE_SIZE = 25;
 const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
@@ -20,7 +21,7 @@ function button(id, label, style = ButtonStyle.Secondary, disabled = false) {
 function pickerComponents(matches, page, disabled = false) {
   const pages = Math.ceil(matches.length / PAGE_SIZE);
   const options = matches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((row) => ({
-    label: `#${row.rank} • ${(row.name_full || `Character ${row.characterId}`).slice(0, 65)} • ID ${row.characterId}`.slice(0, 100),
+    label: `#${formatNumber(row.rank)} • ${(row.name_full || `Character ${row.characterId}`).slice(0, 65)} • ID ${row.characterId}`.slice(0, 100),
     value: String(row.characterId),
   }));
   const container = new ContainerBuilder().setAccentColor(0x5865f2)
@@ -44,7 +45,7 @@ function confirmationComponents(row, disabled = false) {
   const name = escapeMarkdown(row.name_full || `Character ${row.characterId}`);
   return [new ContainerBuilder().setAccentColor(0xed4245)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `## Divorce ${name}?\n#${row.rank} • AniList ID ${row.characterId} • Owner <@${row.ownerId}>`,
+      `## Divorce ${name}?\n#${formatNumber(row.rank)} • AniList ID ${row.characterId} • Owner <@${row.ownerId}>`,
     ))
     .addActionRowComponents(actionRow(
       button('divorce:confirm', 'Divorce', ButtonStyle.Danger, disabled),

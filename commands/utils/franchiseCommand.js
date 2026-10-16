@@ -3,6 +3,7 @@ import {
   MessageFlags, SectionBuilder, StringSelectMenuBuilder, TextDisplayBuilder, ThumbnailBuilder,
 } from 'discord.js';
 import { findFranchises, isFranchiseCatalogCurrent, loadFranchiseCharacters, loadFranchiseCover, loadFranchiseIndex } from '../../lib/franchiseLookup.js';
+import { formatNumber } from '../../lib/formatNumber.js';
 
 const CHARACTER_PAGE_SIZE = 15;
 const FRANCHISE_PAGE_SIZE = 25;
@@ -58,7 +59,7 @@ export async function runFranchiseCommand(ctx) {
       const options = franchises.slice(franchisePage * FRANCHISE_PAGE_SIZE, (franchisePage + 1) * FRANCHISE_PAGE_SIZE).map((item) => ({
         label: short(item.name), value: String(item.id),
       }));
-      return [container(`## Choose a franchise\n${franchises.length.toLocaleString('en-US')} matches • Page ${franchisePage + 1} of ${pages}`)
+      return [container(`## Choose a franchise\n${formatNumber(franchises.length)} matches • Page ${franchisePage + 1} of ${pages}`)
         .addActionRowComponents(new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder().setCustomId('franchise:choose')
             .setPlaceholder('Select a franchise').setDisabled(disabled).addOptions(options),
@@ -73,9 +74,9 @@ export async function runFranchiseCommand(ctx) {
     const pages = Math.max(1, Math.ceil(characters.length / CHARACTER_PAGE_SIZE));
     const lines = characters.slice(page * CHARACTER_PAGE_SIZE, (page + 1) * CHARACTER_PAGE_SIZE).map((character) => {
       const name = `${character.married ? '💞 ' : ''}${escapeMarkdown(character.name_full)}`;
-      return showRank ? `#${character.rank} - ${name}` : name;
+      return showRank ? `#${formatNumber(character.rank)} - ${name}` : name;
     });
-    const content = `## ${escapeMarkdown(selected.name)}\n${characters.length.toLocaleString('en-US')} characters • Page ${page + 1} of ${pages}\n\n${lines.join('\n')}`;
+    const content = `## ${escapeMarkdown(selected.name)}\n${formatNumber(characters.length)} characters • Page ${page + 1} of ${pages}\n\n${lines.join('\n')}`;
     const result = new ContainerBuilder().setAccentColor(0x5865f2);
     if (cover) result.addSectionComponents(new SectionBuilder()
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(content))

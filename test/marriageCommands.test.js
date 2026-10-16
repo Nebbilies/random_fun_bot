@@ -51,12 +51,13 @@ test('mm and mymarry show newest marriages first; mmr uses current rank', async 
   const db = fixture(t);
   marryCharacter(db, '1', 11, '101');
   marryCharacter(db, '1', 12, '101');
+  db.prepare('UPDATE characters SET rank = 1234 WHERE id = 12').run();
   db.prepare("UPDATE marriages SET married_at = '2026-01-01T00:00:00.000Z' WHERE character_id = 11").run();
   db.prepare("UPDATE marriages SET married_at = '2026-01-02T00:00:00.000Z' WHERE character_id = 12").run();
   /** @type {Array<[(ctx: any) => Promise<void>, string, RegExp]>} */
   const cases = [[mm, 'mm', /Twelve[\s\S]*Eleven/],
     [mymarry, 'mymarry', /Twelve[\s\S]*Eleven/],
-    [mmr, 'mmr', /#1 - Eleven[\s\S]*#2 - Twelve/]];
+    [mmr, 'mmr', /#1 - Eleven[\s\S]*#1,234 - Twelve/]];
   for (const [run, name, expected] of cases) {
     const mock = context(db, [name]);
     await run(mock.ctx);
@@ -66,10 +67,12 @@ test('mm and mymarry show newest marriages first; mmr uses current rank', async 
 
 test('owner confirms divorce; another user cannot use that confirmation', async (t) => {
   const db = fixture(t);
+  db.prepare('UPDATE characters SET rank = 1234 WHERE id = 11').run();
   marryCharacter(db, '1', 11, '101');
   const mock = context(db, ['divorce', 'Eleven']);
   await divorce(mock.ctx);
   assert.match(content(mock.payload()), /Divorce.*Eleven/i);
+  assert.match(content(mock.payload()), /#1,234/);
   const replies = [];
   const act = (userId) => ({
     customId: 'divorce:confirm', user: { id: userId }, guildId: '1',

@@ -172,8 +172,8 @@
         return;
       }
       if (mode === 'undecided') advance(row.rank - 1);
-      byId('name').textContent = `#${row.rank} ${row.name}`;
-      byId('position').textContent = `Rank ${row.rank}`;
+      byId('name').textContent = `#${row.rank.toLocaleString('en-US')} ${row.name}`;
+      byId('position').textContent = `Rank ${row.rank.toLocaleString('en-US')}`;
       byId('details').textContent = `${row.nativeName || ''}\n${row.animeTitles.join(' · ')}\n${row.favourites} AniList favourites${row.adultAnime ? ' · adult anime' : ''}${row.decision?.source === 'automatic' ? ' · automatic match audit' : ''}`;
       byId('details').style.whiteSpace = 'pre-line';
       byId('portrait').src = safeUrl(row.imageUrl);

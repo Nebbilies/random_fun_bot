@@ -25,12 +25,12 @@ function fixture(t) {
 }
 
 test('card shows anime under the name and keeps one report button', () => {
-  const card = rollCard({ name_full: 'A', anime_titles: '["A Show"]', rank: 12, favourites: 1234 }, { url: 'https://example.com/a.png' });
+  const card = rollCard({ name_full: 'A', anime_titles: '["A Show"]', rank: 1234, favourites: 1234 }, { url: 'https://example.com/a.png' });
   const content = JSON.stringify(card.components.map((component) => component.toJSON()));
   assert.match(content, /A Show/);
   assert.ok(content.indexOf('A Show') > content.indexOf('# A'));
-  assert.ok(content.indexOf('A Show') < content.indexOf('**Rank:** #12'));
-  assert.match(content, /\*\*Rank:\*\* #12/);
+  assert.ok(content.indexOf('A Show') < content.indexOf('**Rank:** #1,234'));
+  assert.match(content, /\*\*Rank:\*\* #1,234/);
   assert.match(content, /\*\*Likes:\*\* 1,234/);
   assert.match(content, /Report tag/);
   assert.doesNotMatch(content, /Other names:|Image source|Next|Previous/);

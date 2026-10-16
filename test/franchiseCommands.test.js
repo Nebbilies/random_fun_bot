@@ -84,7 +84,7 @@ test('franchise character pages show at most 15 names', async (t) => {
   const addCharacter = db.prepare('INSERT INTO characters (id, rank, favourites, name_full) VALUES (?, ?, 1, ?)');
   const addAppearance = db.prepare('INSERT INTO character_anime (character_id, anime_id) VALUES (?, 100)');
   for (let rank = 3; rank <= 16; rank++) {
-    addCharacter.run(rank, rank, `Character ${rank}`);
+    addCharacter.run(rank, rank === 16 ? 1234 : rank, `Character ${rank}`);
     addAppearance.run(rank);
   }
   const collector = new EventEmitter();
@@ -108,6 +108,6 @@ test('franchise character pages show at most 15 names', async (t) => {
   });
   content = payload.components[0].toJSON().components[0].components[0].content;
   assert.match(content, /Page 2 of 2/);
-  assert.match(content, /#16 - Character 16/);
+  assert.match(content, /#1,234 - Character 16/);
   assert.doesNotMatch(content, /#15 - Character 15/);
 });

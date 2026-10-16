@@ -5,6 +5,7 @@ import {
 } from 'discord.js';
 import { findCharacters } from '../lib/gameCharacterLookup.js';
 import { reportCharacterTag } from '../lib/catalogDb.js';
+import { formatNumber } from '../lib/formatNumber.js';
 
 const PAGE_SIZE = 25;
 const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
@@ -33,13 +34,13 @@ function chooserComponents(matches, page, disabled = false) {
   const options = matches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((character) => {
     const anime = jsonArray(character.anime_titles)[0] || 'Unknown anime';
     return {
-      label: short(`#${character.rank} • ${character.name_full} (${anime})`, 100),
+      label: short(`#${formatNumber(character.rank)} • ${character.name_full} (${anime})`, 100),
       value: String(character.id),
     };
   });
   return [new ContainerBuilder().setAccentColor(0x5865f2)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `## Choose a character\n${matches.length.toLocaleString('en-US')} matches • Page ${page + 1} of ${pages}`,
+      `## Choose a character\n${formatNumber(matches.length)} matches • Page ${page + 1} of ${pages}`,
     ))
     .addActionRowComponents(new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder().setCustomId('char:choose')
@@ -64,7 +65,7 @@ function cardComponents(character, image, position, hasMoreImages, canGoBack, di
   const details = [
     `**Anime:** ${escapeMarkdown(anime)}`,
     ...(names.length ? ['**Other names:**', ...names.map((name) => `• ${escapeMarkdown(short(name))}`)] : []),
-    `**Rank:** #${character.rank} • **Favorites:** ${character.favourites.toLocaleString('en-US')}`,
+    `**Rank:** #${formatNumber(character.rank)} • **Favorites:** ${formatNumber(character.favourites)}`,
   ];
   const container = new ContainerBuilder().setAccentColor(0x5865f2)
     .addTextDisplayComponents(

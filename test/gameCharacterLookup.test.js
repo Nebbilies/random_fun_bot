@@ -11,6 +11,7 @@ const characters = [
 
 test('lookup chooses rank, then full-name exact, alias exact, prefix, and substring', () => {
   assert.deepEqual(findCharacters(characters, '#3').map((row) => row.id), [3]);
+  assert.deepEqual(findCharacters([{ ...characters[0], rank: 1234 }], '#1,234').map((row) => row.id), [1]);
   assert.deepEqual(findCharacters(characters, ' SATORU   GOJOU ').map((row) => row.id), [1]);
   assert.deepEqual(findCharacters(characters, 'Satoru Gojo').map((row) => row.id), [1]);
   assert.deepEqual(findCharacters(characters, 'rem').map((row) => row.id), [2]);

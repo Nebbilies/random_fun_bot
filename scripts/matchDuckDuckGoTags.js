@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { DanbooruApi } from '../lib/danbooruApi.js';
 import { inspectDanbooruResult } from '../lib/danbooruSearchResult.js';
 import { getMeta, openCatalog, openCatalogReadOnly, saveDecision, transaction } from '../lib/catalogDb.js';
+import { formatNumber } from '../lib/formatNumber.js';
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
@@ -130,11 +131,11 @@ export async function matchDuckDuckGoTags({ db, api, fetchImpl = fetch, limit = 
     let match = null;
     for (const [searchIndex, query] of queries.entries()) {
       if (searchIndex) await sleep(delayMs);
-      log(`Character #${row.rank}: ${row.name_full} - searching DuckDuckGo: ${query}`);
+      log(`Character #${formatNumber(row.rank)}: ${row.name_full} - searching DuckDuckGo: ${query}`);
       let results;
       try { results = await duckDuckGoResults(fetchImpl, query); }
       catch (error) {
-        log(`Stopped at character #${row.rank}: ${error.message}`);
+        log(`Stopped at character #${formatNumber(row.rank)}: ${error.message}`);
         throw error;
       }
       searches.push({ query, results });
@@ -154,16 +155,16 @@ export async function matchDuckDuckGoTags({ db, api, fetchImpl = fetch, limit = 
     }
     const outcome = { tag: match?.tag ?? null, details: reasons.join('; ') };
     if (apply && !saveAttempt(db, row, searches, outcome, suggestions)) {
-      log(`Character #${row.rank}: ${row.name_full} - already decided; skipped.`);
+      log(`Character #${formatNumber(row.rank)}: ${row.name_full} - already decided; skipped.`);
       continue;
     }
     summary.searched++;
     if (match) {
       summary.approved++;
-      log(`Character #${row.rank}: ${row.name_full} - ${apply ? 'auto approved' : 'would auto approve'} ${match.tag} from ${match.searchIndex ? 'character-only query' : 'anime query'} result #${match.resultIndex} (${match.url}).`);
+      log(`Character #${formatNumber(row.rank)}: ${row.name_full} - ${apply ? 'auto approved' : 'would auto approve'} ${match.tag} from ${match.searchIndex ? 'character-only query' : 'anime query'} result #${match.resultIndex} (${match.url}).`);
     } else {
       summary.manual++;
-      log(`Character #${row.rank}: ${row.name_full} - left for manual review - ${outcome.details}`);
+      log(`Character #${formatNumber(row.rank)}: ${row.name_full} - left for manual review - ${outcome.details}`);
     }
   }
   log(`DuckDuckGo ${apply ? 'apply' : 'read-only sample'} complete: ${summary.approved} approvals, ${summary.manual} manual, ${summary.searched} searched.`);
