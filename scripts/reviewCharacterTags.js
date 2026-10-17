@@ -6,8 +6,10 @@ import { parseArgs } from 'node:util';
 import { DANBOORU_USER_AGENT, DanbooruApi } from '../lib/danbooruApi.js';
 import { getMeta, openCatalog, resolveCharacterTagReports, saveDecision, transaction } from '../lib/catalogDb.js';
 import { handleFranchiseReviewRequest } from './reviewFranchises.js';
+import { addGlobalRolls, resetGlobalClaims } from '../lib/characterRolls.js';
 
 const html = readFileSync(new URL('./reviewCharacterTags.html', import.meta.url));
+const gameHtml = readFileSync(new URL('./reviewGame.html', import.meta.url));
 const previewCache = new Map();
 
 function json(response, status, value) {
@@ -89,6 +91,22 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
       if (request.method === 'GET' && url.pathname === '/') {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
         response.end(html);
+      } else if (request.method === 'GET' && url.pathname === '/game') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+        response.end(gameHtml);
+      } else if (request.method === 'POST' && ['/api/game/add-rolls', '/api/game/reset-claims'].includes(url.pathname)) {
+        if (request.headers.origin !== requestOrigin)
+          return json(response, 403, { error: 'Invalid origin' });
+        if (!request.headers['content-type']?.startsWith('application/json'))
+          return json(response, 415, { error: 'JSON required' });
+        let body;
+        try { body = await readJsonBody(request); }
+        catch { return json(response, 400, { error: 'Invalid JSON body' }); }
+        if (url.pathname === '/api/game/add-rolls') {
+          if (!Number.isSafeInteger(body?.amount) || body.amount < 1)
+            return json(response, 400, { error: 'Enter a positive whole number of rolls.' });
+          json(response, 200, addGlobalRolls(db, body.amount));
+        } else json(response, 200, resetGlobalClaims(db));
       } else if (request.method === 'GET' && url.pathname === '/api/status') {
         const count = (sql) => db.prepare(sql).get().n;
         json(response, 200, {

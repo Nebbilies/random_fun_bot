@@ -2,6 +2,8 @@
 
 Marriage gives one Discord user ownership of a character within one server. A character can have a different owner in another server, and one user can marry multiple characters. Players marry rolled characters by reacting with ❤️ within 60 seconds; there is no typed marry command.
 
+The catalog review portal's **Game controls** page (`/game`) provides global controls across all servers in its database. **Add rolls to everyone** adds the entered positive whole number to current hourly balances, capped at each server's maximum. Users already full remain full. **Reset claims for everyone** immediately restores claim availability without changing marriages, roll balances, daily refills, or scheduled resets. Restart the review portal after updating to load the new page.
+
 Use the server's existing message-command prefix. With `!` as the prefix:
 
 - `!mm` or `!mymarry` lists your marriages, newest first, one character per row.
