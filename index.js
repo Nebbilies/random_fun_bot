@@ -13,6 +13,7 @@ import {getGuildPrefix} from "./lib/guildPrefix.js";
 import {loadCharacterIndex} from "./lib/gameCharacterLookup.js";
 import {createCharacterImagePicker} from "./lib/characterImages.js";
 import {onRollReaction, onRollReport, recoverRollRuntime} from "./lib/characterRollRuntime.js";
+import {onMysteryAnswer, onMysteryButton, cancelMysteryRuntime} from "./lib/mysteryRuntime.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
@@ -31,6 +32,7 @@ export const yoshiko = {
     characterIndex: loadCharacterIndex(client.catalogDb),
     imagePicker: createCharacterImagePicker(),
 };
+cancelMysteryRuntime(client.catalogDb);
 recoverRollRuntime(client.catalogDb);
 
 client.on(Events.MessageReactionAdd, (reaction, user) => {
@@ -149,6 +151,14 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
             return;
         }
 
+        if (!message.content.startsWith(prefix)) {
+            try {
+                if (await onMysteryAnswer(client.catalogDb, message)) return;
+            } catch (error) {
+                console.error('Mystery answer failed:', error);
+            }
+        }
+
         const now = Date.now();
         const userId = message.author.id;
 
@@ -222,6 +232,15 @@ for (const file of commandFiles) {
 }
 
 yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
+    if (interaction.isButton() && interaction.customId.startsWith('mystery:')) {
+        try {
+            await onMysteryButton(yoshiko.catalogDb, interaction);
+        } catch (error) {
+            console.error('Mystery button failed:', error);
+            if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: 'Mystery choice failed. Please try again later.', ephemeral: true }).catch(console.error);
+        }
+        return;
+    }
     if (interaction.isButton() && interaction.customId === 'roll:report') {
         try {
             await onRollReport(yoshiko.catalogDb, interaction);
@@ -255,21 +274,26 @@ yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
 // Construct and prepare an instance of the REST module
 const rest = new REST().setToken(config.token);
 
-// Register all commands
-(async () => {
+// Register utility commands in every server the bot serves.
+const utilityCommandBody = yoshiko.commands.map((command) => command.data.toJSON());
+async function registerUtilityCommands(guildId) {
     try {
-        console.log('Started refreshing application (/) commands.');
-
         await rest.put(
-            Routes.applicationGuildCommands(config.clientId, config.guildId),
-            { body: yoshiko.commands.map((command) => command.data.toJSON()) },
+            Routes.applicationGuildCommands(config.clientId, guildId),
+            { body: utilityCommandBody },
         );
-
-        console.log('Successfully reloaded application (/) commands.');
+        console.log(`Reloaded application (/) commands for guild ${guildId}.`);
     } catch (error) {
-        console.error(error);
+        console.error(`Could not register application (/) commands for guild ${guildId}:`, error);
     }
-})();
+}
+
+yoshiko.client.once(Events.ClientReady, async (readyClient) => {
+    await Promise.all([...readyClient.guilds.cache.keys()].map(registerUtilityCommands));
+});
+yoshiko.client.on(Events.GuildCreate, (guild) => {
+    void registerUtilityCommands(guild.id);
+});
 yoshiko.client.login(config.token).catch((err) => console.error(err));
 
 //FINISHED: DEPLOYED FIRST SLASH COMMAND, TODO: DEPLOY LOGIN SLASH COMMAND WITH OPTIONS, HANDLING WRONG TOKENS AND UIDS.

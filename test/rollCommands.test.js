@@ -20,7 +20,8 @@ function fixture(t) {
   const card = { id: '500', channel, react: async (emoji) => { reacted.push(emoji); } };
   const message = { id: '100', guildId: '1', channelId: '10', author: { id: '101' }, channel,
     reply: async (value) => { sent.push(value); return card; } };
-  const yoshiko = { catalogDb: db, imagePicker: { pick: async () => ({ url: 'https://example.com/a.png' }) } };
+  const yoshiko = { catalogDb: db, mysteryEnabled: false,
+    imagePicker: { pick: async () => ({ url: 'https://example.com/a.png' }) } };
   return { db, sent, reacted, channel, card, message, yoshiko };
 }
 

@@ -27,7 +27,7 @@ for (const version of [1, 2]) {
     db.close();
 
     db = openCatalog(path);
-    assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 5);
+    assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 6);
     assert.equal(db.prepare('SELECT name_full FROM characters WHERE id = 11').get()?.name_full, 'Eleven');
     assert.equal(marryCharacter(db, '1', 11, '101').status, 'married');
   });
