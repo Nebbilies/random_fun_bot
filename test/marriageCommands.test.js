@@ -43,12 +43,14 @@ function context(db, args, { authorId = '101', admin = false } = {}) {
 
 function content(payload) {
   return payload.components?.[0]?.toJSON().components
+    .flatMap((component) => component.components ?? [component])
     .filter((component) => typeof component.content === 'string')
     .map((component) => component.content).join('\n') ?? String(payload);
 }
 
 test('mm and mymarry show newest marriages first; mmr uses current rank', async (t) => {
   const db = fixture(t);
+  db.prepare("UPDATE characters SET image_url = 'https://example.com/top.png' WHERE id = 11").run();
   marryCharacter(db, '1', 11, '101');
   marryCharacter(db, '1', 12, '101');
   db.prepare('UPDATE characters SET rank = 1234 WHERE id = 12').run();
@@ -62,6 +64,9 @@ test('mm and mymarry show newest marriages first; mmr uses current rank', async 
     const mock = context(db, [name]);
     await run(mock.ctx);
     assert.match(content(mock.payload()), expected);
+    assert.match(content(mock.payload()), /<@101>'s harem/);
+    assert.equal(mock.payload().components[0].toJSON().components[0].accessory.media.url,
+      'https://example.com/top.png');
   }
 });
 
@@ -71,7 +76,7 @@ test('owner confirms divorce; another user cannot use that confirmation', async 
   marryCharacter(db, '1', 11, '101');
   const mock = context(db, ['divorce', 'Eleven']);
   await divorce(mock.ctx);
-  assert.match(content(mock.payload()), /Divorce.*Eleven/i);
+  assert.match(content(mock.payload()), /Divorce \*\*Eleven\*\*/i);
   assert.match(content(mock.payload()), /#1,234/);
   const replies = [];
   const act = (userId) => ({
@@ -83,7 +88,7 @@ test('owner confirms divorce; another user cannot use that confirmation', async 
   assert.equal(getMarriage(db, '1', 11)?.ownerId, '101');
   await mock.collector.listeners('collect')[0](act('101'));
   assert.equal(getMarriage(db, '1', 11), null);
-  assert.match(content(mock.payload()), /divorced/i);
+  assert.match(content(mock.payload()), /Divorced \*\*Eleven\*\*/);
 });
 
 test('administrator can target another owner by mention; non-admin cannot', async (t) => {

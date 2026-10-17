@@ -1,5 +1,5 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
-  escapeMarkdown, MessageFlags, TextDisplayBuilder } from 'discord.js';
+  escapeMarkdown, MessageFlags, SectionBuilder, ThumbnailBuilder, TextDisplayBuilder } from 'discord.js';
 import { listMarriages } from '../lib/characterMarriage.js';
 import { formatNumber } from '../lib/formatNumber.js';
 
@@ -23,12 +23,17 @@ function pageComponents(rows, targetId, sort, page, disabled = false) {
     const name = escapeMarkdown(short(row.name_full || `Character ${row.characterId}`));
     return sort === 'rank' ? `#${formatNumber(row.rank)} - ${name}` : name;
   });
-  const container = new ContainerBuilder().setAccentColor(0x5865f2)
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`## <@${targetId}>'s marriages`),
+  const displays = [
+      new TextDisplayBuilder().setContent(`## <@${targetId}>'s harem`),
       new TextDisplayBuilder().setContent(lines.length ? lines.join('\n') : 'No marriages yet.'),
       new TextDisplayBuilder().setContent(`Page ${page + 1} of ${pages}`),
-    );
+    ];
+  const top = rows.reduce((best, row) => !best || row.rank < best.rank ? row : best, null);
+  const container = new ContainerBuilder().setAccentColor(0x5865f2);
+  if (top?.image_url) {
+    container.addSectionComponents(new SectionBuilder().addTextDisplayComponents(...displays)
+      .setThumbnailAccessory(new ThumbnailBuilder().setURL(top.image_url)));
+  } else container.addTextDisplayComponents(...displays);
   if (pages > 1) {
     container.addActionRowComponents(actionRow(
       new ButtonBuilder().setCustomId('mm:prev').setLabel('Previous')

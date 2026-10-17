@@ -45,7 +45,7 @@ function confirmationComponents(row, disabled = false) {
   const name = escapeMarkdown(row.name_full || `Character ${row.characterId}`);
   return [new ContainerBuilder().setAccentColor(0xed4245)
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `## Divorce ${name}?\n#${formatNumber(row.rank)} • AniList ID ${row.characterId} • Owner <@${row.ownerId}>`,
+      `## Divorce **${name}**?\n#${formatNumber(row.rank)} • AniList ID ${row.characterId} • Owner <@${row.ownerId}>`,
     ))
     .addActionRowComponents(actionRow(
       button('divorce:confirm', 'Divorce', ButtonStyle.Danger, disabled),
@@ -141,7 +141,7 @@ export async function run(ctx) {
           guildId, selected.characterId, targetId, selected.id);
         finished = true;
         await reply.edit({ components: resultComponents(divorced
-          ? `Divorced ${escapeMarkdown(selected.name_full)}.`
+          ? `Divorced **${escapeMarkdown(selected.name_full)}**.`
           : 'Marriage or permission changed. Nothing was divorced.') });
         collector.stop();
       }

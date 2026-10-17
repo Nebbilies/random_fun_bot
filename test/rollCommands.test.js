@@ -91,7 +91,7 @@ test('roll publishes before reacting; heart claims immediately and report stays 
   const reaction = { emoji: { name: '❤️' }, message: { id: '500', guildId: '1', channelId: '10', channel: x.channel } };
   await onRollReaction(x.yoshiko, reaction, { id: '102', bot: false });
   assert.equal(x.db.prepare("SELECT owner_id FROM marriages WHERE character_id = 1").get()?.owner_id, '102');
-  assert.equal(x.sent.at(-1).content, '<@102> has married A <@999> 🎉');
+  assert.equal(x.sent.at(-1).content, '<@102> has married **A <@999>** 🎉');
   assert.deepEqual(x.sent.at(-1).allowedMentions.users, ['102']);
   const replies = [];
   const interaction = { isButton: () => true, customId: 'roll:report', guildId: '1', channelId: '10',
