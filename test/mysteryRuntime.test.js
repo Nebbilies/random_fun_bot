@@ -65,6 +65,9 @@ function fixture(t, eventDraw = 0) {
   t.after(() => { cancelMysteryRuntime(db); db.close(); rmSync(dir, { recursive: true, force: true }); });
   db.exec(`INSERT INTO characters (id, rank, favourites, name_full, gender, anime_titles)
     VALUES (1, 1, 1000, 'Hidden Prize', 'Female', '["Example Anime"]')`);
+  db.exec(`INSERT INTO anime (id, title_english, genres, tags, season_year, format, is_adult, fetched_at)
+    VALUES (10, 'Example Anime', '["Adventure"]', '[{"name":"Space","rank":90}]', 2020, 'TV', 0, 'now');
+    INSERT INTO character_anime (character_id, anime_id) VALUES (1, 10)`);
   const origin = channel('10');
   const event = channel('20');
   setMysteryEventChannel(db, '1', '20');
@@ -160,6 +163,45 @@ test('Door timeout reveals once, unclaimable, and a late choice is stale', async
   assert.match(late.acknowledgements.at(-1), /expired/);
   await time.advanceTo(100000);
   assert.equal(event.sent.length, 2);
+});
+
+test('queued clue timers and simultaneous guesses cannot cancel the winner countdown', async (t) => {
+  const { db, event, reservation, time, start } = fixture(t, 0.9);
+  assert.equal(reservation.eventId, 'clue_reveal');
+  const intro = await start();
+  await time.advanceTo(23900);
+  let releaseEdit = () => {};
+  let editStarted = () => {};
+  const editing = new Promise((resolve) => { editStarted = () => resolve(undefined); });
+  const blocked = new Promise((resolve) => { releaseEdit = () => resolve(undefined); });
+  const edit = intro.edit.bind(intro);
+  intro.edit = async (change) => {
+    if (change.content?.includes('**5**')) {
+      editStarted();
+      await blocked;
+    }
+    return edit(change);
+  };
+  const answer = onMysteryAnswer(db, { guildId: '1', channelId: '20',
+    author: { id: '102' }, content: 'Example Anime' });
+  const secondAnswer = onMysteryAnswer(db, { guildId: '1', channelId: '20',
+    author: { id: '103' }, content: 'Example Anime' });
+  await editing;
+  // The old clue timer fires while Discord is still processing the winner edit.
+  const oldTimer = time.advanceTo(24100);
+  releaseEdit();
+  await Promise.all([answer, secondAnswer, oldTimer]);
+  await time.advanceTo(28900);
+  assert.equal(getMysterySession(db, reservation.sessionId).state, 'claim_open');
+  assert.equal(event.sent.length, 2);
+  assert.deepEqual(event.sent[1].reactions, ['❤️']);
+  await time.advanceTo(88900);
+  assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'expired');
+  assert.equal(time.pending(), 0);
+  const next = reserveMysteryAwareRoll(db, { guildId: '1', channelId: '10',
+    commandMessageId: '101', userId: '101', pool: 'w', now: time.now(),
+    mysteryEnabled: false, random: () => 0.5 });
+  assert.equal(next.status, 'reserved');
 });
 
 test('Treasure Hunt accepts an event-channel answer and a restart leaves old message untouched', async (t) => {
