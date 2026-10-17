@@ -4,10 +4,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openCatalog } from '../lib/catalogDb.js';
-import { claimRoll, getMysterySession } from '../lib/characterRolls.js';
-import { reserveMysteryAwareRoll, setMysteryEventChannel } from '../lib/mysteryCoordinator.js';
+import { claimRoll, getClaimStatus, getMysterySession } from '../lib/characterRolls.js';
+import { MYSTERY_ROSTER, reserveMysteryAwareRoll, setMysteryEventChannel } from '../lib/mysteryCoordinator.js';
 import { onRollReaction } from '../lib/characterRollRuntime.js';
-import { getTreasurePuzzle } from '../lib/mysteryEvents/treasurePuzzles.js';
 import { cancelMysteryRuntime, onMysteryAnswer, onMysteryButton,
   startMysteryRoll } from '../lib/mysteryRuntime.js';
 
@@ -134,11 +133,16 @@ test('Door winner gets three new countdown messages and a 60-second exclusive cl
   const choice = doorInteraction(event.sent[1], '1');
   assert.equal(await onMysteryButton(db, choice), true);
   assert.equal(getMysterySession(db, reservation.sessionId).state, 'countdown');
-  assert.match(event.sent.at(-1).payload.content, /\*\*3\*\*/);
+  assert.equal(event.sent.at(-1).payload.content, '<@101> won! Revealing in **3...**');
+  assert.deepEqual(event.sent.at(-1).payload.allowedMentions.users, ['101']);
   await time.advanceTo(8100);
   for (const number of [3, 2, 1]) {
-    assert(event.sent.some((item) => item.payload.content?.includes(`**${number}**`)));
+    assert(event.sent.some((item) => item.payload.content?.includes(`**${number}...**`)));
   }
+  assert.equal(event.sent[3].payload.content, '**2...**');
+  assert.equal(event.sent[4].payload.content, '**1...**');
+  assert.equal(event.sent.filter((item) => item.payload.content?.includes('mystery character appears')).length, 1);
+  assert.equal(event.sent.filter((item) => item.payload.content?.includes('<@101>')).length, 1);
   assert.equal(event.sent.length, 5);
   await time.advanceTo(9100);
   assert.equal(event.sent.length, 7);
@@ -181,6 +185,39 @@ test('Door timeout reveals once, unclaimable, and a late choice is stale', async
   assert.equal(event.sent.length, 4);
 });
 
+test('only the winner can decline a revealed prize, releasing rolls without spending a claim', async (t) => {
+  assert.equal(MYSTERY_ROSTER.some((entry) => entry.id === 'treasure_hunt'), false);
+  const { db, event, reservation, time, start } = fixture(t);
+  await start();
+  await time.advanceTo(6100);
+  await onMysteryButton(db, doorInteraction(event.sent[1], '1'));
+  await time.advanceTo(9100);
+  const prize = event.sent[6];
+  assert.equal(prize.payload.components[0].components[0].data.label, 'i dont wanna');
+  const decline = (userId) => ({ ...doorInteraction(prize, '1', userId),
+    customId: `mystery:${reservation.sessionId}:decline` });
+  const denied = decline('102');
+  await onMysteryButton(db, denied);
+  assert.match(denied.acknowledgements.at(-1), /Only the winner/);
+  assert.equal(getMysterySession(db, reservation.sessionId).state, 'claim_open');
+  const accepted = decline('101');
+  await onMysteryButton(db, accepted);
+  assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'declined');
+  assert.equal(time.pending(), 0);
+  assert.deepEqual(prize.edits.at(-1).components, []);
+  assert.match(prize.embeds[0].data.footer.text, /Declined/);
+  assert.equal(getClaimStatus(db, '1', '101', time.now()).canClaim, true);
+  assert.notEqual(claimRoll(db, { guildId: '1', channelId: '20', messageId: prize.id,
+    userId: '101', now: time.now() }).status, 'married');
+  const late = decline('101');
+  await onMysteryButton(db, late);
+  assert.match(late.acknowledgements.at(-1), /no longer available/);
+  const next = reserveMysteryAwareRoll(db, { guildId: '1', channelId: '10',
+    commandMessageId: '101', userId: '101', pool: 'w', now: time.now(),
+    mysteryEnabled: false, random: () => 0.5 });
+  assert.equal(next.status, 'reserved');
+});
+
 test('queued clue timers and simultaneous guesses cannot cancel the winner countdown', async (t) => {
   const { db, event, reservation, time, start } = fixture(t, 0.9);
   assert.equal(reservation.eventId, 'clue_reveal');
@@ -192,7 +229,7 @@ test('queued clue timers and simultaneous guesses cannot cancel the winner count
   const blocked = new Promise((resolve) => { releaseEdit = () => resolve(undefined); });
   const send = event.send.bind(event);
   event.send = async (change) => {
-    if (change.content?.includes('**3**')) {
+    if (change.content?.includes('**3...**')) {
       editStarted();
       await blocked;
     }
@@ -221,17 +258,17 @@ test('queued clue timers and simultaneous guesses cannot cancel the winner count
   assert.equal(next.status, 'reserved');
 });
 
-test('Treasure Hunt accepts an event-channel answer and a restart leaves old message untouched', async (t) => {
+test('Clue Reveal accepts an event-channel answer and a restart leaves old message untouched', async (t) => {
   const { db, event, reservation, time, start } = fixture(t, 0.5);
-  assert.equal(reservation.eventId, 'treasure_hunt');
+  assert.equal(reservation.eventId, 'clue_reveal');
   const intro = await start();
   await time.advanceTo(6100);
   const session = getMysterySession(db, reservation.sessionId);
-  const puzzle = getTreasurePuzzle(JSON.parse(session.stateJson).puzzleId);
+  const answer = JSON.parse(session.stateJson).title;
   assert.equal(await onMysteryAnswer(db, { guildId: '1', channelId: '10',
-    author: { id: '102' }, content: puzzle.answer }), false);
+    author: { id: '102' }, content: answer }), false);
   assert.equal(await onMysteryAnswer(db, { guildId: '1', channelId: '20',
-    author: { id: '102' }, content: puzzle.answer }), true);
+    author: { id: '102' }, content: answer }), true);
   assert.equal(getMysterySession(db, reservation.sessionId).winnerId, '102');
   const editsBeforeRestart = intro.edits.length;
   assert.equal(cancelMysteryRuntime(db), 1);

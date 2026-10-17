@@ -141,6 +141,7 @@ jspm_packages/
 .pnp.*
 
 # config files
+/data/landmine-config.json
 data/bot.sqlite*
 /service-account.json
 *.sqlite*

@@ -4,6 +4,8 @@ Marriage gives one Discord user ownership of a character within one server. A ch
 
 The catalog review portal's **Game controls** page (`/game`) provides global controls across all servers in its database. **Add rolls to everyone** adds the entered positive whole number to current hourly balances, capped at each server's maximum. Users already full remain full. **Reset claims for everyone** immediately restores claim availability without changing marriages, roll balances, daily refills, or scheduled resets. Restart the review portal after updating to load the new page.
 
+Mystery events select Doors or Clue Reveal; Treasure Hunt is no longer in the roster. The mystery heading appears only on the introduction. Event updates use new messages. The winner is mentioned once at the start of the three-second reveal countdown, followed by `2...` and `1...`. The revealed prize has a winner-only **i dont wanna** button that immediately ends the event without spending a claim. Declined prizes cannot be claimed.
+
 Use the server's existing message-command prefix. With `!` as the prefix:
 
 - `!mm` or `!mymarry` lists your marriages, newest first, one character per row.
