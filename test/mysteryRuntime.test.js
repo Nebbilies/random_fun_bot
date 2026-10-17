@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { openCatalog } from '../lib/catalogDb.js';
 import { claimRoll, getMysterySession } from '../lib/characterRolls.js';
 import { reserveMysteryAwareRoll, setMysteryEventChannel } from '../lib/mysteryCoordinator.js';
+import { onRollReaction } from '../lib/characterRollRuntime.js';
 import { getTreasurePuzzle } from '../lib/mysteryEvents/treasurePuzzles.js';
 import { cancelMysteryRuntime, onMysteryAnswer, onMysteryButton,
   startMysteryRoll } from '../lib/mysteryRuntime.js';
@@ -129,10 +130,20 @@ test('Door winner gets five countdown numbers and a 60-second exclusive claim', 
   assert.equal(getMysterySession(db, reservation.sessionId).state, 'claim_open');
   assert.equal(claimRoll(db, { guildId: '1', channelId: '20', messageId: prize.id,
     userId: '102', now: 11101 }).status, 'protected');
-  assert.equal(claimRoll(db, { guildId: '1', channelId: '20', messageId: prize.id,
-    userId: '101', now: 11102 }).status, 'married');
+  prize.guildId = '1';
+  prize.channel = event;
+  const originalNow = Date.now;
+  Date.now = () => 11102;
+  try {
+    await onRollReaction({ catalogDb: db }, { emoji: { name: '❤️' }, message: prize },
+      { id: '101', bot: false });
+  } finally {
+    Date.now = originalNow;
+  }
+  assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'claimed');
+  assert.equal(prize.embeds[0].data.footer.text, 'Claimed');
   await time.advanceTo(71100);
-  assert.equal(event.sent.length, 2);
+  assert.equal(event.sent.length, 3);
   assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'claimed');
 });
 
