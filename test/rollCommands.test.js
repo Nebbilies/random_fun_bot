@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { openCatalog } from '../lib/catalogDb.js';
 import { getRoll, getRollStatus, reserveRoll, failRoll } from '../lib/characterRolls.js';
 import { onRollReaction, onRollReport, rollCard, runRoll } from '../lib/characterRollRuntime.js';
@@ -81,9 +82,57 @@ test('card shows anime under the name and keeps one report button', () => {
   assert.match(JSON.stringify(unknown.components.map((component) => component.toJSON())), /1 roll left/);
 });
 
+test('shared 1% prank chance runs before character selection in either pool', async (t) => {
+  for (const [draw, prank, title, pool] of [
+    [0, 'dog_clap', 'ur roll gone', 'w'],
+    [0.004999, 'dog_clap', 'ur roll gone', 'h'],
+    [0.005, 'john_pork', 'john ate ur roll', 'w'],
+    [0.009999, 'john_pork', 'john ate ur roll', 'h'],
+  ]) {
+    const x = fixture(t);
+    x.db.exec('DELETE FROM characters');
+    let draws = 0;
+    x.yoshiko.imagePicker.pick = async () => { throw new Error('Must not look up an image'); };
+    const random = () => { assert.equal(++draws, 1); return Number(draw); };
+    await runRoll({ message: x.message, yoshiko: x.yoshiko }, pool, random);
+    const payload = x.sent[0];
+    const components = payload.components[0].toJSON().components;
+    assert.equal(components[0].content, `# ${title}`);
+    assert.equal(components[1].content, '- ');
+    assert.equal(components[2].content, '**Rank:** ?\n**Likes:** ?');
+    assert.equal(components[3].items[0].media.url, `attachment://${prank}.gif`);
+    assert.ok(existsSync(payload.files[0].attachment));
+    assert.equal(payload.files[0].name, `${prank}.gif`);
+    assert.doesNotMatch(JSON.stringify(components), /Report tag|custom_id/);
+    assert.deepEqual(x.reacted, []);
+    assert.equal(getRollStatus(x.db, '1', '101').remaining, 6);
+    assert.equal(x.db.prepare('SELECT COUNT(*) AS n FROM mystery_sessions').get()?.n, 0);
+    assert.equal(x.db.prepare("SELECT COUNT(*) AS n FROM character_rolls WHERE state IN ('pending','open')").get()?.n, 0);
+    await runRoll({ message: x.message, yoshiko: x.yoshiko }, pool, () => { throw new Error('Duplicate rerolled'); });
+    assert.equal(x.sent.length, 1);
+    assert.equal(getRollStatus(x.db, '1', '101').remaining, 6);
+  }
+});
+
+test('1% boundary proceeds to character selection; exhausted rolls skip the prank check', async (t) => {
+  const x = fixture(t);
+  const draws = [0.01, 0];
+  await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w', () => {
+    const draw = draws.shift();
+    assert.notEqual(draw, undefined);
+    return draw ?? 0;
+  });
+  assert.equal(draws.length, 0);
+  assert.match(JSON.stringify(x.sent[0].components[0].toJSON()), /Report tag/);
+  x.message.id = '101';
+  x.db.exec('UPDATE roll_allowances SET used = 7');
+  await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w', () => { throw new Error('Exhausted roll drew'); });
+  assert.match(x.sent.at(-1), /No rolls left/);
+});
+
 test('roll publishes before reacting; heart claims immediately and report stays usable', async (t) => {
   const x = fixture(t);
-  await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w');
+  await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w', () => 0.5);
   assert.match(JSON.stringify(x.sent[0].components.map((component) => component.toJSON())), /A Show/);
   assert.match(JSON.stringify(x.sent[0].components.map((component) => component.toJSON())), /6 rolls left/);
   assert.deepEqual(x.reacted, ['❤️']);
@@ -105,7 +154,7 @@ test('failed heart closes card but consumes roll', async (t) => {
   x.card.react = async () => { throw new Error('Missing permissions'); };
   const previous = console.error;
   console.error = () => {};
-  try { await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w'); }
+  try { await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w', () => 0.5); }
   finally { console.error = previous; }
   assert.equal(getRoll(x.db, '1', '10', '500').state, 'failed');
   assert.equal(x.db.prepare("SELECT used FROM roll_allowances WHERE guild_id = '1' AND user_id = '101'").get()?.used, 1);
