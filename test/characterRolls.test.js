@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openCatalog } from '../lib/catalogDb.js';
-import { claimRoll, failRoll, getClaimStatus, getRoll, getRollStatus, markClaimNotice, nextClaimReset, publishRoll, recoverRolls, reserveRoll } from '../lib/characterRolls.js';
+import { claimDailyRolls, claimRoll, failRoll, getClaimStatus, getRoll, getRollStatus, markClaimNotice, nextClaimReset, publishRoll, recoverRolls, reserveRoll } from '../lib/characterRolls.js';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'character-rolls-'));
@@ -19,6 +19,41 @@ function fixture(t) {
 }
 
 const midnight = Date.parse('2026-10-15T17:00:00Z');
+
+test('daily refill is scoped to user and guild, does not stack, and preserves claim usage', (t) => {
+  const db = fixture(t);
+  const now = midnight + 30 * 60_000;
+  db.prepare('INSERT INTO claim_allowances (guild_id,user_id,period) VALUES (?,?,?)')
+    .run('1', '101', Math.floor((now + 7 * 3_600_000) / (3 * 3_600_000)));
+  assert.equal(claimDailyRolls(db, '1', '101', now).status, 'refilled');
+  assert.equal(getRollStatus(db, '1', '101', now).remaining, 7);
+  assert.equal(getClaimStatus(db, '1', '101', now).canClaim, false);
+  assert.equal(claimDailyRolls(db, '1', '102', now).status, 'refilled');
+  assert.equal(claimDailyRolls(db, '2', '101', now).status, 'refilled');
+  assert.equal(claimDailyRolls(db, '1', '101', now).status, 'claimed');
+  assert.equal(claimDailyRolls(db, '1', '101', now).resetAt, midnight + 24 * 3_600_000);
+  assert.throws(() => claimDailyRolls(db, '', '101', now), /Invalid daily/);
+  assert.throws(() => claimDailyRolls(db, '1', '101', NaN), /Invalid daily/);
+});
+
+test('daily refill persists after reopening an existing catalog', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'daily-rolls-'));
+  const path = join(dir, 'catalog.sqlite');
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  let db = openCatalog(path);
+  try {
+    // Simulate a version 6 catalog created before daily refills existed.
+    db.exec('DROP TABLE daily_roll_claims');
+    db.close();
+    db = openCatalog(path);
+    assert.equal(claimDailyRolls(db, '1', '101', midnight).status, 'refilled');
+    db.close();
+    db = openCatalog(path);
+    assert.equal(claimDailyRolls(db, '1', '101', midnight + 3_600_000).status, 'claimed');
+  } finally {
+    db.close();
+  }
+});
 function reserve(db, messageId, pool = 'w', user = '101', guild = '1', now = midnight, random = () => 0) {
   return reserveRoll(db, { guildId: guild, channelId: '10', commandMessageId: messageId,
     userId: user, pool, now, random });

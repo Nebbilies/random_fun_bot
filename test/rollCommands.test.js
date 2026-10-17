@@ -4,10 +4,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openCatalog } from '../lib/catalogDb.js';
-import { getRoll } from '../lib/characterRolls.js';
+import { getRoll, getRollStatus, reserveRoll, failRoll } from '../lib/characterRolls.js';
 import { onRollReaction, onRollReport, rollCard, runRoll } from '../lib/characterRollRuntime.js';
 import { run as mu } from '../commands/mu.js';
 import { run as ru } from '../commands/ru.js';
+import { run as daily } from '../commands/daily.js';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'roll-command-'));
@@ -24,6 +25,44 @@ function fixture(t) {
     imagePicker: { pick: async () => ({ url: 'https://example.com/a.png' }) } };
   return { db, sent, reacted, channel, card, message, yoshiko };
 }
+
+test('daily refills exhausted rolls, denies repeats across hours, and renews at Vietnam midnight', async (t) => {
+  const x = fixture(t);
+  let now = Date.parse('2026-10-17T16:30:00Z');
+  const originalNow = Date.now;
+  Date.now = () => now;
+  try {
+    const ctx = { message: x.message, yoshiko: x.yoshiko };
+    x.db.prepare('INSERT INTO roll_allowances (guild_id,user_id,period,used) VALUES (?,?,?,7)')
+      .run('1', '101', Math.floor(now / 3_600_000));
+    await daily(ctx);
+    assert.equal(x.sent.at(-1), 'Daily claimed! Your rolls are refilled to 7 for this hour.');
+    for (let i = 0; i < 7; i++) {
+      const result = reserveRoll(x.db, { guildId: '1', userId: '101', channelId: '10',
+        commandMessageId: String(1000 + i), pool: 'w', now });
+      assert.equal(result.status, 'reserved');
+      assert.equal(result.remaining, 6 - i);
+      failRoll(x.db, result.rollId);
+    }
+    await daily(ctx);
+    assert.match(x.sent.at(-1), /already claimed.*00:00 UTC\+7/);
+    assert.equal(getRollStatus(x.db, '1', '101', now).remaining, 0);
+    now = Date.parse('2026-10-17T16:59:59.999Z');
+    await daily(ctx);
+    assert.match(x.sent.at(-1), /already claimed/);
+    now++;
+    await daily(ctx);
+    assert.equal(x.sent.at(-1), 'Daily claimed! Your rolls are refilled to 7 for this hour.');
+    now += 3_600_000;
+    x.db.prepare('UPDATE roll_allowances SET period = ?, used = 3 WHERE guild_id = ? AND user_id = ?')
+      .run(Math.floor(now / 3_600_000), '1', '101');
+    await daily(ctx);
+    assert.match(x.sent.at(-1), /already claimed/);
+    assert.equal(getRollStatus(x.db, '1', '101', now).remaining, 4);
+  } finally {
+    Date.now = originalNow;
+  }
+});
 
 test('card shows anime under the name and keeps one report button', () => {
   const card = rollCard({ name_full: 'A', anime_titles: '["A Show"]', rank: 1234, favourites: 1234 }, { url: 'https://example.com/a.png' }, 6);
