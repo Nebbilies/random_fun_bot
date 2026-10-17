@@ -1,0 +1,85 @@
+# Mystery roll implementation plan
+
+Status: Phase 3 plan approved by author review. The user approved the Phase 2 design and chose Doors, Treasure Hunt, and Clue Reveal for the first release. Meteor Shower stays in a later release. The user requested separate implementation commits by phase. Do not stage unrelated worktree changes.
+
+## Scope and release gate
+
+Build the shared mystery path for `!w` and `!h`, with Doors, Treasure Hunt, and Clue Reveal behind one-prize event modules. Enable all three at equal initial weights; the code-owned roster can rebalance them later. Time Capsule and Passing Parcel stay out of scope. Meteor Shower has agreed rules but requires separate multi-card work in a later release.
+
+Keep the existing prefix commands. Add only the Administrator slash setting for the event channel. Preserve seven rolls per hour and one claim per three-hour period. A mystery spends one roll, regardless of event type or Meteor's card count.
+
+Use a shared event introduction before every launch event. Post `# ❓ A mystery character appears!` above an embed with the local `assets/mystery_roll.png`, the literal name `??????`, rank `???`, likes `????`, and anime `-`. Do not expose the selected character or add a claim reaction. Five seconds after the introduction posts, edit or follow it with the event prompt in the same channel; keep a stable link from the original roll message to the introduction. On a winner, retain the separate agreed five-second countdown before the real character reveal.
+
+Initial timing defaults: Doors accepts one choice for 30 seconds after its prompt; Treasure Hunt uses three clues at 0, 40, and 80 seconds with a 120-second deadline; Clue Reveal uses five clues at 0, 18, 36, 54, and 72 seconds with a 90-second deadline. Cap any event prompt at three minutes. Apply a three-second shared cooldown to typed guesses per player and session. Each value lives with its responsible module or shared coordinator so later tuning is local.
+
+## 1. Storage and migration
+
+Files: `lib/catalogDb.js`, `test/characterRolls.test.js` (migration coverage), new focused mystery storage tests.
+
+1. Upgrade SQLite `user_version` from 5 to 6 inside a transaction. Preserve all catalog, marriage, allowance, and existing roll rows. Raise the supported-version cap in both `openCatalog()` and `openCatalogReadOnly()`. An existing v5 table will not gain columns from `CREATE TABLE IF NOT EXISTS`; add explicit `ALTER TABLE` statements for new roll-card fields.
+2. Add `guild_mystery_settings(guild_id, event_channel_id)` or an equivalent one-row-per-guild table. An absent row means the invoking roll channel.
+3. Add `mystery_sessions` with stable ID, guild, origin roll ID, event ID, selected character ID, rank snapshot, roller ID, event channel, event message ID, state, start/deadline timestamps, winner ID, and resolution timing/outcome. Use a partial unique index on guild ID for active states. Keep terminal rows as outcome history even after claim cards are cleaned up; never reuse an event ID for a different event.
+4. Extend `character_rolls` with nullable `mystery_session_id` and `exclusive_user_id`. Its existing `command_message_id` remains unique for the original card. The selected character's pending roll row is the session reservation; on winner reveal it becomes the ordinary claim card with an exclusive user. Closing or canceling the session closes any remaining mystery cards. Public normal cards keep null fields and existing recovery behavior.
+5. Add `treasure_puzzle_wins(guild_id, puzzle_id, won_at)` with a composite unique key. Mark a puzzle used only in the same transaction that accepts the first correct answer. Unsolved and restart-canceled puzzles stay selectable.
+6. Migration tests reopen a v5 fixture containing marriages, allowances, prefixes, and an open normal card; assert all survive and normal recovery still works. Test the read-only version check and a fresh v6 database.
+
+## 2. Pure rules and event contract
+
+Files: new `lib/mysteryOdds.js`, `lib/mysteryRoster.js`, `lib/mysteryEvents/doors.js`, `lib/mysteryEvents/treasureHunt.js`, `lib/mysteryEvents/clueReveal.js`, and puzzle content module/data under `lib/mysteryEvents/`. Tests in corresponding `test/mystery*.test.js` files.
+
+1. Put the eight agreed rank/chance anchors in one validated table. Return 100% through rank 20; interpolate linearly in log probability between anchors. If a future catalog exceeds rank 15,000, continue the final segment's declining log slope. Test exact anchors, monotonicity, boundaries, extrapolation, and invalid tables.
+2. Define a small synchronous event interface: `start(context)` returns state, view, next timer, and deadline or `unavailable`; `advance(state, input, context)` returns state, optional view/next timer, and optional `winner(userId)` or `noWinner`. The coordinator supplies time and random draws. Event modules neither send Discord messages nor change rolls, claims, or marriages. Reject deadlines beyond the shared maximum.
+3. Keep a code-owned enabled/weight roster of stable event IDs. Validate IDs and positive weights at startup. Filter unavailable events before the weighted draw, then renormalize. If none is available after the rank gate succeeds, decline the roll before quota debit, as the approved design specifies. A disabled module may remain importable for historical IDs; old rows do not require its implementation to load.
+4. Doors: pick one winning door uniformly from three. Only the roller may select once before its deadline. A wrong choice or timeout loses the prize. Its choice uses a button with a session-scoped custom ID.
+5. Treasure Hunt: use checked templates that generate at least 10,000 distinct, deterministic puzzle instances, each with a stable ID. Stage clues to one answer; the first correct typed answer in the event channel wins. Apply shared answer cooldown. A completed puzzle is excluded only in that guild. Validate each puzzle's answer and clue schedule before it enters selection.
+6. Clue Reveal: choose a linked anime that actually lists the selected character, preferring TV then popularity with a deterministic ID tie-break. Require complete, reliable format, year/season, genres, tags, and a safe title hint. If unavailable, decline this module before weighted selection. Stage five clues over 90 seconds. Give each player one guess per stage; a wrong guess locks that player until the next clue. Normalize Romaji, English, native, and synonym answers; allow conservative typos only if a guess cannot plausibly name another anime. Check that no clue states an accepted title. On timeout, reveal the answer anime and character without a claim.
+
+## 3. Atomic roll and claim path
+
+Files: `lib/characterRolls.js`, new `lib/mysteryCoordinator.js` (or `lib/mysteryRolls.js` for database transitions), `lib/characterRollRuntime.js`; update `test/characterRolls.test.js`, `test/rollCommands.test.js`, add coordinator tests.
+
+1. In the existing `BEGIN IMMEDIATE` reservation transaction, check the guild's active mystery session before quota or selection; return a paused result without spending a roll. Keep idempotence by original command message ID. Exclude characters with a live public card (`state='open'` and `expires_at > now`), a pending delivery card, or an active mystery reservation. State alone cannot identify a live card because expired ordinary cards remain `open` until cleanup. Count and offset must use the identical eligibility predicate to retain uniform selection.
+2. Select the character first, then draw against the odds for its rank snapshot. For mystery, verify event availability and create the selected character's pending card and one active session in the same transaction as the roll debit. The unique active-guild index is the final concurrency guard. For a normal result, use the existing card publication path. An empty pool or no available mystery module spends no roll.
+3. Keep Discord sends outside SQLite transactions. On event delivery failure, close the session and pending card but leave the spent roll charged, matching the existing failed-delivery rule. The roll command replies with the event message link after successful send. Configure the pending card's channel for the eventual event-channel reveal, not the original command channel.
+4. Make the existing `claimRoll()` transaction enforce optional `exclusive_user_id` and linked session state alongside card state, 60-second expiry, current catalog membership, marriage ownership, and claim allowance. A nonwinner reaction on an exclusive card returns a harmless denied status. Successful marriage closes all open same-character cards and resolves its session atomically. No event module gets its own marriage code. An eligible winner gets a protected card only after the five-second countdown; if their claim is unavailable at reveal, show the character unclaimable immediately. A lost or expired protected card never becomes public.
+5. Use one terminal transition to close a session, release its reservation, and save result/timing. Keep the guild paused through countdown and the full protected claim period; resume once that window ends or a successful claim resolves it. Timer transitions use absolute timestamps and reject a late callback or duplicate input. Per-guild coordinator state must serialize asynchronous Discord edits against timer callbacks, while the SQLite transaction remains the authority for claim and roll races.
+6. On boot, cancel all unfinished mystery sessions and their pending/open mystery cards before calling ordinary `recoverRolls()`. Leave Discord messages unchanged and keep roll debits. Ignore stale controls/reactions. Ordinary non-mystery open cards retain their existing recovery semantics.
+
+## 4. Discord wiring and server setting
+
+Files: `index.js`, `lib/characterRollRuntime.js`, new `lib/mysteryRuntime.js`, new `commands/utility/mystery-event-channel.js`, `assets/mystery_roll.png`, with focused runtime/command tests.
+
+1. Keep `commands/w.js` and `commands/h.js` as thin prefix wrappers. Have `runRoll()` delegate the reservation decision to the coordinator, render the ordinary card or start the selected mystery event, and return the event link to the original roll channel. Render the shared introduction as message content plus an embed so its header sits above the card and its image can use a local Discord attachment. Use Components V2 for event controls where they improve play; escape user-facing names and restrict allowed mentions.
+2. Route session-scoped buttons and menus through one mystery interaction handler before the existing utility slash dispatch. Validate guild, channel, session ID, current state, actor, and deadline. Keep the existing report button route and ordinary heart reaction route. The latter calls the extended `claimRoll()` so protected cards share the same claim logic.
+3. In `MessageCreate`, leave game prefix commands first so `!w`/`!h` get the paused response. Then route typed answers only from the active event channel before landmine/other message side effects. The shared per-user answer cooldown is applied before event-specific guess rules.
+4. Add an Administrator-only slash command to set or clear the event channel. Check permission at execution time, validate a usable guild text channel, and store it per guild. Keep the character game commands as prefix commands. Extend slash registration so this setting reaches each served guild instead of only `config.guildId`; preserve registration of existing utility commands when doing so.
+5. Render the common five-second countdown, reveal, 60-second protected claim, and no-winner reveal once in the shared runtime. Ensure a slow edit does not silently extend an absolute deadline. If a winner cannot claim, reveal immediately after the countdown without a claim reaction.
+
+## 5. Focused verification before enabling the roster
+
+1. Unit and storage tests: odds anchors/monotonicity; roster validation and weighted draw with unavailable entries; event contracts; puzzle instance uniqueness and guild-only retirement; Clue Reveal source selection, title normalization, typo ambiguity, and insufficient metadata; Doors actor/one-choice limits.
+2. Roll/claim tests: simultaneous roll attempts, active-guild pause without quota debit, uniform eligible selection with live-card exclusion, expiry boundary, claim race and winner-only rule, winner without claim, no public fallback, one spent roll, delivery failure, and event history. Replace the existing test expectation that duplicate live cards can coexist.
+3. Runtime tests with mocked Discord sends/edits: configured channel and original-channel link, command priority over typed answers, cross-channel and stale input rejection, answer cooldown, countdown/reveal timing, absolute deadlines under delayed callbacks, ordinary recovery versus mystery cancellation, and the unchanged old Discord message after restart.
+4. Run the focused test files directly with `node test/<filename>.test.js`; this workspace rejects the child-process spawning used by `node --test`. Run the remaining repository test files directly and `npm run typecheck:catalog`, then inspect the final diff. A real Discord smoke check in a test guild is desirable when credentials and a test guild are available; local verification must not depend on external deployment.
+
+## 6. Later Meteor Shower extension
+
+Do not execute this section in the first release. It records the agreed follow-up scope and its impact on storage and claims. It is a separate multi-card presentation over the same one-roll/one-session accounting; do not force it through the one-prize event interface.
+
+1. Reserve the triggering character plus up to nine distinct extras in the same transaction, with total size chosen uniformly from five through ten and capped by available eligible characters. Sample uniformly without replacement from the same unowned, no-live-card pool. Include the trigger at a random drop position. A server with fewer than five eligible characters drops however many remain. All cards belong to one session and one debited roll.
+2. Add a session-to-card relation or nullable per-card origin reference. The current `character_rolls.command_message_id` is unique, so extra rows cannot all reuse the triggering command ID; use a separate key for extra cards and preserve idempotence on the single origin command. Avoid charging a roll for each extra card.
+3. Send cards five seconds apart. Each card has its own ordinary public 60-second claim window. The normal per-player claim allowance applies across the shower; any eligible player may claim any card. Keep the server paused until the last card closes or expires. Restart cancels remaining unclaimed shower cards and leaves messages as posted; completed marriages remain.
+4. Add tests for card count 1–10 at pool boundaries, no duplicate characters, random trigger position, one roll debit, staggered timers, independent claims, claim allowance across cards, pause lifetime, delivery failure, and restart cancellation. Include real-client smoke verification in the test guild before enabling its roster weight.
+
+## Rollback and deployment
+
+Deploy behind an explicit system-level rollout switch that bypasses the mystery rank gate while off, so ordinary rolls still work during migration and rollback. Migrate to v6, run focused and full checks, then turn on the switch with only the approved first-release event IDs enabled. Do not represent a disabled system as an empty roster: the approved empty-roster behavior declines a roll after its mystery check succeeds. A restart cancels active mystery sessions under the accepted rule. The schema change is additive, so reverting application behavior should use a version-compatible rollback build rather than deleting v6 tables or downgrading `user_version`. Preserve the database before migration. Do not restore rolled-back rows into active claim state or refund spent rolls automatically.
+
+## Commit phases and author review
+
+1. Commit the approved design, this plan, v6 migration, odds, roster, and focused rule tests. No new behavior is enabled yet.
+2. Commit shared reservation, session, exclusive-claim, restart, and coordinator logic with focused storage tests. Keep the rollout switch off until Discord routing is ready.
+3. Commit Doors, Treasure Hunt, and Clue Reveal modules and their focused tests. Each module uses the same event contract.
+4. Commit the supplied mystery image, shared introduction, Discord event runtime, prefix roll integration, channel setting, and routing tests. Enable the three-event roster after verification and inspect the exact staged paths before each commit.
+
+Author review complete: the v6 migration is additive for an existing v5 database; all three launch events use the shared roll and claim rules; failure paths close sessions without refund; Meteor Shower is excluded from the first release. The phased commits isolate storage, shared behavior, event content, and Discord wiring. No unrelated worktree files belong in these commits.

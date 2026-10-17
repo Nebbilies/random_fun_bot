@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { openCatalog } from '../lib/catalogDb.js';
 import { claimRoll, failRoll, getClaimStatus, getRoll, getRollStatus, markClaimNotice, nextClaimReset, publishRoll, recoverRolls, reserveRoll } from '../lib/characterRolls.js';
 
@@ -100,12 +101,26 @@ test('recovery preserves active deadline and notice deduplication', (t) => {
 test('version 4 upgrade preserves existing marriage and prefix', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'roll-migrate-'));
   const path = join(dir, 'catalog.sqlite');
-  let db = openCatalog(path);
+  const old = new DatabaseSync(path);
+  old.exec(`CREATE TABLE characters (id INTEGER PRIMARY KEY, rank INTEGER NOT NULL UNIQUE,
+    favourites INTEGER NOT NULL, name_full TEXT);
+    CREATE TABLE marriages (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL,
+    character_id INTEGER NOT NULL, owner_id TEXT NOT NULL, married_at TEXT NOT NULL,
+    UNIQUE (guild_id, character_id));
+    CREATE TABLE guild_prefixes (guild_id TEXT PRIMARY KEY, prefix TEXT NOT NULL);
+    CREATE TABLE character_rolls (id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, command_message_id TEXT NOT NULL UNIQUE,
+      message_id TEXT UNIQUE, character_id INTEGER NOT NULL, character_name TEXT NOT NULL,
+      state TEXT NOT NULL, published_at INTEGER, expires_at INTEGER,
+      UNIQUE (guild_id, channel_id, message_id));
+    INSERT INTO characters (id,rank,favourites,name_full) VALUES (1,1,1,'One');
+    INSERT INTO marriages (guild_id,character_id,owner_id,married_at) VALUES ('1',1,'101','now');
+    INSERT INTO guild_prefixes (guild_id,prefix) VALUES ('1','?');
+    PRAGMA user_version = 4`);
+  old.close();
+  const db = openCatalog(path);
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
-  db.exec("INSERT INTO characters (id,rank,favourites,name_full) VALUES (1,1,1,'One'); INSERT INTO marriages (guild_id,character_id,owner_id,married_at) VALUES ('1',1,'101','now'); INSERT INTO guild_prefixes (guild_id,prefix) VALUES ('1','?'); PRAGMA user_version = 4");
-  db.close();
-  db = openCatalog(path);
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 5);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 6);
   assert.equal(db.prepare("SELECT owner_id FROM marriages WHERE guild_id = '1'").get()?.owner_id, '101');
   assert.equal(db.prepare("SELECT prefix FROM guild_prefixes WHERE guild_id = '1'").get()?.prefix, '?');
 });
