@@ -29,13 +29,21 @@ test('pools, shared hourly quota, and no carryover', (t) => {
   const first = reserve(db, '100', 'w');
   assert.equal(first.character.name_full, 'Female');
   assert.equal(first.remaining, 6);
-  assert.equal(reserve(db, '101', 'h').character.name_full, 'Male');
-  assert.equal(reserve(db, '112', 'w', '102', '1', midnight, () => 0.5).character.name_full, 'Other');
-  assert.equal(reserve(db, '113', 'h', '102', '1', midnight, () => 0.99).character.name_full, 'Unknown');
+  failRoll(db, first.rollId);
+  const second = reserve(db, '101', 'h');
+  assert.equal(second.character.name_full, 'Male');
+  failRoll(db, second.rollId);
+  const third = reserve(db, '112', 'w', '102', '1', midnight, () => 0.5);
+  assert.equal(third.character.name_full, 'Other');
+  failRoll(db, third.rollId);
+  const fourth = reserve(db, '113', 'h', '102', '1', midnight, () => 0.99);
+  assert.equal(fourth.character.name_full, 'Unknown');
+  failRoll(db, fourth.rollId);
   for (let i = 2; i < 7; i++) {
     const result = reserve(db, String(100 + i));
     assert.equal(result.status, 'reserved');
     assert.equal(result.remaining, 6 - i);
+    failRoll(db, result.rollId);
   }
   assert.equal(reserve(db, '107').status, 'exhausted');
   assert.equal(reserve(db, '100').status, 'duplicate');
@@ -46,16 +54,16 @@ test('pools, shared hourly quota, and no carryover', (t) => {
   assert.equal(reserve(db, '111', 'w', '101', '3').status, 'empty');
 });
 
-test('one claim per three-hour period and duplicate cards close forever', (t) => {
+test('one claim per three-hour period and claimed cards close forever', (t) => {
   const db = fixture(t);
   const a = reserve(db, '200');
   const b = reserve(db, '201');
   publishRoll(db, a.rollId, '500', midnight);
   publishRoll(db, b.rollId, '501', midnight);
   assert.equal(claimRoll(db, { guildId: '1', channelId: '10', messageId: '500', userId: '101', now: midnight + 1 }).status, 'married');
-  assert.equal(claimRoll(db, { guildId: '1', channelId: '10', messageId: '501', userId: '102', now: midnight + 2 }).status, 'closed');
+  assert.equal(claimRoll(db, { guildId: '1', channelId: '10', messageId: '501', userId: '102', now: midnight + 2 }).status, 'married');
   db.exec("DELETE FROM marriages WHERE guild_id = '1' AND character_id = 1");
-  assert.equal(claimRoll(db, { guildId: '1', channelId: '10', messageId: '501', userId: '102', now: midnight + 3 }).status, 'closed');
+  assert.equal(claimRoll(db, { guildId: '1', channelId: '10', messageId: '500', userId: '103', now: midnight + 3 }).status, 'closed');
   const c = reserve(db, '202', 'h');
   publishRoll(db, c.rollId, '502', midnight);
   assert.equal(claimRoll(db, { guildId: '1', channelId: '10', messageId: '502', userId: '101', now: midnight + 4 }).status, 'exhausted');
