@@ -20,6 +20,7 @@
     "commands/mu.js",
     "commands/ru.js",
     "commands/daily.js",
+    "commands/utility/set-roll.js",
     "lib/gameCharacterLookup.js",
     "test/characterIdentity.test.js",
     "test/characterMarriage.test.js",
