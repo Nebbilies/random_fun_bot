@@ -78,7 +78,7 @@ test('read-only sample proposes a tag without changing the database', async (t) 
   } finally { readOnly.close(); }
 });
 
-test('falls back to anime title after both name-query results lack a character tag', async (t) => {
+test('searches with anime title first, then character only if no tag is found', async (t) => {
   const { db } = fixture(t);
   const queries = [];
   const logs = [];
@@ -87,7 +87,7 @@ test('falls back to anime title after both name-query results lack a character t
       fetchImpl: async (url) => {
         const query = url.searchParams.get('q');
         queries.push(query);
-        const urls = query === 'X danbooru'
+        const urls = query === 'X To Be Hero X danbooru'
           ? [result('https://danbooru.donmai.us/posts?tags=to_be_hero_x'), result('https://example.com/x')]
           : [result('https://danbooru.donmai.us/posts?tags=x_%28to_be_hero_x%29')];
         return { status: 200, text: async () => urls.join('') };
@@ -96,12 +96,12 @@ test('falls back to anime title after both name-query results lack a character t
         aliases: async () => [] },
       log: (message) => logs.push(message),
     });
-    assert.deepEqual(queries, ['X danbooru', 'X To Be Hero X danbooru']);
+    assert.deepEqual(queries, ['X To Be Hero X danbooru', 'X danbooru']);
     assert.deepEqual(summary, { searched: 1, approved: 1, manual: 0 });
-    assert.match(logs.join('\n'), /auto approved x_\(to_be_hero_x\) from anime fallback result #1/);
+    assert.match(logs.join('\n'), /auto approved x_\(to_be_hero_x\) from character-only query result #1/);
     const attempt = db.prepare('SELECT query, details FROM duckduckgo_tag_attempts WHERE character_id = 1').get();
     assert.equal(attempt.query, queries[0]);
-    assert.match(attempt.details, /X To Be Hero X danbooru result #1: One active character tag/);
+    assert.match(attempt.details, /X danbooru result #1: One active character tag/);
   } finally { db.close(); }
 });
 

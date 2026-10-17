@@ -5,6 +5,7 @@
     "start": "node index.js",
     "catalog:import": "node scripts/importCharacterCatalog.js",
     "catalog:match": "node scripts/matchCharacterTags.js",
+    "catalog:google-match": "node scripts/matchGoogleTags.js",
     "catalog:duckduckgo-match": "node scripts/matchDuckDuckGoTags.js",
     "catalog:review": "node scripts/reviewCharacterTags.js",
     "franchise:import": "node scripts/importFranchiseCatalog.js",
@@ -19,7 +20,8 @@
     "@google-cloud/translate": "^9.3.0",
     "axios": "^1.7.7",
     "discord-command-cooldown": "^1.0.8",
-    "discord.js": "^14.25.1"
+    "discord.js": "^14.25.1",
+    "playwright-core": "^1.64.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
