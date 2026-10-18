@@ -162,6 +162,7 @@ test('Door winner reveals the prize after three seconds with a 60-second exclusi
   }
   assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'claimed');
   assert.equal(prize.embeds[0].data.footer.text, 'Claimed');
+  assert.equal(prize.embeds[0].data.color, 0x8b4513);
   await time.advanceTo(71100);
   assert.equal(event.sent.length, 5);
   assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'claimed');
