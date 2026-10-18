@@ -26,6 +26,7 @@
     "test/characterMarriage.test.js",
     "test/marriageCommands.test.js",
     "test/characterRolls.test.js",
+    "test/characterEscapes.test.js",
     "test/rollCommands.test.js"
   ]
 }

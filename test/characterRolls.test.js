@@ -86,7 +86,10 @@ test('pools, shared hourly quota, and no carryover', (t) => {
   assert.equal(reserve(db, '109', 'w', '102').status, 'reserved');
   assert.equal(reserve(db, '110', 'w', '101', '2').status, 'reserved');
   db.exec("INSERT INTO marriages (guild_id,character_id,owner_id,married_at) VALUES ('3',1,'111','now'),('3',3,'111','now'),('3',4,'111','now')");
-  assert.equal(reserve(db, '111', 'w', '101', '3').status, 'empty');
+  const owned = reserve(db, '111', 'w', '101', '3');
+  assert.equal(owned.status, 'reserved');
+  assert.equal(owned.escapeOwnerId, '111');
+  assert.equal(owned.character.id, 1);
 });
 
 test('one claim per three-hour period and claimed cards close forever', (t) => {
@@ -163,7 +166,7 @@ test('version 4 upgrade preserves existing marriage and prefix', (t) => {
   old.close();
   const db = openCatalog(path);
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 6);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 7);
   assert.equal(db.prepare("SELECT owner_id FROM marriages WHERE guild_id = '1'").get()?.owner_id, '101');
   assert.equal(db.prepare("SELECT prefix FROM guild_prefixes WHERE guild_id = '1'").get()?.prefix, '?');
 });

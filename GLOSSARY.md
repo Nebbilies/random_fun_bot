@@ -16,6 +16,14 @@ _Avoid_: Global ownership, character copy
 To become a character's owner in one Discord server.
 _Avoid_: Claim
 
+**Escape attempt**:
+An owned character's appearance in a roll that gives the current owner a chance to reclaim them before other players may marry them. The character remains owned until another player successfully marries them.
+_Avoid_: Automatic divorce, released character
+
+**Reclaim**:
+For a character's current owner to end an escape attempt while retaining ownership.
+_Avoid_: Remarry, new marriage
+
 **Divorce**:
 To end character ownership in one Discord server.
 _Avoid_: Release
