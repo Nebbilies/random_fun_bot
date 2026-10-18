@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Character review · Yoshiko</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%237c3aed'/%3E%3Ctext x='20' y='28' text-anchor='middle' fill='white' font-family='sans-serif' font-size='28'%3Ey%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/portal.css">
+  <script src="/assets/portal.js" type="module"></script>
+  <script src="/assets/reviewCharacterTags.js" type="module"></script>
+</head>
+<body data-page="character" data-standalone="false">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Yoshiko portal home"><span class="brand-mark">y<span>.</span></span><span>yoshiko<span class="brand-caption">MANAGEMENT PORTAL</span></span></a>
+    <p class="nav-label">WORKSPACE</p>
+    <nav aria-label="Management portal">
+        <a href="/" aria-current="page" data-combined-only><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><circle cx="12" cy="9" r="2.5"/><path d="M7 17c0-4 10-4 10 0"/></svg><span>Character review</span><span class="nav-dot"></span></a>
+        <a href="/franchise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Franchises</span></a>
+        <a href="/game" data-combined-only><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h8c3 0 4 3 5 9 .5 4-3 4-5 0H8c-2 4-5.5 4-5 0 1-6 2-9 5-9Z"/><path d="M7 10v5m-2.5-2.5h5M16 11h.01M18 14h.01"/></svg><span>Game controls</span></a>
+    </nav>
+    <div class="sidebar-footer"><span class="workspace-icon">Y</span><div>Yoshiko workspace<span>Catalog & game management</span></div></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div><span class="muted">Workspace</span><span class="breadcrumb-divider">/</span><span>Character review</span></div><span class="workspace-badge">Management</span></header>
+    <main id="main" tabindex="-1">
+      <header class="page-heading"><div><p class="eyebrow">CATALOG MANAGEMENT</p><h1>Character review</h1><p class="page-description">The right character. The right tag. Keep your catalog in good shape.</p></div><span class="page-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><circle cx="12" cy="9" r="2.5"/><path d="M7 17c0-4 10-4 10 0"/></svg></span></header>
+
+      <section id="status" class="stats-grid" aria-label="Catalog overview" aria-live="polite">Loading catalog overview…</section>
+      <div class="section-heading"><div><h2>Review workspace</h2><p class="muted">Compare the character, choose a tag, and check the previews.</p></div><span class="subtle-badge">General-rated previews</span></div>
+      <div class="review-toolbar">
+        <div class="segmented" aria-label="Review queue"><button id="showUndecided" aria-pressed="true">Undecided characters</button><button id="showReported" class="secondary" aria-pressed="false">Reported characters</button></div>
+        <nav id="undecidedNavigation" class="queue-navigation" aria-label="Review queue navigation">
+          <div class="button-group"><button id="first" class="secondary" title="First character">First</button><button id="back" class="secondary">Back</button><button id="forward" class="secondary">Next</button><button id="last" class="secondary" title="Last character">Last</button></div>
+          <div class="jump-control"><label for="jumpRank">After rank</label><input id="jumpRank" type="number" min="0" step="1" required aria-label="Find next character after rank"><button id="jump" class="secondary">Go</button></div>
+        </nav>
+      </div>
+      <section id="reportedSection" class="panel report-panel" hidden>
+        <div class="section-heading"><h2>Reported characters</h2><span class="subtle-badge">Community feedback</span></div><p id="reportDetails" class="muted"></p><p><strong>Current tag:</strong> <code id="currentTag"></code></p>
+        <details><summary>Resolved report history</summary><div id="reportHistory"></div><button id="moreHistory" class="secondary">Load more</button></details>
+      </section>
+      <div class="review-workbench">
+        <section class="panel character-card" aria-label="Character identity">
+          <div class="card-heading"><span class="eyebrow">CHARACTER</span><span id="position" class="subtle-badge"></span></div>
+          <div class="portrait-frame"><img id="portrait" class="portrait" alt="Character portrait" hidden><span class="portrait-placeholder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><circle cx="12" cy="9" r="2.5"/><path d="M7 17c0-4 10-4 10 0"/></svg></span></div>
+          <div class="character-info"><h2 id="name">Loading character…</h2><div id="details" class="muted"></div><div class="character-links"><a id="anilist" class="text-link" target="_blank" rel="noopener noreferrer" hidden>Open on AniList ↗</a><button id="googleSearch" class="secondary" type="button" hidden>Search on Google ↗</button></div></div>
+        </section>
+        <section id="tagWorkspace" class="panel tag-workspace" aria-label="Tag matching">
+          <div class="card-heading"><div><span class="eyebrow">01 / SELECT A MATCH</span><h2>Danbooru character tags</h2></div></div>
+          <div id="candidates" class="candidates"></div>
+          <label class="field-label" for="custom">Find another tag</label><div class="search-row"><input id="custom" type="text" placeholder="Search or enter a character tag"><button id="search" class="secondary">Search</button><button id="preview" class="secondary">Preview</button></div><div id="searchResults" class="candidates"></div>
+          <div class="preview-heading"><span class="eyebrow">02 / CHECK THE PREVIEWS</span><p class="muted">Check that the images match the character.</p></div>
+          <div class="preview-grid">
+            <section class="preview-panel"><h3>Selected tag</h3><code id="previewQuery" class="preview-query muted"></code><div id="previews" class="previews" aria-live="polite"></div></section>
+            <section class="preview-panel"><h3>Selected tag + solo</h3><code id="soloQuery" class="preview-query muted"></code><div id="soloPreviews" class="previews" aria-live="polite"></div></section>
+          </div>
+          <div class="review-actions"><span class="muted">03 / Save your decision</span><div id="undecidedActions" class="row"><button id="noMatch" class="secondary danger-outline">No match</button><button id="approve">Approve selected tag</button></div><div id="reportedActions" class="row" hidden><button id="dismiss" class="secondary">Dismiss report</button><button id="correct">Save corrected tag</button></div></div>
+        </section>
+      </div>
+      <p id="message" class="feedback" role="status" aria-live="polite"></p>
+      <footer class="page-footer">Yoshiko<span>Made for a better-managed catalog.</span></footer>
+    </main>
+  </div>
+</body>
+</html>

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { openCatalog, setMeta } from '../lib/catalogDb.js';
 import { getRollStatus, getClaimStatus, setMaxRolls } from '../lib/characterRolls.js';
-import { createReviewServer } from '../scripts/reviewCharacterTags.js';
+import { createReviewServer } from '../web/reviewCharacterTags.js';
 
 test('review portal applies capped rolls and global claim resets with validated requests', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'game-review-'));

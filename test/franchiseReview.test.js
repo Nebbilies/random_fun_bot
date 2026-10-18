@@ -7,8 +7,8 @@ import { once } from 'node:events';
 import { request } from 'node:http';
 import { openCatalog, setMeta } from '../lib/catalogDb.js';
 import { createFranchise } from '../lib/franchiseCatalog.js';
-import { createFranchiseReviewServer } from '../scripts/reviewFranchises.js';
-import { createReviewServer } from '../scripts/reviewCharacterTags.js';
+import { createFranchiseReviewServer } from '../web/reviewFranchises.js';
+import { createReviewServer } from '../web/reviewCharacterTags.js';
 
 async function post(origin, path, body) {
   const response = await fetch(`${origin}${path}`, {
@@ -32,6 +32,13 @@ test('local franchise review API shows source and counts, then applies validated
   t.after(() => server.close());
   await once(server, 'listening');
   const origin = `http://127.0.0.1:${server.address().port}`;
+
+  const standalonePage = await fetch(`${origin}/`).then((response) => response.text());
+  assert.match(standalonePage, /data-standalone="true"/);
+  const stylesheet = await fetch(`${origin}/assets/portal.css`);
+  assert.equal(stylesheet.status, 200);
+  assert.match(stylesheet.headers.get('content-type'), /text\/css/);
+  assert.equal((await fetch(`${origin}/assets/reviewFranchises.js`)).status, 200);
 
   const initial = await fetch(`${origin}/api/franchise?id=10`).then((response) => response.json());
   assert.equal(initial.characterCount, 1);
@@ -83,6 +90,25 @@ test('catalog review server mounts franchise review and API under one port', asy
   assert.match(catalogPage, /href="\/franchise"/);
   const page = await fetch(`${origin}/franchise`).then((response) => response.text());
   assert.match(page, /href="\/"/);
+  assert.match(page, /data-standalone="false"/);
+  for (const [path, contentType] of [
+    ['/assets/portal.css', 'text/css'],
+    ['/assets/portal.js', 'text/javascript'],
+    ['/assets/reviewCharacterTags.js', 'text/javascript'],
+    ['/assets/reviewFranchises.js', 'text/javascript'],
+    ['/assets/reviewGame.js', 'text/javascript'],
+  ]) {
+    const asset = await fetch(`${origin}${path}`);
+    assert.equal(asset.status, 200, path);
+    assert.ok(asset.headers.get('content-type').startsWith(contentType), path);
+    assert.equal(asset.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(asset.headers.get('cache-control'), 'no-store');
+    assert.ok((await asset.text()).length > 0);
+  }
+  for (const path of ['/assets/missing.js', '/assets/serveAssets.js', '/assets/%2e%2e%2freviewCharacterTags.js', '/package.json']) {
+    assert.equal((await fetch(`${origin}${path}`)).status, 404, path);
+  }
+  assert.equal((await fetch(`${origin}/assets/portal.css`, { method: 'POST' })).status, 404);
   const rows = await fetch(`${origin}/franchise/api/franchises`).then((response) => response.json());
   assert.deepEqual(rows.map((row) => row.name), ['Sword Art Online']);
   const response = await post(origin, '/franchise/api/correction', { action: 'rename', franchiseId: id, name: 'SAO' });

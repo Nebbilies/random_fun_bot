@@ -8,6 +8,7 @@ import {
   removeAnimeFromFranchise, removeFranchiseAlias, renameFranchise,
 } from '../lib/franchiseCatalog.js';
 import { openCatalog } from '../lib/catalogDb.js';
+import { serveAssets } from './serveAssets.js';
 
 const html = readFileSync(new URL('./reviewFranchises.html', import.meta.url));
 
@@ -115,7 +116,7 @@ export async function handleFranchiseReviewRequest({ db, request, response, url,
   try {
     if (request.method === 'GET' && (url.pathname === (prefix || '/') || url.pathname === `${prefix}/`)) {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-      response.end(html);
+      response.end(prefix ? html : html.toString().replace('data-standalone="false"', 'data-standalone="true"'));
     } else if (request.method === 'GET' && url.pathname === route('/api/franchises')) {
       const query = url.searchParams.get('query') || '';
       if (query.length > 80) { json(response, 400, { error: 'Search must be 80 characters or fewer' }); return true; }
@@ -160,6 +161,7 @@ export function createFranchiseReviewServer({ db, host = '127.0.0.1', publicHost
         origin = authority.origin;
       } catch { return json(response, 403, { error: 'Invalid host' }); }
       const url = new URL(request.url, origin);
+      if (serveAssets(request, response, url)) return;
       if (!await handleFranchiseReviewRequest({ db, request, response, url, origin, mountPath: '' }))
         json(response, 404, { error: 'Not found' });
     } catch (error) { json(response, 400, { error: error.message }); }

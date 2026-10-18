@@ -7,9 +7,9 @@
     "catalog:match": "node scripts/matchCharacterTags.js",
     "catalog:google-match": "node scripts/matchGoogleTags.js",
     "catalog:duckduckgo-match": "node scripts/matchDuckDuckGoTags.js",
-    "catalog:review": "node scripts/reviewCharacterTags.js",
+    "catalog:review": "node web/reviewCharacterTags.js",
     "franchise:import": "node scripts/importFranchiseCatalog.js",
-    "franchise:review": "node scripts/reviewFranchises.js",
+    "franchise:review": "node web/reviewFranchises.js",
     "typecheck:catalog": "tsc --project tsconfig.catalog.json"
   },
   "author": "",

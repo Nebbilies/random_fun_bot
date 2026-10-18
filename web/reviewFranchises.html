@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Franchises · Yoshiko</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%237c3aed'/%3E%3Ctext x='20' y='28' text-anchor='middle' fill='white' font-family='sans-serif' font-size='28'%3Ey%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/assets/portal.css">
+  <script src="/assets/portal.js" type="module"></script>
+  <script src="/assets/reviewFranchises.js" type="module"></script>
+</head>
+<body data-page="franchise" data-standalone="false">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Yoshiko portal home"><span class="brand-mark">y<span>.</span></span><span>yoshiko<span class="brand-caption">MANAGEMENT PORTAL</span></span></a>
+    <p class="nav-label">WORKSPACE</p>
+    <nav aria-label="Management portal">
+        <a href="/" data-combined-only><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><circle cx="12" cy="9" r="2.5"/><path d="M7 17c0-4 10-4 10 0"/></svg><span>Character review</span></a>
+        <a href="/franchise" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Franchises</span><span class="nav-dot"></span></a>
+        <a href="/game" data-combined-only><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h8c3 0 4 3 5 9 .5 4-3 4-5 0H8c-2 4-5.5 4-5 0 1-6 2-9 5-9Z"/><path d="M7 10v5m-2.5-2.5h5M16 11h.01M18 14h.01"/></svg><span>Game controls</span></a>
+    </nav>
+    <div class="sidebar-footer"><span class="workspace-icon">Y</span><div>Yoshiko workspace<span>Catalog & game management</span></div></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div><span class="muted">Workspace</span><span class="breadcrumb-divider">/</span><span>Franchises</span></div><span class="workspace-badge">Management</span></header>
+    <main id="main" tabindex="-1">
+      <header class="page-heading"><div><p class="eyebrow">CATALOG MANAGEMENT</p><h1>Franchises</h1><p class="page-description">Bring related anime together. Keep every group clear and consistent.</p></div><span class="page-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span></header>
+
+      <div class="section-heading"><div><h2>Franchise library</h2><p class="muted">Search a group to review its names, aliases, and anime.</p></div><button id="create">+ Create franchise</button></div>
+      <div class="franchise-layout">
+        <aside class="panel franchise-browser" aria-label="Franchise browser"><div class="browser-heading"><label class="field-label" for="search">Find a franchise</label><input id="search" type="search" maxlength="80" placeholder="Search franchise or anime…"><span id="status" class="muted" role="status">Loading franchises…</span></div><div id="list" aria-label="Franchises"></div></aside>
+        <div class="franchise-content">
+          <section id="empty" class="panel empty-state"><span class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></span><h2>A place for every story</h2><p>Select a franchise from the library to review its details.<br>You can also create a new group.</p></section>
+          <section id="details" hidden>
+            <section class="panel"><div class="card-heading"><div><p class="eyebrow">FRANCHISE DETAILS</p><h2 id="name"></h2></div><span class="subtle-badge">Catalog group</span></div><p id="summary" class="muted"></p>
+              <label class="field-label" for="rename">Display name</label><div class="search-row"><input id="rename" type="text" placeholder="New franchise name" maxlength="120"><button id="renameButton" class="secondary">Rename</button></div>
+              <h3 class="field-label">Aliases</h3><div id="aliases" class="alias-list"></div><label class="sr-only" for="alias">Add alias</label><div class="search-row"><input id="alias" type="text" placeholder="Add another name or alias" maxlength="120"><button id="addAlias" class="secondary">Add alias</button></div>
+            </section>
+            <section class="panel"><h2>Anime members</h2><p class="muted">Relation labels come from AniList. Review membership and move or split titles below.</p><div id="members"></div></section>
+            <details class="panel"><summary>Saved corrections & merging</summary><p id="manual" class="muted"></p><div class="notice">Manual corrections are kept through the next catalog refresh.</div><div class="field-label"><label for="mergeTarget">Merge this group into</label></div><div class="search-row"><select id="mergeTarget"></select><button id="merge" class="danger">Merge groups</button></div></details>
+            <details class="panel"><summary>Manually excluded anime</summary><p class="muted">Anime removed from automatic groups. Assign a franchise to restore an entry.</p><div id="excluded"></div></details>
+          </section>
+          <p id="message" class="feedback" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+      <footer class="page-footer">Yoshiko<span>Made for a better-managed catalog.</span></footer>
+    </main>
+  </div>
+</body>
+</html>

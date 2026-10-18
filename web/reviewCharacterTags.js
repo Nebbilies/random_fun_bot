@@ -7,6 +7,7 @@ import { DANBOORU_USER_AGENT, DanbooruApi } from '../lib/danbooruApi.js';
 import { getMeta, openCatalog, resolveCharacterTagReports, saveDecision, transaction } from '../lib/catalogDb.js';
 import { handleFranchiseReviewRequest } from './reviewFranchises.js';
 import { addGlobalRolls, resetGlobalClaims } from '../lib/characterRolls.js';
+import { serveAssets } from './serveAssets.js';
 
 const html = readFileSync(new URL('./reviewCharacterTags.html', import.meta.url));
 const gameHtml = readFileSync(new URL('./reviewGame.html', import.meta.url));
@@ -87,6 +88,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
         return json(response, 403, { error: 'Invalid host' });
       }
       const url = new URL(request.url, requestOrigin);
+      if (serveAssets(request, response, url)) return;
       if (await handleFranchiseReviewRequest({ db, request, response, url, origin: requestOrigin })) return;
       if (request.method === 'GET' && url.pathname === '/') {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });

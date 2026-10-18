@@ -25,7 +25,7 @@
 4. `lib/anilistCatalogApi.js`: GraphQL requests, pacing, 429/backoff handling, and small query functions for anime ID discovery, anime pages, extra character pages, and finalist metadata.
 5. `scripts/importCharacterCatalog.js`: permission-gated, resumable media-ID scan; rolling top-15,000 selection; final metadata hydration; atomic publication and a coverage report. Never run this against AniList before written permission.
 6. `lib/danbooruTagMatcher.js` and `scripts/matchCharacterTags.js`: fetch/cache character tags and active aliases at a measured pace; propose matches using AniList names and anime titles. Store match evidence and status. Do not treat post count alone as identity evidence.
-7. `scripts/reviewCharacterTags.js` and minimal static review files: localhost-only browser UI with AniList portrait/names/anime, candidate tags, general-rated Danbooru previews, and Approve / Change tag / No match / Skip actions. Show queue and audit progress.
+7. `web/reviewCharacterTags.js` and minimal static review files: localhost-only browser UI with AniList portrait/names/anime, candidate tags, general-rated Danbooru previews, and Approve / Change tag / No match / Skip actions. Show queue and audit progress.
 8. `test/characterCatalog.test.js` and focused companion tests: cover top-15,000 ordering, resume/idempotence, atomic publication, matching ambiguity, and preserved human decisions with mocked HTTP. No live bulk API calls.
 9. `docs/character-catalog.md`: operation guide, permission prerequisite, run commands, database backup, review workflow, and known limits.
 

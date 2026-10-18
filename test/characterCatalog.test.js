@@ -8,7 +8,7 @@ import { openCatalog, keepCandidate, publishCatalog, reportCharacterTag, saveDec
 import { chooseTag, chooseTagByCount, normalizeTag, searchNames } from '../lib/danbooruTagMatcher.js';
 import { hydrateOneBatch, scanOnePage } from '../scripts/importCharacterCatalog.js';
 import { approveSearchedByCount } from '../scripts/matchCharacterTags.js';
-import { createReviewServer } from '../scripts/reviewCharacterTags.js';
+import { createReviewServer } from '../web/reviewCharacterTags.js';
 import { DanbooruApi } from '../lib/danbooruApi.js';
 
 function fixture(t) {
