@@ -4,7 +4,9 @@ Marriage gives one Discord user ownership of a character within one server. A ch
 
 The catalog review portal's **Game controls** page (`/game`) provides global controls across all servers in its database. **Add rolls to everyone** adds the entered positive whole number to current hourly balances, capped at each server's maximum. Users already full remain full. **Reset claims for everyone** immediately restores claim availability without changing marriages, roll balances, daily refills, or scheduled resets. Restart the review portal after updating to load the new page.
 
-Mystery events select Doors or Clue Reveal; Treasure Hunt is no longer in the roster. The mystery heading appears only on the introduction. Event updates use new messages. The winner is mentioned once at the start of the three-second reveal countdown, followed by `2...` and `1...`. The revealed prize has a winner-only **i dont wanna** button that immediately ends the event without spending a claim. Declined prizes cannot be claimed.
+Mystery events select Doors or Clue Reveal; Treasure Hunt is no longer in the roster. The mystery heading appears only on the introduction. Event updates use new messages. Clue Reveal mentions the winner once at the start of its three-second reveal countdown, followed by `2...` and `1...`. The revealed prize has a winner-only **i dont wanna** button that immediately ends the event without spending a claim. Declined prizes cannot be claimed.
+
+Doors shows two hidden portraits in a gallery with **Left** and **Right** buttons. Only the roller can choose, within 30 seconds. The character and John Pork are randomly placed with equal odds. Choosing immediately posts both revealed images in their original positions. Card details describe the chosen slot: character stats and a 60-second exclusive claim on a win, or **John Pork**, anime `-`, rank `?`, likes `?`, and no claim on a loss. A timeout reveals both without awarding a claim.
 
 Use the server's existing message-command prefix. With `!` as the prefix:
 

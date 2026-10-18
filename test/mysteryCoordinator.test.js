@@ -37,7 +37,7 @@ test('a mystery pauses rolls, waits five seconds, then protects the winner claim
   assert.equal(beginMysteryEvent(db, roll.sessionId, 6099).status, 'early');
   const started = beginMysteryEvent(db, roll.sessionId, 6100, () => 0);
   assert.equal(started.status, 'started');
-  assert.equal(started.view.buttons.length, 3);
+  assert.equal(started.view.buttons.length, 2);
   assert.equal(advanceMysteryEvent(db, { sessionId: roll.sessionId, guildId: '1', channelId: '10',
     input: { type: 'button', userId: '101', value: '1' }, now: 6200 }).status, 'wrong_channel');
   const won = advanceMysteryEvent(db, { sessionId: roll.sessionId, guildId: '1', channelId: '20',

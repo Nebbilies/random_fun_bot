@@ -10,7 +10,11 @@ test('Doors makes a uniform hidden choice and only the roller can choose', () =>
   assert.equal(doorsEvent.durationMs, 30_000);
   assert.equal(doorsEvent.available(base), true);
   assert.equal(opening.durationMs, 30_000);
-  assert.equal(opening.view.buttons.length, 3);
+  assert.equal(opening.view.buttons.length, 2);
+  assert.deepEqual(opening.view.buttons.map((button) => button.label), ['Left', 'Right']);
+  for (const [draw, slot] of [[0, 1], [0.499999, 1], [0.5, 2], [0.999999, 2]]) {
+    assert.equal(doorsEvent.start({ ...base, random: () => draw }).state.winningDoor, slot);
+  }
   assert.equal(opening.state.winningDoor, 2);
   assert.deepEqual(JSON.parse(JSON.stringify(opening.state)), opening.state);
   const spectator = doorsEvent.advance({
