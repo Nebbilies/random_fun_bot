@@ -58,11 +58,10 @@ test('a wrong door reveals an unclaimable prize and leaves history', (t) => {
   beginMysteryEvent(db, roll.sessionId, 6100, () => 0);
   const lost = advanceMysteryEvent(db, { sessionId: roll.sessionId, guildId: '1', channelId: '10',
     input: { type: 'button', userId: '101', value: '2' }, now: 6200 });
-  assert.equal(lost.status, 'no_winner');
-  assert.equal(lost.character.name_full, 'Prize');
-  assert.equal(getMysterySession(db, roll.sessionId).outcome, 'no_winner');
-  assert.equal(db.prepare('SELECT state FROM character_rolls WHERE id = ?').get(roll.rollId).state, 'closed');
-  assert.equal(reserve(db, '201').status, 'mystery');
+  assert.equal(lost.status, 'doors_lost');
+  assert.equal(getMysterySession(db, roll.sessionId).state, 'countdown');
+  assert.equal(getMysterySession(db, roll.sessionId).nextAt, 9200);
+  assert.equal(reserve(db, '201').status, 'paused');
 });
 
 test('disabled mystery feature leaves ordinary roll behavior available', (t) => {

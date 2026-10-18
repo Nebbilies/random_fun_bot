@@ -6,7 +6,7 @@ The catalog review portal's **Game controls** page (`/game`) provides global con
 
 Mystery events select Doors or Clue Reveal; Treasure Hunt is no longer in the roster. The mystery heading appears only on the introduction. Event updates use new messages. Clue Reveal mentions the winner once at the start of its three-second reveal countdown, followed by `2...` and `1...`. The revealed prize has a winner-only **i dont wanna** button that immediately ends the event without spending a claim. Declined prizes cannot be claimed.
 
-Doors shows two hidden portraits in a gallery with **Left** and **Right** buttons. Only the roller can choose, within 30 seconds. The character and John Pork are randomly placed with equal odds. Choosing immediately posts both revealed images in their original positions. Card details describe the chosen slot: character stats and a 60-second exclusive claim on a win, or **John Pork**, anime `-`, rank `?`, likes `?`, and no claim on a loss. A timeout reveals both without awarding a claim.
+Doors shows two hidden portraits in a gallery with **Left** and **Right** buttons. Only the roller can choose, within 30 seconds. The character and John Pork are randomly placed with equal odds. A choice announces the user and chosen side, then waits three seconds. A win reveals the character card with a 60-second exclusive claim. A loss reveals **John Pork**, anime `-`, rank `?`, likes `?`, and no claim; two seconds later it reveals the prize character as unclaimable and ends the event. A timeout reveals both without awarding a claim.
 
 Use the server's existing message-command prefix. With `!` as the prefix:
 

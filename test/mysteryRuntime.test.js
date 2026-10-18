@@ -130,7 +130,7 @@ test('clue updates send new messages and preserve earlier clues', async (t) => {
   assert.equal(intro.edits.length, 0);
 });
 
-test('Door winner immediately reveals both slots and gets a 60-second exclusive claim', async (t) => {
+test('Door winner reveals the prize after three seconds with a 60-second exclusive claim', async (t) => {
   const { db, event, reservation, time, start } = fixture(t);
   const intro = await start();
   await time.advanceTo(6100);
@@ -139,12 +139,13 @@ test('Door winner immediately reveals both slots and gets a 60-second exclusive 
   assert.equal(event.sent.filter((item) => item.payload.content?.includes('mystery character appears')).length, 1);
   assert.equal(event.sent.length, 3);
   assert.equal(intro.edits.length, 0);
-  const prize = event.sent[2];
-  const reveal = prize.components[0].toJSON();
-  assert.match(JSON.stringify(reveal), /Hidden Prize/);
-  assert.match(JSON.stringify(reveal), /Example Anime/);
-  assert.deepEqual(reveal.components.find((component) => component.type === 12).items.map((item) => item.media.url),
-    ['https://example.com/prize.png', 'attachment://john_pork.gif']);
+  assert.equal(event.sent[2].payload.content, '<@101> has chosen **Left**, and the character is... :question:');
+  await time.advanceTo(9099);
+  assert.equal(event.sent.length, 3);
+  await time.advanceTo(9100);
+  const prize = event.sent[3];
+  assert.equal(prize.embeds[0].data.title, 'Hidden Prize');
+  assert.equal(prize.embeds[0].data.description, 'Example Anime');
   assert.deepEqual(prize.reactions, ['❤️']);
   assert.equal(getMysterySession(db, reservation.sessionId).state, 'claim_open');
   assert.equal(claimRoll(db, { guildId: '1', channelId: '20', messageId: prize.id,
@@ -160,9 +161,9 @@ test('Door winner immediately reveals both slots and gets a 60-second exclusive 
     Date.now = originalNow;
   }
   assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'claimed');
-  assert.match(JSON.stringify(prize.components[0].toJSON()), /Claimed/);
+  assert.equal(prize.embeds[0].data.footer.text, 'Claimed');
   await time.advanceTo(71100);
-  assert.equal(event.sent.length, 4);
+  assert.equal(event.sent.length, 5);
   assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'claimed');
 });
 
@@ -181,7 +182,7 @@ test('Door timeout reveals once, unclaimable, and a late choice is stale', async
   assert.equal(event.sent.length, 3);
 });
 
-test('both slot placements reveal in order; John Pork loses and winning claims expire', async (t) => {
+test('both slot placements use timed reveals; John Pork precedes an unclaimable prize by two seconds', async (t) => {
   for (const draw of [0, 0.5]) {
     for (const selected of [1, 2]) {
       const { db, event, reservation, time, start } = fixture(t, 0, draw);
@@ -194,30 +195,37 @@ test('both slot placements reveal in order; John Pork loses and winning claims e
       assert.equal(event.sent.length, 2);
       const winning = draw === 0 ? 1 : 2;
       await onMysteryButton(db, doorInteraction(prompt, String(selected)));
-      const card = event.sent[2];
-      const data = card.components[0].toJSON();
-      const images = data.components.find((component) => component.type === 12).items;
-      assert.equal(images[winning - 1].media.url, 'https://example.com/prize.png');
-      assert.equal(images[2 - winning].media.url, 'attachment://john_pork.gif');
+      assert.match(event.sent[2].payload.content, new RegExp(selected === 1 ? 'Left' : 'Right'));
+      assert.equal(getMysterySession(db, reservation.sessionId).state, 'countdown');
+      await time.advanceTo(9099);
+      assert.equal(event.sent.length, 3);
+      await time.advanceTo(9100);
+      const card = event.sent[3];
       if (selected !== winning) {
-        assert.equal(data.components[0].content, '# John Pork');
-        assert.equal(data.components[1].content, '-');
-        assert.equal(data.components[2].content, '**Rank:** ?\n**Likes:** ?');
+        assert.equal(card.embeds[0].data.title, 'John Pork');
+        assert.equal(card.embeds[0].data.description, '-');
+        assert.deepEqual(card.embeds[0].data.fields.map((field) => field.value), ['?', '?']);
         assert.deepEqual(card.reactions, []);
+        assert.equal(getMysterySession(db, reservation.sessionId).state, 'countdown');
+        await time.advanceTo(11099);
+        assert.equal(event.sent.length, 4);
+        await time.advanceTo(11100);
+        assert.equal(event.sent[4].embeds[0].data.title, 'Hidden Prize');
+        assert.match(event.sent[4].embeds[0].data.footer.text, /Unclaimable/);
+        assert.deepEqual(event.sent[4].reactions, []);
         assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'no_winner');
         assert.notEqual(claimRoll(db, { guildId: '1', channelId: '20', messageId: card.id,
           userId: '101', now: time.now() }).status, 'married');
       } else {
-        assert.equal(data.components[0].content, '# Hidden Prize');
-        await time.advanceTo(66100);
-        const expired = JSON.stringify(card.components[0].toJSON());
-        assert.match(expired, /Unclaimable/);
-        assert.doesNotMatch(expired, /i dont wanna/);
+        assert.equal(card.embeds[0].data.title, 'Hidden Prize');
+        await time.advanceTo(69100);
+        assert.match(card.embeds[0].data.footer.text, /Unclaimable/);
+        assert.deepEqual(card.components, []);
         assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'expired');
       }
       const late = doorInteraction(prompt, String(selected));
       await onMysteryButton(db, late);
-      assert.equal(event.sent.length, 3);
+      assert.equal(event.sent.length, selected === winning ? 4 : 5);
       assert.equal(time.pending(), 0);
     }
   }
@@ -230,7 +238,7 @@ test('only the winner can decline a revealed prize, releasing rolls without spen
   await time.advanceTo(6100);
   await onMysteryButton(db, doorInteraction(event.sent[1], '1'));
   await time.advanceTo(9100);
-  const prize = event.sent[2];
+  const prize = event.sent[3];
   assert.match(JSON.stringify(prize.components[0].toJSON()), /i dont wanna/);
   const decline = (userId) => ({ ...doorInteraction(prize, '1', userId),
     customId: `mystery:${reservation.sessionId}:decline` });
@@ -242,8 +250,8 @@ test('only the winner can decline a revealed prize, releasing rolls without spen
   await onMysteryButton(db, accepted);
   assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'declined');
   assert.equal(time.pending(), 0);
-  assert.doesNotMatch(JSON.stringify(prize.components[0].toJSON()), /i dont wanna/);
-  assert.match(JSON.stringify(prize.components[0].toJSON()), /Declined/);
+  assert.deepEqual(prize.components, []);
+  assert.match(prize.embeds[0].data.footer.text, /Declined/);
   assert.equal(getClaimStatus(db, '1', '101', time.now()).canClaim, true);
   assert.notEqual(claimRoll(db, { guildId: '1', channelId: '20', messageId: prize.id,
     userId: '101', now: time.now() }).status, 'married');
