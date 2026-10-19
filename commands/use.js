@@ -1,27 +1,8 @@
 import {
   getInventory,
-  removeItemFromInventory,
   decrementItemCharge,
 } from '../lib/itemStorage.js';
 import { getItemDefinition } from '../lib/itemRoster.js';
-import {
-  useHourglassOfHaste,
-  useLoveLetter,
-  useBagOfHolding,
-  useFourLeafClover,
-  useRollingFever,
-  useAdrenalineRush,
-  useDoubleDate,
-  useEngagementRing,
-  usePinata,
-  useGoldenHour,
-  useCrownOfTheSovereign,
-  usePickpocketsHook,
-  useMasterKey,
-  useAegisOfFidelity,
-  useWishUponAStar,
-  useFranchisePassport,
-} from '../lib/itemEffects.js';
 
 export function executeItemUseById(db, guildId, userId, invId, args = []) {
   const inv = getInventory(db, guildId, userId);
@@ -55,102 +36,13 @@ function dispatchItemUse(db, guildId, userId, inventoryItem, args) {
   if (!def) {
     return { success: false, message: 'Unknown item definition.' };
   }
-
-  let result;
-  switch (inventoryItem.item_id) {
-    case 'hourglass_of_haste':
-      result = useHourglassOfHaste(db, guildId, userId);
-      break;
-    case 'love_letter':
-      result = useLoveLetter(db, guildId, userId);
-      break;
-    case 'bag_of_holding':
-      result = useBagOfHolding(db, guildId, userId);
-      break;
-    case 'four_leaf_clover':
-      result = useFourLeafClover(db, guildId, userId);
-      break;
-    case 'rolling_fever':
-      result = useRollingFever(db, guildId, userId);
-      break;
-    case 'adrenaline_rush':
-      result = useAdrenalineRush(db, guildId, userId);
-      break;
-    case 'double_date':
-      result = useDoubleDate(db, guildId, userId);
-      break;
-    case 'engagement_ring':
-      result = useEngagementRing(db, guildId, userId);
-      break;
-    case 'pinata':
-      result = usePinata(db, guildId, userId);
-      break;
-    case 'golden_hour':
-      result = useGoldenHour(db, guildId, userId);
-      break;
-    case 'crown_of_the_sovereign':
-      result = useCrownOfTheSovereign(db, guildId, userId);
-      break;
-
-    // Targeted items
-    case 'pickpockets_hook': {
-      const targetMention = args[0];
-      const targetId = targetMention ? targetMention.replace(/[^0-9]/g, '') : null;
-      if (!targetId) {
-        return { success: false, message: 'Please specify a target user to pickpocket! Example: `!use pickpocket @user`' };
-      }
-      result = usePickpocketsHook(db, guildId, userId, targetId);
-      break;
-    }
-
-    case 'master_key': {
-      const targetMention = args[0];
-      const targetId = targetMention ? targetMention.replace(/[^0-9]/g, '') : null;
-      const charName = args.slice(1).join(' ').replace(/^["']|["']$/g, '');
-      if (!targetId || !charName) {
-        return { success: false, message: 'Please specify a target user and character name! Example: `!use masterkey @user "Rem"`' };
-      }
-      result = useMasterKey(db, guildId, userId, targetId, charName);
-      break;
-    }
-
-    case 'aegis_of_fidelity': {
-      const charName = args.join(' ').replace(/^["']|["']$/g, '');
-      if (!charName) {
-        return { success: false, message: 'Please specify which character you want to soulbind! Example: `!use aegis "Megumin"`' };
-      }
-      result = useAegisOfFidelity(db, guildId, userId, charName);
-      break;
-    }
-
-    case 'wish_upon_a_star': {
-      const franchiseQuery = args.join(' ').replace(/^["']|["']$/g, '');
-      if (!franchiseQuery) {
-        return { success: false, message: 'Please name the anime franchise you wish for! Example: `!use wish "Frieren"`' };
-      }
-      result = useWishUponAStar(db, guildId, userId, franchiseQuery);
-      break;
-    }
-
-    case 'franchise_passport': {
-      const franchiseQuery = args.join(' ').replace(/^["']|["']$/g, '');
-      if (!franchiseQuery) {
-        return { success: false, message: 'Please name the anime franchise for your passport! Example: `!use passport "Jujutsu Kaisen"`' };
-      }
-      result = useFranchisePassport(db, guildId, userId, franchiseQuery);
-      break;
-    }
-
-    case 'mirror_shield':
-    case 'golden_whistle':
-    case 'binoculars':
-      return { success: false, message: `**${def.name}** is a passive item and activates automatically from your inventory!` };
-
-    default:
-      return { success: false, message: `Item ${inventoryItem.item_id} cannot be activated directly.` };
+  if (typeof def.execute !== 'function') {
+    return { success: false, message: `Item **${def.name}** cannot be activated directly.` };
   }
 
-  // If item was blocked (e.g. by mirror shield), the attacker's item is consumed
+  const result = def.execute({ db, guildId, userId, args });
+
+  // If item was blocked (e.g. by mirror shield) or successfully used, decrement charge
   if (result.blocked || result.success) {
     decrementItemCharge(db, inventoryItem.id);
   }
