@@ -14,6 +14,8 @@ import {loadCharacterIndex} from "./lib/gameCharacterLookup.js";
 import {createCharacterImagePicker} from "./lib/characterImages.js";
 import {onRollReaction, onRollReport, recoverRollRuntime} from "./lib/characterRollRuntime.js";
 import {onMysteryAnswer, onMysteryButton, cancelMysteryRuntime} from "./lib/mysteryRuntime.js";
+import {onVaultInteraction} from "./lib/vaultRuntime.js";
+import {onInventoryButton} from "./commands/inv.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
@@ -31,6 +33,7 @@ export const yoshiko = {
     catalogDb: client.catalogDb,
     characterIndex: loadCharacterIndex(client.catalogDb),
     imagePicker: createCharacterImagePicker(),
+    vaultEnabled: process.env.VAULT_ROLLS_DISABLED !== '1',
 };
 cancelMysteryRuntime(client.catalogDb);
 recoverRollRuntime(client.catalogDb);
@@ -139,7 +142,7 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const prefix = getGuildPrefix(client.catalogDb, message.guild.id, config.prefix);
         const args = message.content.trim().split(/ +/g);
         const gameCommand = args[0].startsWith(prefix) ? args[0].slice(prefix.length).toLowerCase() : '';
-        if (['char', 'ima', 'imar', 'divorce', 'mm', 'mymarry', 'mmr', 'w', 'h', 'mu', 'ru', 'daily'].includes(gameCommand)) {
+        if (['char', 'ima', 'imar', 'divorce', 'mm', 'mymarry', 'mmr', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'use'].includes(gameCommand)) {
             args[0] = gameCommand;
             try {
                 const command = await import(`./commands/${gameCommand}.js`);
@@ -238,6 +241,24 @@ yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
         } catch (error) {
             console.error('Mystery button failed:', error);
             if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: 'Mystery choice failed. Please try again later.', ephemeral: true }).catch(console.error);
+        }
+        return;
+    }
+    if (interaction.customId?.startsWith('vault:')) {
+        try {
+            await onVaultInteraction(yoshiko.catalogDb, interaction);
+        } catch (error) {
+            console.error('Vault button failed:', error);
+            if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: 'Vault choice failed. Please try again later.', ephemeral: true }).catch(console.error);
+        }
+        return;
+    }
+    if (interaction.customId?.startsWith('inv:use:')) {
+        try {
+            await onInventoryButton(yoshiko.catalogDb, interaction);
+        } catch (error) {
+            console.error('Inventory button failed:', error);
+            if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: 'Inventory action failed. Please try again later.', ephemeral: true }).catch(console.error);
         }
         return;
     }
