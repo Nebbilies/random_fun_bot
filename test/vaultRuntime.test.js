@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { openCatalog } from '../lib/catalogDb.js';
 import {
   vaultCard,
+  vaultRewardCard,
   vaultRewardEmbed,
   startVaultRoll,
   onVaultInteraction,
@@ -46,19 +47,21 @@ test('vaultCard creates container with 3 buttons A, B, C and mystery vault asset
   assert.equal(disabledCard.files, undefined);
 });
 
-test('vaultRewardEmbed builds embed with tier color, bigger title, and description', () => {
+test('vaultRewardCard builds container with tier color, large markdown title, and description like roll card', () => {
   const outcome = {
     tier: 'epic',
     tierData: { name: 'Epic', color: 0x9b59b6, emoji: '🟣' },
     item: { name: "Pickpocket's Hook", description: 'Steals a randomly chosen character.' },
   };
-  const embed = vaultRewardEmbed(outcome);
-  assert.equal(embed.data.title, '# 🟣 Epic');
-  assert.equal(embed.data.color, 0x9b59b6);
-  assert.equal(embed.data.description, "**Pickpocket's Hook** - Steals a randomly chosen character.");
+  const card = vaultRewardCard(outcome);
+  const json = card.toJSON();
+  assert.equal(json.type, 17); // ContainerBuilder (Components V2)
+  assert.equal(json.accent_color, 0x9b59b6);
+  assert.equal(json.components[0].content, '# 🟣 Epic');
+  assert.equal(json.components[1].content, "**Pickpocket's Hook** — Steals a randomly chosen character.");
 });
 
-test('onVaultInteraction rolls outcome, replies to interaction before editing original message', async () => {
+test('onVaultInteraction rolls outcome, replies with Components V2 container before editing original message', async () => {
   const db = openCatalog(':memory:');
   const channel = mockChannel();
   const guildId = '1001';
@@ -98,7 +101,7 @@ test('onVaultInteraction rolls outcome, replies to interaction before editing or
   assert.equal(rejected, true);
 
   // Roller clicks button A
-  let repliedEmbed = null;
+  let repliedComponents = null;
   let repliedContent = null;
   const rollerInteraction = {
     isButton: () => true,
@@ -109,15 +112,18 @@ test('onVaultInteraction rolls outcome, replies to interaction before editing or
     channel,
     reply: async (opts) => {
       callSequence.push('interaction:reply');
-      repliedEmbed = opts.embeds?.[0];
+      repliedComponents = opts.components;
       repliedContent = opts.content;
     },
   };
 
   const handled = await onVaultInteraction(db, rollerInteraction);
   assert.equal(handled, true);
-  assert.ok(repliedEmbed);
-  assert.equal(repliedEmbed.data.title, '# 🟡 Legendary');
+  assert.ok(repliedComponents?.[0]);
+  const cardJson = repliedComponents[0].toJSON();
+  assert.equal(cardJson.type, 17); // Container
+  assert.equal(cardJson.accent_color, 0xf1c40f);
+  assert.equal(cardJson.components[0].content, '# 🟡 Legendary');
   assert.match(repliedContent, /<@3001> received \*\*Master Key\*\*/);
 
   // Ensure reply happened BEFORE message:edit
