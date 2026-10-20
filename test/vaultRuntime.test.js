@@ -42,14 +42,14 @@ test('vaultCard creates container with 3 buttons A, B, C and mystery vault asset
   assert.ok(card.files.some((f) => f.name === 'mystery_vault.png'));
 });
 
-test('vaultRewardEmbed builds embed with tier color and description', () => {
+test('vaultRewardEmbed builds embed with tier color, bigger title, and description', () => {
   const outcome = {
     tier: 'epic',
-    tierData: { name: 'Epic', color: 0x9b59b6 },
+    tierData: { name: 'Epic', color: 0x9b59b6, emoji: '🟣' },
     item: { name: "Pickpocket's Hook", description: 'Steals a randomly chosen character.' },
   };
   const embed = vaultRewardEmbed(outcome);
-  assert.equal(embed.data.title, 'Epic');
+  assert.equal(embed.data.title, '# 🟣 Epic');
   assert.equal(embed.data.color, 0x9b59b6);
   assert.equal(embed.data.description, "**Pickpocket's Hook** - Steals a randomly chosen character.");
 });
@@ -69,7 +69,7 @@ test('onVaultInteraction rolls outcome, disables buttons, awards item, and repli
     // Provide deterministic outcome
     rollOutcome: () => ({
       tier: 'legendary',
-      tierData: { name: 'Legendary', color: 0xf1c40f },
+      tierData: { name: 'Legendary', color: 0xf1c40f, emoji: '🟡' },
       item: { id: 'master_key', name: 'Master Key', description: 'Steals a chosen character.', maxCharges: 1 },
     }),
   });
@@ -87,6 +87,7 @@ test('onVaultInteraction rolls outcome, disables buttons, awards item, and repli
 
   // Roller clicks button A
   let repliedEmbed = null;
+  let repliedContent = null;
   const rollerInteraction = {
     isButton: () => true,
     customId: `vault:${vaultMsg.vaultId}:A`,
@@ -94,13 +95,17 @@ test('onVaultInteraction rolls outcome, disables buttons, awards item, and repli
     guildId,
     message: vaultMsg.message,
     channel,
-    reply: async (opts) => { repliedEmbed = opts.embeds?.[0]; },
+    reply: async (opts) => {
+      repliedEmbed = opts.embeds?.[0];
+      repliedContent = opts.content;
+    },
   };
 
   const handled = await onVaultInteraction(db, rollerInteraction);
   assert.equal(handled, true);
   assert.ok(repliedEmbed);
-  assert.equal(repliedEmbed.data.title, 'Legendary');
+  assert.equal(repliedEmbed.data.title, '# 🟡 Legendary');
+  assert.match(repliedContent, /<@3001> received \*\*Master Key\*\*/);
 
   // Verify item was stored in inventory
   const inv = getInventory(db, guildId, rollerId);
