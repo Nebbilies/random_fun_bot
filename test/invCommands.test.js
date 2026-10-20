@@ -76,6 +76,7 @@ test('!inv help command runs and replies with help embed', async () => {
   let replyPayload;
   const ctx = {
     args: ['inv', 'help'],
+    prefix: '!',
     message: {
       guildId,
       author: { id: userId, username: 'ThiefUser' },
@@ -89,6 +90,83 @@ test('!inv help command runs and replies with help embed', async () => {
   const helpEmbed = replyPayload.embeds[0];
   assert.ok(helpEmbed.data.description.includes("Pickpocket's Hook"));
   assert.ok(helpEmbed.data.description.includes('!use hook @user'));
+});
+
+test('!inv @user displays target user inventory without use buttons', async () => {
+  const db = openCatalog(':memory:');
+  const guildId = '1001';
+  const authorId = '3001';
+  const targetId = '4002';
+
+  addItemToInventory(db, guildId, targetId, 'bag_of_holding', 1);
+
+  let replyPayload;
+  const ctx = {
+    args: ['inv', `<@${targetId}>`],
+    prefix: '!',
+    message: {
+      guildId,
+      author: { id: authorId, username: 'Viewer' },
+      mentions: {
+        users: new Map([[targetId, { id: targetId, username: 'TargetUser' }]]),
+      },
+      reply: async (payload) => { replyPayload = payload; },
+    },
+    yoshiko: { catalogDb: db },
+  };
+
+  await invCommand(ctx);
+  assert.ok(replyPayload?.embeds?.[0]);
+  assert.ok(replyPayload.embeds[0].data.title.includes('TargetUser'));
+  assert.ok(replyPayload.embeds[0].data.fields.some((f) => f.name.includes('Bag of Holding')));
+  assert.equal(replyPayload.components.length, 0); // No action buttons for other user's inventory
+});
+
+test('!inv help @user displays target user item help', async () => {
+  const db = openCatalog(':memory:');
+  const guildId = '1001';
+  const authorId = '3001';
+  const targetId = '4002';
+
+  addItemToInventory(db, guildId, targetId, 'franchise_passport', 1);
+
+  let replyPayload;
+  const ctx = {
+    args: ['inv', 'help', `<@${targetId}>`],
+    prefix: '!',
+    message: {
+      guildId,
+      author: { id: authorId, username: 'Viewer' },
+      mentions: {
+        users: new Map([[targetId, { id: targetId, username: 'TargetUser' }]]),
+      },
+      reply: async (payload) => { replyPayload = payload; },
+    },
+    yoshiko: { catalogDb: db },
+  };
+
+  await invCommand(ctx);
+  assert.ok(replyPayload?.embeds?.[0]);
+  assert.ok(replyPayload.embeds[0].data.title.includes('TargetUser'));
+  assert.ok(replyPayload.embeds[0].data.description.includes('Franchise Passport'));
+  assert.ok(replyPayload.embeds[0].data.description.includes(`<@${targetId}>'s inventory`));
+});
+
+test('!inv with invalid argument replies with usage', async () => {
+  let replyText;
+  const ctx = {
+    args: ['inv', 'invalid_arg'],
+    prefix: '!',
+    message: {
+      guildId: '1001',
+      author: { id: '3001', username: 'Viewer' },
+      reply: async (msg) => { replyText = msg; },
+    },
+    yoshiko: { catalogDb: null },
+  };
+
+  await invCommand(ctx);
+  assert.ok(replyText.includes('Usage: !inv [@user]'));
 });
 
 test('executeItemUse finds item, applies effect, and consumes charge', () => {

@@ -123,12 +123,26 @@ test('administrator permission is rechecked on confirmation', async (t) => {
   assert.equal(getMarriage(db, '1', 11)?.ownerId, '102');
 });
 
-test('any member can view another member’s marriages by mention', async (t) => {
+test('any member can view another member’s marriages by mention or raw ID', async (t) => {
   const db = fixture(t);
   marryCharacter(db, '1', 11, '102');
-  const mock = context(db, ['mm', '<@102>']);
-  await mm(mock.ctx);
-  assert.match(content(mock.payload()), /Eleven/);
+  const mockMention = context(db, ['mm', '<@102>']);
+  await mm(mockMention.ctx);
+  assert.match(content(mockMention.payload()), /Eleven/);
+  assert.match(content(mockMention.payload()), /<@102>'s harem/);
+
+  const mockRawId = context(db, ['mmr', '102']);
+  await mmr(mockRawId.ctx);
+  assert.match(content(mockRawId.payload()), /Eleven/);
+  assert.match(content(mockRawId.payload()), /<@102>'s harem/);
+
+  const mockInvalid = context(db, ['mm', 'invalid_token']);
+  await mm(mockInvalid.ctx);
+  assert.equal(mockInvalid.payload(), 'Usage: !mm [@user]');
+
+  const mockTooMany = context(db, ['mmr', '<@102>', 'extra']);
+  await mmr(mockTooMany.ctx);
+  assert.equal(mockTooMany.payload(), 'Usage: !mmr [@user]');
 });
 
 test('long marriage lists have working pages', async (t) => {
@@ -171,3 +185,4 @@ test('ambiguous married names use a picker, and stale confirmation cannot remove
   });
   assert.equal(getMarriage(db, '1', 13)?.ownerId, '102');
 });
+

@@ -2,6 +2,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
   escapeMarkdown, MessageFlags, SectionBuilder, ThumbnailBuilder, TextDisplayBuilder } from 'discord.js';
 import { listMarriages } from '../lib/characterMarriage.js';
 import { formatNumber } from '../lib/formatNumber.js';
+import { resolveUserTarget } from '../lib/userTarget.js';
 
 const PAGE_SIZE = 20;
 const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
@@ -47,13 +48,14 @@ function pageComponents(rows, targetId, sort, page, disabled = false) {
 
 /** @param {any} ctx @param {'time' | 'rank'} [sort] */
 export async function runMarriages(ctx, sort = 'time') {
-  const token = ctx.args[1];
-  const mention = token?.match(/^<@!?(\d+)>$/);
-  if (ctx.args.length > 2 || (token && !mention)) {
-    await ctx.message.reply(`Usage: ${ctx.prefix}${ctx.args[0]} [@user]`);
+  const token = ctx.args?.[1];
+  const { targetId, valid } = resolveUserTarget(token, ctx.message.author.id, ctx.message);
+  if ((ctx.args && ctx.args.length > 2) || (token && !valid)) {
+    const prefix = ctx.prefix ?? '!';
+    const commandName = ctx.args?.[0] ?? (sort === 'rank' ? 'mmr' : 'mm');
+    await ctx.message.reply(`Usage: ${prefix}${commandName} [@user]`);
     return;
   }
-  const targetId = mention?.[1] ?? ctx.message.author.id;
   const rows = listMarriages(ctx.yoshiko.catalogDb, ctx.message.guildId, targetId, sort);
   let page = 0;
   let expired = false;
@@ -70,13 +72,16 @@ export async function runMarriages(ctx, sort = 'time') {
         await interaction.reply({ content: 'Only the command user can change pages.', flags: MessageFlags.Ephemeral });
         return;
       }
+      if (expired) {
+        await interaction.reply({ content: 'These buttons have expired.', flags: MessageFlags.Ephemeral });
+        return;
+      }
       await interaction.deferUpdate();
-      if (expired) return;
       if (interaction.customId === 'mm:prev' && page > 0) page--;
-      if (interaction.customId === 'mm:next' && (page + 1) * PAGE_SIZE < rows.length) page++;
+      else if (interaction.customId === 'mm:next' && (page + 1) * PAGE_SIZE < rows.length) page++;
       await reply.edit({ components: pageComponents(rows, targetId, sort, page) });
     } catch (error) {
-      console.error('Marriage list interaction failed:', error);
+      console.error('Marriage page interaction failed:', error);
     }
   });
   collector.on('end', () => {
@@ -86,5 +91,5 @@ export async function runMarriages(ctx, sort = 'time') {
 }
 
 export async function run(ctx) {
-  return runMarriages(ctx, 'time');
+  await runMarriages(ctx, 'time');
 }
