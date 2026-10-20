@@ -93,6 +93,7 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
   let rejected = false;
   const intruderInteraction = {
     isButton: () => true,
+    isStringSelectMenu: () => false,
     customId: `vault:${vaultMsg.vaultId}:A`,
     user: { id: 'intruder_99' },
     reply: async (opts) => { rejected = true; },
@@ -101,10 +102,10 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
   assert.equal(rejected, true);
 
   // Roller clicks button A
-  let repliedComponents = null;
-  let repliedContent = null;
+  let repliedOpts = null;
   const rollerInteraction = {
     isButton: () => true,
+    isStringSelectMenu: () => false,
     customId: `vault:${vaultMsg.vaultId}:A`,
     user: { id: rollerId },
     guildId,
@@ -112,19 +113,20 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
     channel,
     reply: async (opts) => {
       callSequence.push('interaction:reply');
-      repliedComponents = opts.components;
-      repliedContent = opts.content;
+      repliedOpts = opts;
     },
   };
 
   const handled = await onVaultInteraction(db, rollerInteraction);
   assert.equal(handled, true);
-  assert.ok(repliedComponents?.[0]);
-  const cardJson = repliedComponents[0].toJSON();
+  assert.ok(repliedOpts?.components?.[0]);
+  assert.equal(repliedOpts.content, undefined); // In Components V2, text must be inside containers
+  const cardJson = repliedOpts.components[0].toJSON();
   assert.equal(cardJson.type, 17); // Container
   assert.equal(cardJson.accent_color, 0xf1c40f);
-  assert.equal(cardJson.components[0].content, '# 🟡 Legendary');
-  assert.match(repliedContent, /<@3001> received \*\*Master Key\*\*/);
+  assert.match(cardJson.components[0].content, /<@3001> received \*\*Master Key\*\*/);
+  assert.equal(cardJson.components[1].content, '# 🟡 Legendary');
+  assert.equal(cardJson.components[2].content, '**Master Key** — Steals a chosen character.');
 
   // Ensure reply happened BEFORE message:edit
   assert.deepEqual(callSequence, ['interaction:reply', 'message:edit']);
