@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { openCatalog, setMeta } from '../lib/catalogDb.js';
 import { getRollStatus, getClaimStatus, setMaxRolls } from '../lib/characterRolls.js';
+import { getGuildRates } from '../lib/guildRates.js';
 import { createReviewServer } from '../web/reviewCharacterTags.js';
 
 test('review portal applies capped rolls and global claim resets with validated requests', async (t) => {
@@ -19,7 +20,7 @@ test('review portal applies capped rolls and global claim resets with validated 
     rmSync(directory, { recursive: true, force: true });
   });
   await once(server, 'listening');
-  const origin = `http://127.0.0.1:${server.address().port}`;
+  const origin = `http://127.0.0.1:${server.address().port}` ;
   const post = (path, body, headers = {}) => fetch(`${origin}/api/game/${path}`, {
     method: 'POST', headers: { origin, 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
@@ -29,6 +30,8 @@ test('review portal applies capped rolls and global claim resets with validated 
   const page = await fetch(`${origin}/game`).then((response) => response.text());
   assert.match(page, /Add rolls to everyone/);
   assert.match(page, /Reset claims for everyone/);
+  assert.match(page, /Configure server rates/);
+  assert.match(page, /Custom rate list/);
   const now = Date.now();
   const period = Math.floor(now / 3_600_000);
   const insert = db.prepare('INSERT INTO roll_allowances VALUES (?, ?, ?, ?)');
@@ -63,4 +66,41 @@ test('review portal applies capped rolls and global claim resets with validated 
   assert.equal(getRollStatus(db, '1', '101', now).remaining, 4);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM daily_roll_claims').get().n, 1);
   assert.equal((await post('reset-claims', {})).status, 200);
+
+  // Test /api/game/rates API
+  const ratesGet = await fetch(`${origin}/api/game/rates`);
+  assert.equal(ratesGet.status, 200);
+  const initialRates = await ratesGet.json();
+  assert.deepEqual(initialRates, []);
+
+  // Post invalid guild rates
+  assert.equal((await post('rates', { guildId: 'invalid', vaultRate: 0.05 })).status, 400);
+  assert.equal((await post('rates', { guildId: '12345', vaultRate: -0.1 })).status, 400);
+  assert.equal((await post('rates', { guildId: '12345', vaultRate: 1.5 })).status, 400);
+  assert.equal((await post('rates', { guildId: '12345', vaultRate: 0.05 }, { origin: 'http://evil.example' })).status, 403);
+
+  // Post valid guild rates
+  const saveRes = await post('rates', { guildId: '12345', vaultRate: 0.05, prankRate: 0.02 });
+  assert.equal(saveRes.status, 200);
+  const savedData = await saveRes.json();
+  assert.equal(savedData.guildId, '12345');
+  assert.equal(savedData.vaultRate, 0.05);
+  assert.equal(savedData.prankRate, 0.02);
+
+  // Verify cached / persisted rate
+  assert.equal(getGuildRates(db, '12345').vaultRate, 0.05);
+  assert.equal(getGuildRates(db, '12345').prankRate, 0.02);
+
+  // Fetch rates for that specific guild
+  const singleGet = await fetch(`${origin}/api/game/rates?guildId=12345`);
+  assert.equal(singleGet.status, 200);
+  const singleData = await singleGet.json();
+  assert.equal(singleData.vaultRate, 0.05);
+  assert.equal(singleData.prankRate, 0.02);
+
+  // Fetch all rates
+  const allGet = await fetch(`${origin}/api/game/rates`);
+  const allList = await allGet.json();
+  assert.equal(allList.length, 1);
+  assert.equal(allList[0].guildId, '12345');
 });
