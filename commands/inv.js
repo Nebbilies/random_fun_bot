@@ -11,9 +11,10 @@ import {
   getActiveBuffs,
 } from '../lib/itemStorage.js';
 import { getItemDefinition, ITEM_TIERS } from '../lib/itemRoster.js';
+import { resolveUserTarget, resolveTargetUsername } from '../lib/userTarget.js';
 import { executeItemUseById } from './use.js';
 
-export function renderInventoryEmbed(db, guildId, userId, username, now = Date.now()) {
+export function renderInventoryEmbed(db, guildId, userId, username, now = Date.now(), isSelf = true) {
   const inv = getInventory(db, guildId, userId);
   const capacity = getInventoryCapacity(db, guildId, userId);
   const buffs = getActiveBuffs(db, guildId, userId, now);
@@ -23,7 +24,11 @@ export function renderInventoryEmbed(db, guildId, userId, username, now = Date.n
     .setTitle(`🎒 ${username}'s Inventory [${inv.length}/${capacity}]`);
 
   if (!inv.length) {
-    embed.setDescription('Your inventory is empty. Roll characters (`!w` / `!h`) for a chance to find a **Mystery Vault**!');
+    if (isSelf) {
+      embed.setDescription('Your inventory is empty. Roll characters (`!w` / `!h`) for a chance to find a **Mystery Vault**!');
+    } else {
+      embed.setDescription(`<@${userId}>'s inventory is empty.`);
+    }
   } else {
     for (const item of inv) {
       const def = getItemDefinition(item.item_id);
@@ -57,9 +62,15 @@ export function renderInventoryEmbed(db, guildId, userId, username, now = Date.n
     });
   }
 
-  embed.setFooter({
-    text: '💡 Click buttons below or type !use <item> [args] • Type !inv help for item guide',
-  });
+  if (isSelf) {
+    embed.setFooter({
+      text: '💡 Click buttons below or type !use <item> [args] • Type !inv help for item guide',
+    });
+  } else {
+    embed.setFooter({
+      text: "💡 Viewing another user's inventory",
+    });
+  }
 
   return embed;
 }
@@ -140,7 +151,7 @@ export function getItemHelpBullet(def) {
   }
 }
 
-export function renderInventoryHelpEmbed(db, guildId, userId, username) {
+export function renderInventoryHelpEmbed(db, guildId, userId, username, isSelf = true) {
   const inv = getInventory(db, guildId, userId);
 
   const embed = new EmbedBuilder()
@@ -148,7 +159,11 @@ export function renderInventoryHelpEmbed(db, guildId, userId, username) {
     .setTitle(`🎒 ${username}'s Item Help Guide`);
 
   if (!inv.length) {
-    embed.setDescription('Your inventory is empty! Roll characters (`!w` / `!h`) for a chance to find a **Mystery Vault** and get items.');
+    if (isSelf) {
+      embed.setDescription('Your inventory is empty! Roll characters (`!w` / `!h`) for a chance to find a **Mystery Vault** and get items.');
+    } else {
+      embed.setDescription(`<@${userId}>'s inventory is empty.`);
+    }
     return embed;
   }
 
@@ -157,9 +172,11 @@ export function renderInventoryHelpEmbed(db, guildId, userId, username) {
     .map((id) => getItemHelpBullet(getItemDefinition(id)))
     .filter(Boolean);
 
-  embed.setDescription(
-    `Here is how to use the items currently in your inventory:\n\n${bullets.join('\n\n')}`
-  );
+  const prefix = isSelf
+    ? 'Here is how to use the items currently in your inventory:'
+    : `Here is how to use the items currently in <@${userId}>'s inventory:`;
+
+  embed.setDescription(`${prefix}\n\n${bullets.join('\n\n')}`);
   embed.setFooter({
     text: '💡 Type !inv to view your inventory, or !use <item> [args] to activate items',
   });
@@ -169,20 +186,36 @@ export function renderInventoryHelpEmbed(db, guildId, userId, username) {
 
 export async function run(ctx) {
   const { message, args, yoshiko } = ctx;
+  const prefix = ctx.prefix ?? '!';
   const db = yoshiko.catalogDb;
   const guildId = message.guildId;
-  const userId = message.author.id;
-  const username = message.author.username;
 
-  const subCommand = (args?.[1] || '').trim().toLowerCase();
-  if (subCommand === 'help') {
-    const embed = renderInventoryHelpEmbed(db, guildId, userId, username);
+  const firstArg = (args?.[1] || '').trim().toLowerCase();
+  const isHelp = firstArg === 'help';
+  const targetToken = isHelp ? args?.[2] : args?.[1];
+
+  if ((isHelp && (args?.length ?? 0) > 3) || (!isHelp && (args?.length ?? 0) > 2)) {
+    await message.reply(`Usage: ${prefix}inv [@user] or ${prefix}inv help [@user]`);
+    return;
+  }
+
+  const { targetId, isSelf, valid } = resolveUserTarget(targetToken, message.author.id, message);
+  if (targetToken && !valid) {
+    await message.reply(`Usage: ${prefix}inv [@user] or ${prefix}inv help [@user]`);
+    return;
+  }
+
+  const username = await resolveTargetUsername(message, targetId, isSelf ? message.author.username : null);
+
+  if (isHelp) {
+    const embed = renderInventoryHelpEmbed(db, guildId, targetId, username, isSelf);
     await message.reply({ embeds: [embed] });
     return;
   }
 
-  const embed = renderInventoryEmbed(db, guildId, userId, username);
-  const components = renderInventoryComponents(db, guildId, userId);
+  const embed = renderInventoryEmbed(db, guildId, targetId, username, Date.now(), isSelf);
+  // Only provide use buttons when inspecting one's own inventory
+  const components = isSelf ? renderInventoryComponents(db, guildId, targetId) : [];
 
   await message.reply({ embeds: [embed], components });
 }
@@ -210,19 +243,18 @@ export async function onInventoryButton(db, interaction) {
     return true;
   }
 
-  // Refresh inventory message
-  const updatedEmbed = renderInventoryEmbed(db, interaction.guildId, interaction.user.id, interaction.user.username);
-  const updatedComponents = renderInventoryComponents(db, interaction.guildId, interaction.user.id);
+  const embed = renderInventoryEmbed(db, interaction.guildId, interaction.user.id, interaction.user.username);
+  const components = renderInventoryComponents(db, interaction.guildId, interaction.user.id);
 
-  try {
-    await interaction.update({ embeds: [updatedEmbed], components: updatedComponents });
-  } catch {
-    // If update fails, fallback to reply
-  }
+  await interaction.update({
+    embeds: [embed],
+    components,
+  });
 
   await interaction.followUp({
     content: `✅ ${result.message}`,
     flags: MessageFlags.Ephemeral,
   });
+
   return true;
 }

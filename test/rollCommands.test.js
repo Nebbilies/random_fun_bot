@@ -182,3 +182,44 @@ test('mu and ru show available and exhausted allowances with reset countdowns', 
     Date.now = originalNow;
   }
 });
+
+test('mu and ru support targeting other users by mention or ID, and validate arguments', async (t) => {
+  const x = fixture(t);
+  const now = Date.parse('2026-10-15T17:30:00Z');
+  const originalNow = Date.now;
+  Date.now = () => now;
+  try {
+    // Target 102 who has consumed 4 rolls and claimed
+    x.db.prepare('INSERT INTO claim_allowances (guild_id,user_id,period) VALUES (?,?,?)')
+      .run('1', '102', Math.floor((now + 7 * 3_600_000) / (3 * 3_600_000)));
+    x.db.prepare('INSERT INTO roll_allowances (guild_id,user_id,period,used) VALUES (?,?,?,?)')
+      .run('1', '102', Math.floor(now / 3_600_000), 4);
+
+    // Target via mention
+    await mu({ message: x.message, yoshiko: x.yoshiko, prefix: '!', args: ['mu', '<@102>'] });
+    await ru({ message: x.message, yoshiko: x.yoshiko, prefix: '!', args: ['ru', '<@102>'] });
+    assert.equal(x.sent.at(-2), "<@102> can't claim right now. The next claim reset is in **2h 30 min**.");
+    assert.equal(x.sent.at(-1), '<@102> has 3 rolls left. Next rolls reset in **30 min**.');
+
+    // Target via raw ID
+    await mu({ message: x.message, yoshiko: x.yoshiko, prefix: '!', args: ['mu', '102'] });
+    await ru({ message: x.message, yoshiko: x.yoshiko, prefix: '!', args: ['ru', '102'] });
+    assert.equal(x.sent.at(-2), "<@102> can't claim right now. The next claim reset is in **2h 30 min**.");
+    assert.equal(x.sent.at(-1), '<@102> has 3 rolls left. Next rolls reset in **30 min**.');
+
+    // Invalid argument
+    await mu({ message: x.message, yoshiko: x.yoshiko, prefix: '!', args: ['mu', 'invalid_user'] });
+    assert.equal(x.sent.at(-1), 'Usage: !mu [@user]');
+    await ru({ message: x.message, yoshiko: x.yoshiko, prefix: '!', args: ['ru', 'invalid_user'] });
+    assert.equal(x.sent.at(-1), 'Usage: !ru [@user]');
+
+    // Too many arguments
+    await mu({ message: x.message, yoshiko: x.yoshiko, prefix: '!', args: ['mu', '<@102>', 'extra'] });
+    assert.equal(x.sent.at(-1), 'Usage: !mu [@user]');
+    await ru({ message: x.message, yoshiko: x.yoshiko, prefix: '!', args: ['ru', '<@102>', 'extra'] });
+    assert.equal(x.sent.at(-1), 'Usage: !ru [@user]');
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
