@@ -7,6 +7,7 @@ import { DANBOORU_USER_AGENT, DanbooruApi } from '../lib/danbooruApi.js';
 import { getMeta, openCatalog, resolveCharacterTagReports, saveDecision, transaction } from '../lib/catalogDb.js';
 import { handleFranchiseReviewRequest } from './reviewFranchises.js';
 import { addGlobalRolls, resetGlobalClaims } from '../lib/characterRolls.js';
+import { getGuildRates, setGuildRates, listAllGuildRates, isValidRate } from '../lib/guildRates.js';
 import { serveAssets } from './serveAssets.js';
 
 const html = readFileSync(new URL('./reviewCharacterTags.html', import.meta.url));
@@ -109,6 +110,38 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
             return json(response, 400, { error: 'Enter a positive whole number of rolls.' });
           json(response, 200, addGlobalRolls(db, body.amount));
         } else json(response, 200, resetGlobalClaims(db));
+      } else if (request.method === 'GET' && url.pathname === '/api/game/rates') {
+        const guildId = url.searchParams.get('guildId');
+        if (guildId) {
+          if (!/^\d+$/.test(guildId)) return json(response, 400, { error: 'Invalid guild ID' });
+          json(response, 200, { guildId, ...getGuildRates(db, guildId) });
+        } else {
+          json(response, 200, listAllGuildRates(db));
+        }
+      } else if (request.method === 'POST' && url.pathname === '/api/game/rates') {
+        if (request.headers.origin !== requestOrigin)
+          return json(response, 403, { error: 'Invalid origin' });
+        if (!request.headers['content-type']?.startsWith('application/json'))
+          return json(response, 415, { error: 'JSON required' });
+        let body;
+        try { body = await readJsonBody(request); }
+        catch { return json(response, 400, { error: 'Invalid JSON body' }); }
+        const { guildId, vaultRate, prankRate } = body || {};
+        if (!guildId || typeof guildId !== 'string' || !/^\d+$/.test(guildId)) {
+          return json(response, 400, { error: 'A valid numeric Discord Server (Guild) ID is required.' });
+        }
+        if (vaultRate !== undefined && !isValidRate(vaultRate)) {
+          return json(response, 400, { error: 'Vault rate must be a number between 0 and 1 (e.g. 0.01 for 1%).' });
+        }
+        if (prankRate !== undefined && !isValidRate(prankRate)) {
+          return json(response, 400, { error: 'Prank rate must be a number between 0 and 1 (e.g. 0.01 for 1%).' });
+        }
+        try {
+          const updated = setGuildRates(db, guildId, { vaultRate, prankRate });
+          json(response, 200, { guildId, ...updated });
+        } catch (err) {
+          json(response, 400, { error: err.message });
+        }
       } else if (request.method === 'GET' && url.pathname === '/api/status') {
         const count = (sql) => db.prepare(sql).get().n;
         json(response, 200, {
