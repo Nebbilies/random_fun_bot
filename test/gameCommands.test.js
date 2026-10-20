@@ -8,6 +8,7 @@ import { ButtonStyle, ComponentType, MessageFlags } from 'discord.js';
 import { openCatalog, saveDecision } from '../lib/catalogDb.js';
 import { loadCharacterIndex } from '../lib/gameCharacterLookup.js';
 import { run as characterCommand } from '../commands/char.js';
+import { run as imCommand } from '../commands/im.js';
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'game-command-'));
@@ -197,4 +198,40 @@ test('every character card lets viewers privately report a tag once', async (t) 
   collector.emit('end');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(controls()[0].disabled, true);
+});
+
+test('im command acts as an exact alias for char command and formats usage appropriately', async (t) => {
+  let replyUsage;
+  await imCommand({
+    args: ['im'],
+    prefix: '!',
+    message: { reply: async (msg) => { replyUsage = msg; } },
+  });
+  assert.equal(replyUsage, 'Usage: !im <name or #rank>');
+
+  let replyChar;
+  await characterCommand({
+    args: ['char'],
+    prefix: '$',
+    message: { reply: async (msg) => { replyChar = msg; } },
+  });
+  assert.equal(replyChar, 'Usage: $char <name or #rank>');
+
+  const db = fixture(t);
+  db.prepare(`INSERT INTO characters
+    (id, rank, favourites, name_full, name_native, name_alternatives, anime_titles, image_url, site_url)
+    VALUES (1, 10, 500, 'Rem', null, '[]', '["Re:Zero"]', 'https://example.com/rem.jpg', null)`).run();
+  let replyResult;
+  await imCommand({
+    args: ['im', 'Rem'],
+    prefix: '!',
+    message: { guildId: '1', reply: async (value) => { replyResult = value; } },
+    yoshiko: {
+      catalogDb: db,
+      characterIndex: loadCharacterIndex(db),
+      imagePicker: { pick: async () => ({ url: 'https://example.com/rem.jpg', source: 'anilist' }) },
+    },
+  });
+  const card = replyResult.components[0].toJSON();
+  assert.match(card.components[0].content, /Rem/);
 });

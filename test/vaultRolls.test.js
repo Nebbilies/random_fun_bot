@@ -5,10 +5,10 @@ import { openCatalog } from '../lib/catalogDb.js';
 import { reserveRoll } from '../lib/characterRolls.js';
 import { passesVaultGate, VAULT_DROP_RATE } from '../lib/vaultRolls.js';
 
-test('passesVaultGate correctly triggers at 0.5% rate', () => {
-  assert.equal(VAULT_DROP_RATE, 0.005);
-  assert.equal(passesVaultGate(() => 0.004), true);
-  assert.equal(passesVaultGate(() => 0.005), false);
+test('passesVaultGate correctly triggers at 1% rate', () => {
+  assert.equal(VAULT_DROP_RATE, 0.01);
+  assert.equal(passesVaultGate(() => 0.009), true);
+  assert.equal(passesVaultGate(() => 0.01), false);
   assert.equal(passesVaultGate(() => 0.5), false);
 });
 
@@ -23,7 +23,7 @@ test('reserveRoll with vault roll triggers vault status, consumes roll allowance
   const channelId = '2001';
   const userId = '3001';
 
-  // Force vault trigger: random returns 0.001 (< 0.005)
+  // Force vault trigger: random returns 0.005 (< 0.01)
   const res = reserveRoll(testDb, {
     guildId,
     channelId,
@@ -31,7 +31,7 @@ test('reserveRoll with vault roll triggers vault status, consumes roll allowance
     userId,
     pool: 'w',
     vaultEnabled: true,
-    random: () => 0.001,
+    random: () => 0.005,
   });
 
   assert.equal(res.status, 'vault');

@@ -105,9 +105,10 @@ function jumpModal(pages, id) {
 }
 
 export async function run(ctx) {
+  const commandName = ctx.args[0] || 'char';
   const query = ctx.args.slice(1).join(' ').trim();
   if (!query) {
-    await ctx.message.reply(`Usage: ${ctx.prefix}char <name or #rank>`);
+    await ctx.message.reply(`Usage: ${ctx.prefix}${commandName} <name or #rank>`);
     return;
   }
 

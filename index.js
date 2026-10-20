@@ -142,7 +142,7 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const prefix = getGuildPrefix(client.catalogDb, message.guild.id, config.prefix);
         const args = message.content.trim().split(/ +/g);
         const gameCommand = args[0].startsWith(prefix) ? args[0].slice(prefix.length).toLowerCase() : '';
-        if (['char', 'ima', 'imar', 'divorce', 'mm', 'mymarry', 'mmr', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'use'].includes(gameCommand)) {
+        if (['char', 'im', 'ima', 'imar', 'divorce', 'mm', 'mymarry', 'mmr', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'use'].includes(gameCommand)) {
             args[0] = gameCommand;
             try {
                 const command = await import(`./commands/${gameCommand}.js`);
