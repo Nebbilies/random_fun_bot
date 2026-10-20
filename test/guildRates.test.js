@@ -70,7 +70,7 @@ test('cache serves rates without querying database repeatedly until TTL expires'
   db.prepare('UPDATE guild_game_rates SET vault_rate = 0.5 WHERE guild_id = ?').run(guildId);
 
   // Within TTL: getGuildRates should still return cached 0.1
-  const cached = getGuildRates(db, guildId, now + 60_000);
+  const cached = getGuildRates(db, guildId, now + 1_000);
   assert.equal(cached.vaultRate, 0.1);
 
   // After TTL: cache expires and refreshes from DB
