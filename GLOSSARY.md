@@ -51,3 +51,15 @@ _Avoid_: Approval
 **Report correction**:
 A tag mapping chosen while resolving reports, replacing the mapping that viewers flagged.
 _Avoid_: Tag suggestion
+
+**Marriage modifier**:
+A letter flag appended to a marriage list command (such as `!mm[flags]`) that modifies sorting, grouping, or presentation.
+_Avoid_: Subcommand, command parameter
+
+**Franchise marriage view**:
+A marriage list view (activated with the `a` modifier) that groups a player's married characters under their respective anime franchises in alphabetical order.
+_Avoid_: Franchise harem, series list
+
+**Individual card view**:
+A marriage view (activated with the `i` modifier) that displays a player's married characters one full card at a time with Previous and Next navigation controls.
+_Avoid_: Single character view, harem carousel
