@@ -142,10 +142,12 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const prefix = getGuildPrefix(client.catalogDb, message.guild.id, config.prefix);
         const args = message.content.trim().split(/ +/g);
         const gameCommand = args[0].startsWith(prefix) ? args[0].slice(prefix.length).toLowerCase() : '';
-        if (['char', 'im', 'ima', 'imar', 'divorce', 'mm', 'mymarry', 'mmr', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'use'].includes(gameCommand)) {
+        const isMarriage = /^(mm|mymarry)([a-z]*)$/.test(gameCommand);
+        if (isMarriage || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'use'].includes(gameCommand)) {
             args[0] = gameCommand;
             try {
-                const command = await import(`./commands/${gameCommand}.js`);
+                const commandModule = isMarriage ? './commands/mm.js' : `./commands/${gameCommand}.js`;
+                const command = await import(commandModule);
                 await command.run({ yoshiko, message, args, prefix });
             } catch (error) {
                 console.error('Character game command failed:', error);
@@ -308,13 +310,3 @@ async function registerUtilityCommands(guildId) {
         console.error(`Could not register application (/) commands for guild ${guildId}:`, error);
     }
 }
-
-yoshiko.client.once(Events.ClientReady, async (readyClient) => {
-    await Promise.all([...readyClient.guilds.cache.keys()].map(registerUtilityCommands));
-});
-yoshiko.client.on(Events.GuildCreate, (guild) => {
-    void registerUtilityCommands(guild.id);
-});
-yoshiko.client.login(config.token).catch((err) => console.error(err));
-
-//FINISHED: DEPLOYED FIRST SLASH COMMAND, TODO: DEPLOY LOGIN SLASH COMMAND WITH OPTIONS, HANDLING WRONG TOKENS AND UIDS.
