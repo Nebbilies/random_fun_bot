@@ -22,11 +22,20 @@
     "commands/daily.js",
     "commands/utility/set-roll.js",
     "lib/gameCharacterLookup.js",
+    "lib/characterTrade.js",
+    "lib/haremView.js",
+    "lib/tradeRuntime.js",
+    "commands/trade.js",
+    "commands/me.js",
+    "commands/give.js",
+    "commands/cancel.js",
     "test/characterIdentity.test.js",
     "test/characterMarriage.test.js",
     "test/marriageCommands.test.js",
     "test/characterRolls.test.js",
     "test/characterEscapes.test.js",
-    "test/rollCommands.test.js"
+    "test/rollCommands.test.js",
+    "test/characterTrade.test.js",
+    "test/tradeCommands.test.js"
   ]
 }

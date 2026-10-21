@@ -3,9 +3,10 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
   SectionBuilder, ThumbnailBuilder, TextDisplayBuilder } from 'discord.js';
 import { listMarriages, listMarriagesByFranchise } from '../lib/characterMarriage.js';
 import { formatNumber } from '../lib/formatNumber.js';
+import { HArem_PAGE_SIZE, haremListComponents } from '../lib/haremView.js';
 import { resolveUserTarget } from '../lib/userTarget.js';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = HArem_PAGE_SIZE;
 const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
 
 /** @param {import('discord.js').MessageActionRowComponentBuilder[]} components */
@@ -57,35 +58,6 @@ export function parseMarriageCommand(commandName) {
     view: flags.individual ? 'individual' : (flags.franchise ? 'franchise' : 'list'),
     sort: flags.rank ? 'rank' : 'time',
   };
-}
-
-function listPageComponents(rows, targetId, sort, page, disabled = false) {
-  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const start = page * PAGE_SIZE;
-  const lines = rows.slice(start, start + PAGE_SIZE).map((row) => {
-    const name = escapeMarkdown(short(row.name_full || `Character ${row.characterId}`));
-    return sort === 'rank' ? `**#${formatNumber(row.rank)}** - ${name}` : name;
-  });
-  const displays = [
-    new TextDisplayBuilder().setContent(`## <@${targetId}>'s harem`),
-    new TextDisplayBuilder().setContent(lines.length ? lines.join('\n') : 'No marriages yet.'),
-    new TextDisplayBuilder().setContent(`Page ${page + 1} of ${pages}`),
-  ];
-  const top = rows.reduce((best, row) => !best || row.rank < best.rank ? row : best, null);
-  const container = new ContainerBuilder().setAccentColor(0x5865f2);
-  if (top?.image_url) {
-    container.addSectionComponents(new SectionBuilder().addTextDisplayComponents(...displays)
-      .setThumbnailAccessory(new ThumbnailBuilder().setURL(top.image_url)));
-  } else container.addTextDisplayComponents(...displays);
-  if (pages > 1) {
-    container.addActionRowComponents(actionRow(
-      new ButtonBuilder().setCustomId('mm:prev').setLabel('Previous')
-        .setStyle(ButtonStyle.Secondary).setDisabled(disabled || page === 0),
-      new ButtonBuilder().setCustomId('mm:next').setLabel('Next')
-        .setStyle(ButtonStyle.Secondary).setDisabled(disabled || page === pages - 1),
-    ));
-  }
-  return [container];
 }
 
 function franchisePageComponents(groups, rows, targetId, sort, page, disabled = false) {
@@ -258,7 +230,7 @@ export async function runMarriages(ctx, options = {}) {
   const render = (disabled = false) => {
     if (view === 'individual') return individualCardComponents(rows, targetId, page, disabled);
     if (view === 'franchise') return franchisePageComponents(groups, rows, targetId, sort, page, disabled);
-    return listPageComponents(rows, targetId, sort, page, disabled);
+    return haremListComponents(rows, targetId, sort, page, { disabled });
   };
 
   let expired = false;
