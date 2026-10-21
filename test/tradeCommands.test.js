@@ -16,21 +16,36 @@ function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'trade-commands-'));
   const db = openCatalog(join(directory, 'catalog.sqlite'));
   t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
-  db.prepare(`INSERT INTO characters (id, rank, favourites, name_full) VALUES
-    (11, 1, 100, 'Eleven'), (12, 2, 90, 'Twelve'),
-    (13, 3, 80, 'Shared'), (14, 4, 70, 'Shared')`).run();
+  db.prepare(`INSERT INTO characters (id, rank, favourites, name_full, image_url) VALUES
+    (11, 1, 100, 'Eleven', 'https://example.com/eleven.jpg'),
+    (12, 2, 90, 'Twelve', 'https://example.com/twelve.jpg'),
+    (13, 3, 80, 'Shared', 'https://example.com/shared-a.jpg'),
+    (14, 4, 70, 'Shared', 'https://example.com/shared-b.jpg')`).run();
   return db;
+}
+
+/**
+ * Mirrors discord.js: components are serialized when the message is sent, and
+ * the builders reject payloads that break the Components V2 rules.
+ */
+function serialize(payload) {
+  if (Array.isArray(payload?.components)) {
+    for (const component of payload.components) {
+      if (typeof component?.toJSON === 'function') component.toJSON();
+    }
+  }
+  return payload;
 }
 
 function createSentMessage(payload) {
   const collector = Object.assign(new EventEmitter(), { stop: () => {} });
   const message = {
-    payload,
+    payload: serialize(payload),
     edits: /** @type {any[]} */ ([]),
     createMessageComponentCollector: () => collector,
     collector,
   };
-  message.edit = async (value) => { message.edits.push(value); };
+  message.edit = async (value) => { message.edits.push(serialize(value)); };
   return message;
 }
 
@@ -256,4 +271,22 @@ test('only the player who has to pick consumes the typed name', async (t) => {
   assert.equal((await say(db, channel, '102', 'Twelve')).handled, false);
   assert.equal((await say(db, channel, '101', 'Nobody')).handled, true);
   assert.match(text(channel.sent[0].payload), /No character matching \*\*Nobody\*\*/);
+});
+
+test('the character list is a valid Components V2 payload', async (t) => {
+  const db = fixture(t);
+  marryCharacter(db, '1', 11, '101');
+  const channel = createChannel();
+  const ctx = context(db, channel, '101', ['give', '<@102>']);
+  ctx.message.guild.members.cache.set('102', { id: '102' });
+  await give(ctx);
+
+  const container = ctx.message.replies[0].payload.components[0].toJSON();
+  const section = container.components.find((component) => component.type === 9);
+  // A section holds at most three text displays, so the notice sits outside it.
+  assert.ok(section, 'the list uses a section for the character thumbnail');
+  assert.ok(section.components.length <= 3, 'a section holds at most three text displays');
+  const notice = container.components.find((component) => component.type === 10);
+  assert.match(notice.content, /Gift for <@102>/);
+  assert.equal(container.components.length, 2);
 });
