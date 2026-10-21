@@ -14,6 +14,7 @@ import {loadCharacterIndex} from "./lib/gameCharacterLookup.js";
 import {createCharacterImagePicker} from "./lib/characterImages.js";
 import {onRollReaction, onRollReport, recoverRollRuntime} from "./lib/characterRollRuntime.js";
 import {onMysteryAnswer, onMysteryButton, cancelMysteryRuntime} from "./lib/mysteryRuntime.js";
+import {onTradeAnswer} from "./lib/tradeRuntime.js";
 import {onVaultInteraction} from "./lib/vaultRuntime.js";
 import {onInventoryButton} from "./commands/inv.js";
 
@@ -143,7 +144,7 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const args = message.content.trim().split(/ +/g);
         const gameCommand = args[0].startsWith(prefix) ? args[0].slice(prefix.length).toLowerCase() : '';
         const isMarriage = /^(mm|mymarry)([a-z]*)$/.test(gameCommand);
-        if (isMarriage || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'use'].includes(gameCommand)) {
+        if (isMarriage || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'use', 'me', 'trade', 'give', 'cancel'].includes(gameCommand)) {
             args[0] = gameCommand;
             try {
                 const commandModule = isMarriage ? './commands/mm.js' : `./commands/${gameCommand}.js`;
@@ -161,6 +162,11 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
                 if (await onMysteryAnswer(client.catalogDb, message)) return;
             } catch (error) {
                 console.error('Mystery answer failed:', error);
+            }
+            try {
+                if (await onTradeAnswer(client.catalogDb, message)) return;
+            } catch (error) {
+                console.error('Trade answer failed:', error);
             }
         }
 
