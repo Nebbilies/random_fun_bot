@@ -310,3 +310,13 @@ async function registerUtilityCommands(guildId) {
         console.error(`Could not register application (/) commands for guild ${guildId}:`, error);
     }
 }
+
+yoshiko.client.once(Events.ClientReady, async (readyClient) => {
+    await Promise.all([...readyClient.guilds.cache.keys()].map(registerUtilityCommands));
+});
+yoshiko.client.on(Events.GuildCreate, (guild) => {
+    void registerUtilityCommands(guild.id);
+});
+yoshiko.client.login(config.token).catch((err) => console.error(err));
+
+//FINISHED: DEPLOYED FIRST SLASH COMMAND, TODO: DEPLOY LOGIN SLASH COMMAND WITH OPTIONS, HANDLING WRONG TOKENS AND UIDS.
