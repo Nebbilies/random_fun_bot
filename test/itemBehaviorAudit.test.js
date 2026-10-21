@@ -13,6 +13,7 @@ import {
 } from '../lib/characterRolls.js';
 import { getMarriage, marryCharacter } from '../lib/characterMarriage.js';
 import { beginMysteryEvent, reserveMysteryAwareRoll } from '../lib/mysteryCoordinator.js';
+import { startMysteryRoll } from '../lib/mysteryRuntime.js';
 import { runRoll } from '../lib/characterRollRuntime.js';
 
 const start = Date.parse('2026-10-18T01:00:00Z');
@@ -324,4 +325,44 @@ test('Hourglass of Haste and Crown of the Sovereign keep working', (t) => {
   publishRoll(db, roll.rollId, '5009', start);
   assert.equal(claimRoll(db, { guildId: '1', channelId: '10', messageId: '5009', userId: '101',
     now: start }).status, 'married');
+});
+
+test('Binoculars is consumed by the mystery runtime that starts the minigame', async (t) => {
+  // The full production path: the runtime owns the timer that starts the minigame,
+  // so a charge spent only by the coordinator would still look unspent to the user.
+  const db = fixture(t);
+  grant(db, 'binoculars');
+  const timers = [];
+  const setTimer = (fn) => { timers.push(fn); return { unref() {} }; };
+  const clockTime = { value: start };
+  const now = () => clockTime.value;
+  const sent = [];
+  const channel = { id: '10', send: async (payload) => {
+    sent.push(payload);
+    return { id: String(700 + sent.length), channel, edit: async () => ({}) };
+  } };
+  const message = { id: '800', guildId: '1', channelId: '10', author: { id: '101' }, channel,
+    reply: async () => ({ id: '900' }) };
+  const client = { users: { fetch: async (id) => ({ id,
+    send: async (payload) => { sent.push(payload); return {}; } }) } };
+  const imagePicker = { pick: async () => ({ url: 'https://example.com/a.png' }) };
+
+  let calls = 0;
+  const random = () => [0, 0, 0.9][Math.min(calls++, 2)];
+  const reservation = reserveMysteryAwareRoll(db, { guildId: '1', channelId: '10',
+    commandMessageId: '800', userId: '101', pool: 'w', mysteryEnabled: true, now: start, random });
+  assert.equal(reservation.status, 'mystery');
+
+  await startMysteryRoll({ db, client, message, reservation, imagePicker,
+    now, setTimer, clearTimer: () => {}, random });
+  assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 1,
+    'the intro alone must not spend the charge');
+
+  clockTime.value = start + 5_001;
+  await timers[0]();
+
+  assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 0,
+    'the Binoculars must leave the inventory once the minigame starts');
+  assert.ok(sent.some((payload) => JSON.stringify(payload).includes('Binoculars')),
+    'the Binoculars must reveal the answer to the roller');
 });

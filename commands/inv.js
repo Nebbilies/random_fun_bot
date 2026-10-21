@@ -108,7 +108,7 @@ export function getItemHelpBullet(def) {
     case 'four_leaf_clover':
       return `• **${tier.emoji} Four-Leaf Clover**: Click the button on \`!inv\` or type \`!use clover\` to boost high-favorite character rates for 5 rolls.`;
     case 'binoculars':
-      return `• **${tier.emoji} Binoculars**: Click the button on \`!inv\` or type \`!use binoculars\` to peek at your next 3 character rolls.`;
+      return `• **${tier.emoji} Binoculars**: Passive item. Automatically reveals the correct choice when your next mystery minigame starts. (1 charge)`;
     case 'love_letter':
       return `• **${tier.emoji} Love Letter**: Click the button on \`!inv\` or type \`!use letter\` to reset your 3-hour claim cooldown immediately.`;
     case 'golden_whistle':
