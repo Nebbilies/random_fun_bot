@@ -1,4 +1,5 @@
 import { feedback } from './portal.js';
+import { createFranchisePicker } from './franchisePicker.js';
 
 const byId = (id) => document.getElementById(id);
 const apiBase = location.pathname.startsWith('/franchise') ? '/franchise' : '';
@@ -9,6 +10,10 @@ async function read(url, options) {
   const value = await response.json();
   if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
   return value;
+}
+function loadFranchiseOptions(query, { excludeId } = {}) {
+  const params = new URLSearchParams({ query: query ?? '', exclude: String(excludeId ?? 0) });
+  return read(`${apiBase}/api/franchise-options?${params}`);
 }
 async function correct(body) {
   await read(`${apiBase}/api/correction`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -38,16 +43,7 @@ async function loadList() {
   updateMergeTargets();
 }
 function updateMergeTargets() {
-  const select = byId('mergeTarget');
-  select.replaceChildren();
-  for (const item of franchises) {
-    if (item.id === currentId) continue;
-    const option = document.createElement('option');
-    option.value = item.id;
-    option.textContent = item.name;
-    select.append(option);
-  }
-  byId('merge').disabled = select.options.length === 0;
+  mergePicker.reset();
 }
 async function loadDetails(id) {
   currentId = id;
@@ -88,14 +84,20 @@ async function loadDetails(id) {
     links.textContent = `Relations: ${member.relations.length ? member.relations.join(', ') : 'none within this group'}`;
     const controls = document.createElement('div');
     controls.className = 'row';
-    const move = document.createElement('select');
-    move.setAttribute('aria-label', `Move ${member.title} to another franchise`);
-    for (const optionData of franchises.filter((item) => item.id !== id)) {
-      const option = document.createElement('option'); option.value = optionData.id; option.textContent = optionData.name; move.append(option);
-    }
     const moveButton = document.createElement('button'); moveButton.className = 'secondary'; moveButton.textContent = 'Move';
-    moveButton.disabled = !move.options.length;
-    moveButton.addEventListener('click', () => correct({ action: 'move_anime', animeId: member.id, franchiseId: Number(move.value) }).catch(showError));
+    moveButton.disabled = true;
+    const move = createFranchisePicker({
+      loadOptions: loadFranchiseOptions,
+      excludeId: id,
+      placeholder: 'Search franchises…',
+      ariaLabel: `Move ${member.title} to another franchise`,
+      onSelect: () => { moveButton.disabled = !move.selection; },
+    });
+    moveButton.addEventListener('click', () => {
+      const target = move.selection;
+      if (!target) return;
+      correct({ action: 'move_anime', animeId: member.id, franchiseId: target.id }).catch(showError);
+    });
     const splitName = document.createElement('input'); splitName.type = 'text'; splitName.placeholder = 'New group name'; splitName.setAttribute('aria-label', `New group name for ${member.title}`);
     const splitButton = document.createElement('button'); splitButton.className = 'secondary'; splitButton.textContent = 'Split into new group';
     splitButton.addEventListener('click', async () => {
@@ -108,7 +110,7 @@ async function loadDetails(id) {
     });
     const removeButton = document.createElement('button'); removeButton.className = 'danger'; removeButton.textContent = 'Remove from all groups';
     removeButton.addEventListener('click', () => correct({ action: 'remove_anime', animeId: member.id }).catch(showError));
-    controls.append(move, moveButton, splitName, splitButton, removeButton);
+    controls.append(move.element, moveButton, splitName, splitButton, removeButton);
     section.append(heading, info, links, controls);
     byId('members').append(section);
   }
@@ -117,19 +119,27 @@ async function loadDetails(id) {
   await loadList();
 }
 async function loadExcluded() {
-  const [items, allGroups] = await Promise.all([read(`${apiBase}/api/unassigned`), read(`${apiBase}/api/franchises`)]);
+  const items = await read(`${apiBase}/api/unassigned`);
   byId('excluded').replaceChildren();
   if (!items.length) { byId('excluded').textContent = 'No manually excluded anime.'; return; }
   for (const item of items) {
     const row = document.createElement('div'); row.className = 'row';
     const title = document.createElement('span');
     title.textContent = `${item.title} · AniList #${item.id} · ${item.characterCount} current characters`;
-    const select = document.createElement('select'); select.setAttribute('aria-label', `Restore ${item.title} to a franchise`);
-    for (const group of allGroups) { const option = document.createElement('option'); option.value = group.id; option.textContent = group.name; select.append(option); }
     const restore = document.createElement('button'); restore.className = 'secondary'; restore.textContent = 'Restore to franchise';
-    restore.disabled = !select.options.length;
-    restore.addEventListener('click', () => correct({ action: 'move_anime', animeId: item.id, franchiseId: Number(select.value) }).catch(showError));
-    row.append(title, select, restore); byId('excluded').append(row);
+    restore.disabled = true;
+    const select = createFranchisePicker({
+      loadOptions: loadFranchiseOptions,
+      placeholder: 'Search franchises…',
+      ariaLabel: `Restore ${item.title} to a franchise`,
+      onSelect: () => { restore.disabled = !select.selection; },
+    });
+    restore.addEventListener('click', () => {
+      const target = select.selection;
+      if (!target) return;
+      correct({ action: 'move_anime', animeId: item.id, franchiseId: target.id }).catch(showError);
+    });
+    row.append(title, select.element, restore); byId('excluded').append(row);
   }
 }
 function showError(error) { feedback(byId('message'), error.message, 'error'); }
@@ -144,9 +154,19 @@ byId('create').addEventListener('click', async () => {
 });
 byId('renameButton').addEventListener('click', () => correct({ action: 'rename', franchiseId: currentId, name: byId('rename').value }).catch(showError));
 byId('addAlias').addEventListener('click', () => correct({ action: 'add_alias', franchiseId: currentId, alias: byId('alias').value }).catch(showError));
+const mergePicker = createFranchisePicker({
+  loadOptions: loadFranchiseOptions,
+  excludeId: () => currentId,
+  placeholder: 'Search franchises…',
+  ariaLabel: 'Merge this group into',
+  onSelect: () => { byId('merge').disabled = !mergePicker.selection; },
+});
+byId('mergeTarget').append(mergePicker.element);
+byId('merge').disabled = true;
 byId('merge').addEventListener('click', () => {
-  if (!currentId || !byId('mergeTarget').value) return;
-  if (window.confirm(`Merge ${byId('name').textContent} into ${byId('mergeTarget').selectedOptions[0].textContent}?`))
-    correct({ action: 'merge', sourceId: currentId, targetId: Number(byId('mergeTarget').value) }).then(() => { currentId = null; byId('details').hidden = true; byId('empty').hidden = false; }).catch(showError);
+  const target = mergePicker.selection;
+  if (!currentId || !target) return;
+  if (window.confirm(`Merge ${byId('name').textContent} into ${target.name}?`))
+    correct({ action: 'merge', sourceId: currentId, targetId: target.id }).then(() => { currentId = null; byId('details').hidden = true; byId('empty').hidden = false; }).catch(showError);
 });
 loadList().catch(showError);

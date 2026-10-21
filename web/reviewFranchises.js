@@ -11,6 +11,7 @@ import { openCatalog } from '../lib/catalogDb.js';
 import { serveAssets } from './serveAssets.js';
 
 const html = readFileSync(new URL('./reviewFranchises.html', import.meta.url));
+const FRANCHISE_OPTION_LIMIT = 40;
 
 function json(response, status, value) {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -42,6 +43,24 @@ function listFranchises(db, query = '') {
         WHERE m.franchise_id = f.id AND (LOWER(COALESCE(a.title_romaji, '')) LIKE '%' || ? || '%'
           OR LOWER(COALESCE(a.title_english, '')) LIKE '%' || ? || '%'))
     GROUP BY f.id ORDER BY f.display_name COLLATE NOCASE, f.id`).all(text, text, text, text, text);
+}
+
+// The picker needs the whole catalog, not the sidebar search slice, so options come from their own query.
+function listFranchiseOptions(db, query = '', excludeId = 0) {
+  const text = query.trim().toLocaleLowerCase('en-US');
+  const like = `%${text}%`;
+  const matched = text
+    ? `LOWER(f.display_name) LIKE ? OR EXISTS (SELECT 1 FROM franchise_aliases AS x
+        WHERE x.franchise_id = f.id AND x.source != 'excluded' AND LOWER(x.alias) LIKE ?)`
+    : '1 = 1';
+  const order = text
+    ? `CASE WHEN LOWER(f.display_name) = ? THEN 0 WHEN LOWER(f.display_name) LIKE ? THEN 1 ELSE 2 END,
+       f.display_name COLLATE NOCASE, f.id`
+    : `(SELECT COUNT(*) FROM franchise_anime AS fa WHERE fa.franchise_id = f.id) DESC,
+       f.display_name COLLATE NOCASE, f.id`;
+  const params = text ? [excludeId, like, like, text, `${text}%`] : [excludeId];
+  return db.prepare(`SELECT f.id, f.display_name AS name FROM franchises AS f
+    WHERE f.id != ? AND (${matched}) ORDER BY ${order} LIMIT ${FRANCHISE_OPTION_LIMIT}`).all(...params);
 }
 
 function franchiseDetails(db, id) {
@@ -121,6 +140,12 @@ export async function handleFranchiseReviewRequest({ db, request, response, url,
       const query = url.searchParams.get('query') || '';
       if (query.length > 80) { json(response, 400, { error: 'Search must be 80 characters or fewer' }); return true; }
       json(response, 200, listFranchises(db, query));
+    } else if (request.method === 'GET' && url.pathname === route('/api/franchise-options')) {
+      const query = url.searchParams.get('query') || '';
+      if (query.length > 80) { json(response, 400, { error: 'Search must be 80 characters or fewer' }); return true; }
+      const exclude = Number(url.searchParams.get('exclude') || 0);
+      if (!Number.isSafeInteger(exclude) || exclude < 0) { json(response, 400, { error: 'Invalid franchise ID' }); return true; }
+      json(response, 200, listFranchiseOptions(db, query, exclude));
     } else if (request.method === 'GET' && url.pathname === route('/api/unassigned')) {
       json(response, 200, listUnassigned(db));
     } else if (request.method === 'GET' && url.pathname === route('/api/franchise')) {

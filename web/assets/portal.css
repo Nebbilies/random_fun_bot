@@ -162,9 +162,18 @@ details[open] > summary { margin-bottom: 18px; }
 .member .row { background: #faf9fc; padding: 12px; border-radius: 8px; }
 .member button, .member select, .member input { font-size: 10px; min-height: 34px; padding: 7px 9px; }
 .member select, .member input { flex: 1; min-width: 130px; }
+.picker { position: relative; display: flex; flex: 1; min-width: 140px; }
+.member .picker { min-width: 130px; }
+.picker-input { flex: 1; min-width: 0; width: 100%; }
+.picker-options { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5; margin: 0; padding: 4px; list-style: none; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 26px #2a214014; max-height: 260px; overflow-y: auto; }
+.picker-option { padding: 8px 10px; border-radius: 6px; font-size: 11px; color: #3f3452; cursor: pointer; overflow-wrap: anywhere; }
+.picker-option:hover, .picker-option.active { background: var(--accent-soft); color: var(--accent); }
+.picker-option[aria-selected=true] { font-weight: 650; }
+.picker-empty { padding: 8px 10px; font-size: 11px; color: var(--muted); }
 #excluded .row { padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
 #excluded .row > span { flex-basis: 100%; }
 #excluded select { flex: 1; }
+#excluded .picker { flex: 1; }
 .notice { color: #786985; background: #f7f4fb; padding: 12px 14px; border-radius: 7px; font-size: 11px; }
 .scope-notice { display: flex; align-items: center; gap: 15px; padding: 20px 24px; border: 1px solid #e7ddf5; border-radius: 10px; background: #f2edfa; margin-bottom: 26px; }
 .scope-notice strong { display: block; font-size: 12px; color: #65458e; }

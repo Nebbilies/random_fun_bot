@@ -39,6 +39,7 @@ test('local franchise review API shows source and counts, then applies validated
   assert.equal(stylesheet.status, 200);
   assert.match(stylesheet.headers.get('content-type'), /text\/css/);
   assert.equal((await fetch(`${origin}/assets/reviewFranchises.js`)).status, 200);
+  assert.equal((await fetch(`${origin}/assets/franchisePicker.js`)).status, 200);
 
   const initial = await fetch(`${origin}/api/franchise?id=10`).then((response) => response.json());
   assert.equal(initial.characterCount, 1);
@@ -56,6 +57,36 @@ test('local franchise review API shows source and counts, then applies validated
   assert.equal(updated.members.some((member) => member.id === 100), true);
   assert.ok(updated.manual.decisions >= 2);
   assert.equal((await post(origin, '/api/correction', { action: 'rename', franchiseId: 10, name: 'x' })).status, 400);
+});
+
+test('franchise options endpoint serves searchable move and merge targets', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'franchise-options-'));
+  const db = openCatalog(join(directory, 'catalog.sqlite'));
+  t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
+  db.prepare(`INSERT INTO anime (id, title_english, fetched_at) VALUES
+    (100, 'Sword Art Online', 'now'), (101, 'Sword Art Online II', 'now'), (102, 'Steins;Gate', 'now')`).run();
+  db.prepare(`INSERT INTO franchises (id, display_name, created_at) VALUES
+    (10, 'Sword Art Online', 'now'), (20, 'Steins;Gate', 'now'), (30, 'One Piece', 'now')`).run();
+  db.prepare(`INSERT INTO franchise_anime (franchise_id, anime_id, source) VALUES
+    (10, 100, 'automatic'), (10, 101, 'automatic'), (20, 102, 'automatic'), (30, 100, 'automatic')`).run();
+  db.prepare(`INSERT INTO franchise_aliases (franchise_id, alias, normalized_alias, source) VALUES
+    (20, 'S;G', 's;g', 'automatic'), (20, 'Old Name', 'old name', 'excluded')`).run();
+  const server = createFranchiseReviewServer({ db, port: 0 });
+  t.after(() => server.close());
+  await once(server, 'listening');
+  const origin = `http://127.0.0.1:${server.address().port}`;
+
+  const options = await fetch(`${origin}/api/franchise-options?query=sword%20art`).then((response) => response.json());
+  assert.deepEqual(options.map((row) => row.name), ['Sword Art Online']);
+  const byAlias = await fetch(`${origin}/api/franchise-options?query=s%3Bg`).then((response) => response.json());
+  assert.deepEqual(byAlias.map((row) => row.id), [20]);
+  const withoutCurrent = await fetch(`${origin}/api/franchise-options?query=&exclude=20`).then((response) => response.json());
+  assert.equal(withoutCurrent.some((row) => row.id === 20), false);
+  assert.deepEqual(withoutCurrent.map((row) => row.name), ['Sword Art Online', 'One Piece']);
+  const all = await fetch(`${origin}/api/franchise-options?query=`).then((response) => response.json());
+  assert.equal(all.length, 3);
+  assert.equal((await fetch(`${origin}/api/franchise-options?query=x&exclude=abc`)).status, 400);
+  assert.equal((await fetch(`${origin}/api/franchise-options?query=${'x'.repeat(81)}`)).status, 400);
 });
 
 test('local franchise review rejects a foreign Host header', async (t) => {
@@ -96,6 +127,7 @@ test('catalog review server mounts franchise review and API under one port', asy
     ['/assets/portal.js', 'text/javascript'],
     ['/assets/reviewCharacterTags.js', 'text/javascript'],
     ['/assets/reviewFranchises.js', 'text/javascript'],
+    ['/assets/franchisePicker.js', 'text/javascript'],
     ['/assets/reviewGame.js', 'text/javascript'],
   ]) {
     const asset = await fetch(`${origin}${path}`);
