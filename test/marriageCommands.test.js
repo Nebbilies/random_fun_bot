@@ -59,7 +59,7 @@ test('mm and mymarry show newest marriages first; mmr uses current rank', async 
   /** @type {Array<[(ctx: any) => Promise<void>, string, RegExp]>} */
   const cases = [[mm, 'mm', /Twelve[\s\S]*Eleven/],
     [mymarry, 'mymarry', /Twelve[\s\S]*Eleven/],
-    [mmr, 'mmr', /#1 - Eleven[\s\S]*#1,234 - Twelve/]];
+    [mmr, 'mmr', /\*\*#1\*\* - Eleven[\s\S]*\*\*#1,234\*\* - Twelve/]];
   for (const [run, name, expected] of cases) {
     const mock = context(db, [name]);
     await run(mock.ctx);
@@ -185,4 +185,3 @@ test('ambiguous married names use a picker, and stale confirmation cannot remove
   });
   assert.equal(getMarriage(db, '1', 13)?.ownerId, '102');
 });
-
