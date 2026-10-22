@@ -1,0 +1,143 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
+import { ComponentType, MessageFlags } from 'discord.js';
+import { openCatalog } from '../lib/catalogDb.js';
+import { topCharacters, topPageCount } from '../lib/topCharacters.js';
+import { run as topCommand } from '../commands/top.js';
+
+function fixture(t) {
+  const directory = mkdtempSync(join(tmpdir(), 'top-command-'));
+  const db = openCatalog(join(directory, 'bot.sqlite'));
+  t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
+  return db;
+}
+
+function seed(db, count) {
+  const insert = db.prepare(`INSERT INTO characters (id, rank, favourites, name_full, anime_titles)
+    VALUES (?, ?, ?, ?, ?)`);
+  db.exec('BEGIN');
+  for (let index = 1; index <= count; index += 1) {
+    insert.run(index, index, 1000 - index, `Character ${index}`, JSON.stringify([`Anime ${index}`]));
+  }
+  db.exec('COMMIT');
+}
+
+function collectorFixture() {
+  const collector = new EventEmitter();
+  const state = { payload: null, edits: 0 };
+  const sent = {
+    edit: async (value) => { state.payload = value; state.edits += 1; },
+    createMessageComponentCollector: () => collector,
+  };
+  return { collector, sent, state };
+}
+
+function container(payload) {
+  const card = payload.components[0].toJSON();
+  assert.equal(card.type, ComponentType.Container);
+  return card;
+}
+
+test('the top list shows the highest ranked characters, 15 per page', async (t) => {
+  const db = fixture(t);
+  seed(db, 20);
+  const harness = collectorFixture();
+  const ctx = {
+    args: ['top'], prefix: '!',
+    message: {
+      author: { id: 'owner' }, guildId: '1',
+      reply: async (value) => { harness.state.payload = value; return harness.sent; },
+    },
+    yoshiko: { catalogDb: db },
+  };
+
+  await topCommand(ctx);
+
+  assert.equal(harness.state.payload.flags, MessageFlags.IsComponentsV2);
+  const card = container(harness.state.payload);
+  assert.match(card.components[0].content, /:trophy: TOP 1000/);
+  const rows = card.components[1].content.split('\n');
+  assert.equal(rows.length, 15);
+  assert.equal(rows[0], '**#1 - Character 1** - Anime 1');
+  assert.equal(rows[14], '**#15 - Character 15** - Anime 15');
+  assert.match(card.components[2].content, /Page 1 of 2/);
+  assert.equal(card.components[3].components[0].custom_id, 'top:prev');
+  assert.equal(card.components[3].components[0].disabled, true);
+  assert.equal(card.components[3].components[1].custom_id, 'top:next');
+  assert.equal(card.components[3].components[1].disabled, false);
+});
+
+test('the top list pages through the catalog with the navigation buttons', async (t) => {
+  const db = fixture(t);
+  seed(db, 20);
+  const harness = collectorFixture();
+  const ctx = {
+    args: ['top'], prefix: '!',
+    message: {
+      author: { id: 'owner' }, guildId: '1',
+      reply: async (value) => { harness.state.payload = value; return harness.sent; },
+    },
+    yoshiko: { catalogDb: db },
+  };
+
+  await topCommand(ctx);
+
+  const collect = async (customId) => {
+    const interaction = { customId, user: { id: 'owner' }, deferUpdate: async () => {} };
+    await harness.collector.listeners('collect')[0](interaction);
+  };
+
+  await collect('top:next');
+  let card = container(harness.state.payload);
+  const rows = card.components[1].content.split('\n');
+  assert.equal(rows.length, 5);
+  assert.equal(rows[0], '**#16 - Character 16** - Anime 16');
+  assert.equal(rows[4], '**#20 - Character 20** - Anime 20');
+  assert.match(card.components[2].content, /Page 2 of 2/);
+  assert.equal(card.components[3].components[1].disabled, true);
+
+  await collect('top:prev');
+  card = container(harness.state.payload);
+  assert.equal(card.components[1].content.split('\n')[0], '**#1 - Character 1** - Anime 1');
+  assert.match(card.components[2].content, /Page 1 of 2/);
+
+  harness.collector.emit('end');
+  await new Promise((resolve) => setImmediate(resolve));
+  card = container(harness.state.payload);
+  assert.equal(card.components[3].components[0].disabled, true);
+  assert.equal(card.components[3].components[1].disabled, true);
+});
+
+test('the top list can open a requested page', async (t) => {
+  const db = fixture(t);
+  seed(db, 40);
+  const harness = collectorFixture();
+  const ctx = {
+    args: ['top', '3'], prefix: '!',
+    message: {
+      author: { id: 'owner' }, guildId: '1',
+      reply: async (value) => { harness.state.payload = value; return harness.sent; },
+    },
+    yoshiko: { catalogDb: db },
+  };
+
+  await topCommand(ctx);
+
+  const card = container(harness.state.payload);
+  assert.equal(card.components[1].content.split('\n')[0], '**#31 - Character 31** - Anime 31');
+  assert.match(card.components[2].content, /Page 3 of 3/);
+});
+
+test('the top list never covers more than the top 1000 characters', async (t) => {
+  const db = fixture(t);
+  seed(db, 1005);
+  const rows = topCharacters(db);
+  assert.equal(rows.length, 1000);
+  assert.equal(rows[0].rank, 1);
+  assert.equal(rows[999].rank, 1000);
+  assert.equal(topPageCount(rows), 67);
+});
