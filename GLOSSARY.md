@@ -63,3 +63,7 @@ _Avoid_: Franchise harem, series list
 **Individual card view**:
 A marriage view (activated with the `i` modifier) that displays a player's married characters one full card at a time with Previous and Next navigation controls.
 _Avoid_: Single character view, harem carousel
+
+**Catalog top list**:
+A paged view of the catalog's highest ranked characters, listed in rank order.
+_Avoid_: Leaderboard, popularity board
