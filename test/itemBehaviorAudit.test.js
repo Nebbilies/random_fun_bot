@@ -25,7 +25,7 @@ const DEFAULT_CHARACTERS = `INSERT INTO characters (id, rank, favourites, name_f
   (1, 1, 5000, 'Alpha', 'Female', '["Show A"]', 'https://example.com/a.png'),
   (2, 2, 4900, 'Beta', 'Female', '["Show A"]', 'https://example.com/b.png'),
   (3, 3000, 10, 'Gamma', 'Female', '["Show B"]', NULL),
-  (4, 3, 4800, 'Delta', 'Male', '["Show B"]', NULL)`;
+  (4, 3, 4800, 'Delta', 'Male', '["Show B"]', NULL);`;
 
 function fixture(t, characters = DEFAULT_CHARACTERS) {
   const db = openCatalog(':memory:');
@@ -72,6 +72,51 @@ function startMystery(db, { id = '900', user = '101', random = seq([0, 0.5, 0.5,
   return beginMysteryEvent(db, reserved.sessionId, start + 5_001, () => 0.9);
 }
 
+/** A clue_reveal target: the answer is an anime title that appears nowhere else. */
+const CLUE_ANIME = `INSERT INTO anime (id, title_romaji, title_english, synonyms, genres, tags, season_year,
+  format, popularity, is_adult, fetched_at) VALUES
+  (10, 'Hoshi no Monogatari', 'Star Chronicle', '[]', '["Adventure","Fantasy"]',
+    '[{"name":"Space","rank":90}]', 2018, 'TV', 1000, 0, 'now');
+  INSERT INTO character_anime (character_id, anime_id) VALUES (1, 10);`;
+
+/** The mystery runtime owns the timer that starts the minigame and the DMs. */
+function mysteryRuntimeFixture({ dmFails = false } = {}) {
+  const timers = [];
+  const setTimer = (fn) => { timers.push(fn); return { unref() {} }; };
+  const clockTime = { value: start };
+  const now = () => clockTime.value;
+  const sent = [];
+  const dms = [];
+  const channel = { id: '10', send: async (payload) => {
+    sent.push(payload);
+    return { id: String(700 + sent.length), channel, edit: async () => ({}) };
+  } };
+  const message = { id: '800', guildId: '1', channelId: '10', author: { id: '101' }, channel,
+    reply: async () => ({ id: '900' }) };
+  const client = { users: { fetch: async (id) => ({ id,
+    send: async (payload) => {
+      if (dmFails) throw new Error('Cannot send messages to this user');
+      dms.push(payload);
+      return {};
+    } }) } };
+  const imagePicker = { pick: async () => ({ url: 'https://example.com/a.png' }) };
+  return { timers, setTimer, clockTime, now, sent, dms, channel, message, client, imagePicker,
+    random: seq([0, 0, 0.9]) };
+}
+
+async function startMysteryRuntime(db, runtime, { id = '800' } = {}) {
+  const reservation = reserveMysteryAwareRoll(db, { guildId: '1', channelId: '10',
+    commandMessageId: id, userId: '101', pool: 'w', mysteryEnabled: true, now: start,
+    random: runtime.random });
+  assert.equal(reservation.status, 'mystery');
+  await startMysteryRoll({ db, client: runtime.client, message: runtime.message, reservation,
+    imagePicker: runtime.imagePicker, now: runtime.now, setTimer: runtime.setTimer,
+    clearTimer: () => {}, random: runtime.random });
+  runtime.clockTime.value = start + 5_001;
+  await runtime.timers[0]();
+  return reservation;
+}
+
 function chatFixture(db, authorId = '202') {
   const sent = [];
   const channel = { id: '10', send: async (payload) => {
@@ -86,7 +131,7 @@ function chatFixture(db, authorId = '202') {
   return { sent, channel, card, message, yoshiko };
 }
 
-test('Binoculars reveals the correct door of the next mystery minigame and is spent', (t) => {
+test('Binoculars reserves the answer of the next mystery minigame for the roller', (t) => {
   const plain = fixture(t);
   const control = startMystery(plain, { id: '901' });
   assert.equal(control.status, 'started');
@@ -99,10 +144,10 @@ test('Binoculars reveals the correct door of the next mystery minigame and is sp
   const started = startMystery(db);
   assert.equal(started.status, 'started');
   assert.equal(JSON.parse(started.session.stateJson).winningDoor, door);
-  assert.equal(started.reveal, door === 1 ? 'Left' : 'Right',
+  assert.equal(started.reveal?.answer, door === 1 ? 'Left' : 'Right',
     'Binoculars must reveal the winning door');
-  assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 0,
-    'the Binoculars charge must be spent on the minigame it revealed');
+  assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 1,
+    'the charge is only spent once the answer is delivered privately');
 });
 
 test('Adrenaline Rush doubles the hourly roll allowance for the next hour', (t) => {
@@ -332,37 +377,40 @@ test('Binoculars is consumed by the mystery runtime that starts the minigame', a
   // so a charge spent only by the coordinator would still look unspent to the user.
   const db = fixture(t);
   grant(db, 'binoculars');
-  const timers = [];
-  const setTimer = (fn) => { timers.push(fn); return { unref() {} }; };
-  const clockTime = { value: start };
-  const now = () => clockTime.value;
-  const sent = [];
-  const channel = { id: '10', send: async (payload) => {
-    sent.push(payload);
-    return { id: String(700 + sent.length), channel, edit: async () => ({}) };
-  } };
-  const message = { id: '800', guildId: '1', channelId: '10', author: { id: '101' }, channel,
-    reply: async () => ({ id: '900' }) };
-  const client = { users: { fetch: async (id) => ({ id,
-    send: async (payload) => { sent.push(payload); return {}; } }) } };
-  const imagePicker = { pick: async () => ({ url: 'https://example.com/a.png' }) };
-
-  let calls = 0;
-  const random = () => [0, 0, 0.9][Math.min(calls++, 2)];
-  const reservation = reserveMysteryAwareRoll(db, { guildId: '1', channelId: '10',
-    commandMessageId: '800', userId: '101', pool: 'w', mysteryEnabled: true, now: start, random });
-  assert.equal(reservation.status, 'mystery');
-
-  await startMysteryRoll({ db, client, message, reservation, imagePicker,
-    now, setTimer, clearTimer: () => {}, random });
-  assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 1,
-    'the intro alone must not spend the charge');
-
-  clockTime.value = start + 5_001;
-  await timers[0]();
-
+  const runtime = mysteryRuntimeFixture();
+  await startMysteryRuntime(db, runtime);
   assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 0,
-    'the Binoculars must leave the inventory once the minigame starts');
-  assert.ok(sent.some((payload) => JSON.stringify(payload).includes('Binoculars')),
+    'the Binoculars must leave the inventory once the answer is delivered');
+  assert.ok(runtime.dms.some((payload) => JSON.stringify(payload).includes('Binoculars')),
     'the Binoculars must reveal the answer to the roller');
+});
+
+test('the Binoculars answer for clue_reveal only ever reaches the roller in DMs', async (t) => {
+  const db = fixture(t, DEFAULT_CHARACTERS + CLUE_ANIME);
+  grant(db, 'binoculars');
+  const runtime = mysteryRuntimeFixture();
+  const reservation = await startMysteryRuntime(db, runtime);
+  assert.equal(reservation.eventId, 'clue_reveal');
+
+  const channelText = runtime.sent.map((payload) => JSON.stringify(payload)).join('\n');
+  assert.ok(!channelText.includes('Star Chronicle'),
+    'the clue_reveal answer must never be posted in the channel');
+  assert.ok(runtime.dms.some((payload) => JSON.stringify(payload).includes('Star Chronicle')),
+    'the roller must receive the clue_reveal answer in DMs');
+});
+
+test('a Binoculars answer that cannot be delivered privately stays out of the channel', async (t) => {
+  const db = fixture(t, DEFAULT_CHARACTERS + CLUE_ANIME);
+  grant(db, 'binoculars');
+  const runtime = mysteryRuntimeFixture({ dmFails: true });
+  const reservation = await startMysteryRuntime(db, runtime);
+  assert.equal(reservation.eventId, 'clue_reveal');
+
+  const channelText = runtime.sent.map((payload) => JSON.stringify(payload)).join('\n');
+  assert.ok(!channelText.includes('Star Chronicle'),
+    'a failed delivery must not publish the answer to the channel');
+  assert.ok(!channelText.includes('reveals the answer'),
+    'a failed delivery must not publish the reveal at all');
+  assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 1,
+    'the charge must not be spent when the answer could not be delivered privately');
 });
