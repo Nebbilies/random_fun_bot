@@ -1,6 +1,6 @@
 # Character Game
 
-Language for the character catalog, ownership, tag review, and mystery events.
+Language for the character catalog, ownership, and tag review.
 
 ## Language
 
@@ -83,3 +83,15 @@ _Avoid_: Banked score, winnings
 **Deadlock**:
 A mystery event where players secretly choose a number each round and earn its value only when nobody else chose the same number. Round scores accumulate toward the event result.
 _Avoid_: Highest unique bid, auction
+
+**Wish**:
+One player's declared intent to obtain one character in one Discord server. Its character identity is fixed when the wish is made, so a later rank change does not move the wish to another character.
+_Avoid_: Favorite, target, wanted character
+
+**Wishlist**:
+A player's bounded set of wishes in one Discord server, holding at most seven. It is a target list, so wishing for an already owned character is allowed and changes nothing about ownership.
+_Avoid_: Harem wishlist, global wishlist
+
+**Wish match**:
+A roll whose character appears on at least one wishlist in that server. A wish match is announced as one wish line naming every matching player and is presented with the wishlist accent color.
+_Avoid_: Wish alert, wish notification
