@@ -12,10 +12,11 @@ import {openCatalog} from "./lib/catalogDb.js";
 import {getGuildPrefix} from "./lib/guildPrefix.js";
 import {loadCharacterIndex} from "./lib/gameCharacterLookup.js";
 import {createCharacterImagePicker} from "./lib/characterImages.js";
-import {onRollReaction, onRollReport, recoverRollRuntime} from "./lib/characterRollRuntime.js";
+import {onRollReaction, onRollReport, recoverRollRuntime, recoverForcedEscapes} from "./lib/characterRollRuntime.js";
 import {onMysteryAnswer, onMysteryButton, cancelMysteryRuntime} from "./lib/mysteryRuntime.js";
 import {onTradeAnswer} from "./lib/tradeRuntime.js";
-import {onVaultInteraction} from "./lib/vaultRuntime.js";
+import {onVaultInteraction, recoverVaultRewards} from "./lib/vaultRuntime.js";
+import {onItemActionInteraction, recoverItemActionRuntime} from "./lib/itemActionRuntime.js";
 import {onInventoryButton} from "./commands/inv.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
@@ -52,6 +53,21 @@ client.on(Events.MessageReactionAdd, (reaction, user) => {
 yoshiko.client.once(Events.ClientReady, async (c) => {
     yoshiko.client.user.setActivity("Se hoat dong khi thay 727");
     console.log("dmLam");
+    await recoverItemActionRuntime(yoshiko.catalogDb, yoshiko.client);
+    await recoverForcedEscapes(yoshiko.catalogDb, yoshiko.client);
+    await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
+    let vaultRecoveryRunning = false;
+    const vaultRecovery = setInterval(async () => {
+        if (vaultRecoveryRunning) return;
+        vaultRecoveryRunning = true;
+        try {
+            await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
+            await recoverForcedEscapes(yoshiko.catalogDb, yoshiko.client);
+        }
+        catch (error) { console.error('Vault recovery failed:', error); }
+        finally { vaultRecoveryRunning = false; }
+    }, 15_000);
+    vaultRecovery.unref();
     startBirthdayScheduler(yoshiko.client, new BirthdayStore());
 
     //while (setRun === "1") {
@@ -249,6 +265,15 @@ yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
         } catch (error) {
             console.error('Mystery button failed:', error);
             if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: 'Mystery choice failed. Please try again later.', ephemeral: true }).catch(console.error);
+        }
+        return;
+    }
+    if (interaction.customId?.startsWith('item:')) {
+        try {
+            await onItemActionInteraction(yoshiko.catalogDb, interaction);
+        } catch (error) {
+            console.error('Item action failed:', error);
+            if (!interaction.replied && !interaction.deferred) await interaction.reply({ content: 'Item action failed. Please retry.', ephemeral: true }).catch(console.error);
         }
         return;
     }

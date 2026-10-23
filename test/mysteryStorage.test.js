@@ -19,7 +19,7 @@ test('fresh database has mystery storage and one active session per guild', (t) 
   const { dir, path } = fixture();
   const db = openCatalog(path);
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 8);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 9);
   assert.ok(columns(db, 'character_rolls').includes('mystery_session_id'));
   assert.ok(columns(db, 'character_rolls').includes('exclusive_user_id'));
   assert.ok(columns(db, 'mystery_sessions').includes('state_json'));
@@ -81,7 +81,7 @@ test('v5 upgrade preserves existing game records and adds nullable card fields',
 
   let db = openCatalog(path);
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 8);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 9);
   assert.equal(db.prepare("SELECT owner_id FROM marriages WHERE guild_id = '1'").get().owner_id, '101');
   assert.equal(db.prepare("SELECT prefix FROM guild_prefixes WHERE guild_id = '1'").get().prefix, '?');
   assert.equal(db.prepare("SELECT used FROM roll_allowances WHERE guild_id = '1'").get().used, 3);
@@ -90,10 +90,10 @@ test('v5 upgrade preserves existing game records and adds nullable card fields',
     { state: 'open', message_id: '1001', mystery_session_id: null, exclusive_user_id: null });
   db.close();
   db = openCatalog(path);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 8);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 9);
 
   const readOnly = openCatalogReadOnly(path);
-  assert.equal(readOnly.prepare('PRAGMA user_version').get().user_version, 8);
+  assert.equal(readOnly.prepare('PRAGMA user_version').get().user_version, 9);
   readOnly.close();
 });
 
@@ -101,8 +101,8 @@ test('openers reject a database newer than the supported schema', (t) => {
   const { dir, path } = fixture();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const db = openCatalog(path);
-  db.exec('PRAGMA user_version = 9');
+  db.exec('PRAGMA user_version = 10');
   db.close();
-  assert.throws(() => openCatalogReadOnly(path), /Unsupported catalog database version 9/);
-  assert.throws(() => openCatalog(path), /Unsupported catalog database version 9/);
+  assert.throws(() => openCatalogReadOnly(path), /Unsupported catalog database version 10/);
+  assert.throws(() => openCatalog(path), /Unsupported catalog database version 10/);
 });
