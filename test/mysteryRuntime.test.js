@@ -7,6 +7,8 @@ import { openCatalog } from '../lib/catalogDb.js';
 import { claimRoll, getClaimStatus, getMysterySession } from '../lib/characterRolls.js';
 import { MYSTERY_ROSTER, reserveMysteryAwareRoll, setMysteryEventChannel } from '../lib/mysteryCoordinator.js';
 import { onRollReaction } from '../lib/characterRollRuntime.js';
+import { addItemToInventory, getInventory } from '../lib/itemStorage.js';
+import { closesAt, RESULT_DURATION_MS } from '../lib/mysteryEvents/roundContest.js';
 import { cancelMysteryRuntime, onMysteryAnswer, onMysteryButton,
   startMysteryRoll } from '../lib/mysteryRuntime.js';
 
@@ -28,12 +30,13 @@ function clock(start = 1100) {
           .sort((a, b) => a[1].at - b[1].at)[0];
         if (!due) break;
         timers.delete(due[0]);
-        current = due[1].at;
+        current = Math.max(current, due[1].at);
         await due[1].callback();
       }
       current = target;
     },
     pending: () => timers.size,
+    jumpTo: (at) => { current = at; },
   };
 }
 
@@ -71,7 +74,9 @@ function fixture(t, eventDraw = 0, slotDraw = 0) {
   const origin = channel('10');
   const event = channel('20');
   setMysteryEventChannel(db, '1', '20');
-  const draws = [0, 0, eventDraw][Symbol.iterator]();
+  const eventId = typeof eventDraw === 'string' ? eventDraw : eventDraw < 0.5 ? 'doors' : 'clue_reveal';
+  const selection = (MYSTERY_ROSTER.findIndex((entry) => entry.id === eventId) + 0.1) / MYSTERY_ROSTER.length;
+  const draws = [0, 0, selection][Symbol.iterator]();
   const reservation = reserveMysteryAwareRoll(db, { guildId: '1', channelId: '10',
     commandMessageId: '100', userId: '101', pool: 'w', now: 1000,
     random: () => draws.next().value, mysteryEnabled: true });
@@ -79,7 +84,8 @@ function fixture(t, eventDraw = 0, slotDraw = 0) {
   const message = { id: '100', guildId: '1', channelId: '10', channel: origin, author: { id: '101' } };
   const client = { channels: { async fetch(id) { assert.equal(id, '20'); return event; } } };
   const time = clock();
-  const start = () => startMysteryRoll({ db, client, message, reservation, ...time, random: () => slotDraw });
+  const start = () => startMysteryRoll({ db, client, message, reservation, ...time,
+    random: typeof slotDraw === 'function' ? slotDraw : () => slotDraw });
   return { db, origin, event, reservation, time, start };
 }
 
@@ -90,6 +96,22 @@ function doorInteraction(intro, value, userId = '101') {
     async deferReply(payload) { acknowledgements.push(payload); },
     async editReply(content) { acknowledgements.push(content); },
   };
+}
+
+function roundPrompt(event, name, round) {
+  return event.sent.find((message) => message.payload.content?.includes(`${name} · Round ${round}/`));
+}
+
+function roundInteraction(prompt, round, value, userId = '101') {
+  return { ...doorInteraction(prompt, value, userId), customId: `mystery:1:choice:${round}:${value}` };
+}
+
+async function beginContest({ db, time, start }) {
+  await start();
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  const { startedAt } = JSON.parse(getMysterySession(db, 1).stateJson);
+  const close = (round) => closesAt({ startedAt, round });
+  return { close, open: (round) => round === 1 ? startedAt : close(round - 1) + RESULT_DURATION_MS };
 }
 
 test('configured channel receives a hidden portrait card, then Doors starts after five seconds', async (t) => {
@@ -323,4 +345,172 @@ test('Clue Reveal accepts an event-channel answer and a restart leaves old messa
   assert.equal(intro.edits.length, editsBeforeRestart);
   assert.equal(event.sent.length, 3);
   assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'canceled');
+});
+
+test('Deadlock keeps prompts stable, rejects stale controls and shows final scores before a protected prize', async (t) => {
+  const { db, event, reservation, time, start } = fixture(t, 'deadlock');
+  const windows = await beginContest({ db, time, start });
+  const first = roundPrompt(event, 'Deadlock', 1);
+  const sentBefore = event.sent.length;
+  const picked = roundInteraction(first, 1, '5');
+  await onMysteryButton(db, picked);
+  assert.equal(picked.acknowledgements[0].flags, 64);
+  assert.match(picked.acknowledgements.at(-1), new RegExp(`Saved: 5.*${Math.ceil((windows.close(1) - time.now()) / 1000)} more seconds`));
+  assert.doesNotMatch(picked.acknowledgements.at(-1), /claim|eligible|%/i);
+  await onMysteryButton(db, roundInteraction(first, 1, '5', '102'));
+  await onMysteryButton(db, roundInteraction(first, 1, '4'));
+  assert.equal(event.sent.length, sentBefore, 'choices edit the same prompt without posting new ones');
+  assert.match(first.edits.at(-1).content, /Participants: 2/);
+  assert.ok(first.edits.every((edit) => !/picked|Saved:/.test(edit.content ?? '')));
+  for (const [field, value] of [['guildId', '2'], ['channelId', '10']]) {
+    const wrong = { ...roundInteraction(first, 1, '1'), [field]: value };
+    await onMysteryButton(db, wrong);
+    assert.match(wrong.acknowledgements.at(-1), /expired/);
+  }
+  await time.advanceTo(windows.close(1));
+  assert.match(event.sent.at(-1).payload.content, /<@101>: picked 4 · \+4/);
+  assert.deepEqual(first.components, []);
+  await time.advanceTo(windows.open(2));
+  const second = roundPrompt(event, 'Deadlock', 2);
+  const stale = roundInteraction(first, 1, '1');
+  await onMysteryButton(db, stale);
+  assert.match(stale.acknowledgements.at(-1), /expired/);
+  const forged = roundInteraction(second, 1, '1');
+  await onMysteryButton(db, forged);
+  assert.match(forged.acknowledgements.at(-1), /closed/);
+  await onMysteryButton(db, roundInteraction(second, 2, '5', '103'));
+  await time.advanceTo(windows.open(3));
+  await onMysteryButton(db, roundInteraction(roundPrompt(event, 'Deadlock', 3), 3, '3', '102'));
+  await time.advanceTo(windows.close(3));
+  const session = getMysterySession(db, reservation.sessionId);
+  assert.equal(session.winnerId, '102');
+  assert.equal(session.state, 'countdown');
+  const finalIndex = event.sent.findIndex((message) => message.payload.content?.includes('**Final standings**'));
+  const wonIndex = event.sent.findIndex((message) => message.payload.content?.includes('<@102> won!'));
+  assert.ok(finalIndex >= 0 && finalIndex < wonIndex);
+  await time.advanceTo(session.nextAt);
+  const prize = event.sent.at(-1);
+  assert.deepEqual(prize.reactions, ['❤️']);
+  assert.equal(claimRoll(db, { guildId: '1', channelId: '20', messageId: prize.id,
+    userId: '101', now: time.now() }).status, 'protected');
+  assert.equal(claimRoll(db, { guildId: '1', channelId: '20', messageId: prize.id,
+    userId: '102', now: time.now() }).status, 'married');
+});
+
+test('Greed catches a late timer, rejects a late revision and automatically banks the missed round', async (t) => {
+  const { db, event, reservation, time, start } = fixture(t, 'greed_chamber', 1 - Number.EPSILON);
+  const windows = await beginContest({ db, time, start });
+  const first = roundPrompt(event, 'Greed Chamber', 1);
+  await onMysteryButton(db, roundInteraction(first, 1, 'stay'));
+  assert.ok(getMysterySession(db, reservation.sessionId).deadlineAt > windows.close(5));
+  time.jumpTo(windows.close(5) + 1);
+  const late = roundInteraction(first, 1, 'escape');
+  await onMysteryButton(db, late);
+  assert.match(late.acknowledgements.at(-1), /expired/);
+  const session = getMysterySession(db, reservation.sessionId);
+  assert.equal(session.state, 'countdown');
+  assert.equal(JSON.parse(session.stateJson).players['101'].banked, 1);
+  assert.match(event.sent.map((message) => message.payload.content).join('\n'), /Automatically escaped/);
+  assert.doesNotMatch(event.sent.map((message) => JSON.stringify(message.payload)).join('\n'), /\d+%|collapse odds/i);
+  await time.advanceTo(session.nextAt);
+  assert.equal(getMysterySession(db, reservation.sessionId).state, 'claim_open');
+});
+
+test('Greed final round resolves at its cutoff and displays banked results before countdown', async (t) => {
+  const { db, event, reservation, time, start } = fixture(t, 'greed_chamber', 1 - Number.EPSILON);
+  const windows = await beginContest({ db, time, start });
+  for (let round = 1; round <= 5; round++) {
+    await time.advanceTo(windows.open(round));
+    await onMysteryButton(db, roundInteraction(roundPrompt(event, 'Greed Chamber', round), round, 'stay'));
+  }
+  await time.advanceTo(windows.close(5));
+  const session = getMysterySession(db, reservation.sessionId);
+  assert.equal(session.state, 'countdown');
+  assert.equal(JSON.parse(session.stateJson).players['101'].banked, 15);
+  const final = event.sent.findIndex((message) => message.payload.content?.includes('Final banked standings'));
+  const won = event.sent.findIndex((message) => message.payload.content?.includes('won!'));
+  assert.ok(final >= 0 && final < won);
+});
+
+test('a queued round interaction cannot use controls replaced while waiting', async (t) => {
+  const { db, event, time, start } = fixture(t, 'deadlock');
+  const windows = await beginContest({ db, time, start });
+  const first = roundPrompt(event, 'Deadlock', 1);
+  let release;
+  let editing;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const began = new Promise((resolve) => { editing = resolve; });
+  const edit = first.edit.bind(first);
+  first.edit = async (payload) => {
+    if (payload.components?.length === 0) { editing(); await blocked; }
+    return edit(payload);
+  };
+  const timer = time.advanceTo(windows.close(1));
+  await began;
+  const stale = roundInteraction(first, 1, '5');
+  const pendingChoice = onMysteryButton(db, stale);
+  release();
+  await Promise.all([timer, pendingChoice]);
+  assert.match(stale.acknowledgements.at(-1), /expired/);
+  assert.deepEqual(JSON.parse(getMysterySession(db, 1).stateJson).players, {});
+});
+
+test('Deadlock resolves delayed final timers, including no-winner results, within the safety watchdog', async (t) => {
+  for (const entered of [false, true]) {
+    const { db, event, reservation, time, start } = fixture(t, 'deadlock');
+    const windows = await beginContest({ db, time, start });
+    if (entered) await onMysteryButton(db, roundInteraction(roundPrompt(event, 'Deadlock', 1), 1, '5'));
+    time.jumpTo(windows.close(3) + 1);
+    await time.advanceTo(time.now());
+    const session = getMysterySession(db, reservation.sessionId);
+    assert.equal(session.state, entered ? 'countdown' : 'completed');
+    assert.equal(JSON.parse(session.stateJson).phase, 'finished');
+    assert.match(event.sent.map((message) => message.payload.content).join('\n'), /Final standings/);
+    if (!entered) assert.match(event.sent.at(-1).embeds[0].data.footer.text, /Unclaimable/);
+  }
+});
+
+test('competitive events preserve Binoculars, restart cancellation, and winner forfeiture without a claim', async (t) => {
+  for (const eventId of ['greed_chamber', 'deadlock']) {
+    const { db, event, reservation, time, start } = fixture(t, eventId);
+    addItemToInventory(db, '1', '101', 'binoculars', 1);
+    await beginContest({ db, time, start });
+    assert.equal(getInventory(db, '1', '101').find((item) => item.item_id === 'binoculars').charges, 1);
+    const old = event.sent.at(-1);
+    const edits = old.edits.length;
+    assert.equal(cancelMysteryRuntime(db), 1);
+    await time.advanceTo(getMysterySession(db, reservation.sessionId).deadlineAt + 1);
+    assert.equal(old.edits.length, edits);
+    assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'canceled');
+    const stale = roundInteraction(old, 1, eventId === 'deadlock' ? '5' : 'stay');
+    await onMysteryButton(db, stale);
+    assert.match(stale.acknowledgements.at(-1), /expired/);
+  }
+  const { db, event, reservation, time, start } = fixture(t, 'deadlock');
+  const windows = await beginContest({ db, time, start });
+  const period = Math.floor((time.now() + 7 * 3600000) / (3 * 3600000));
+  db.prepare('INSERT INTO claim_allowances (guild_id, user_id, period) VALUES (?, ?, ?)').run('1', '101', period);
+  assert.equal(getClaimStatus(db, '1', '101', time.now()).canClaim, false);
+  await onMysteryButton(db, roundInteraction(roundPrompt(event, 'Deadlock', 1), 1, '5'));
+  await time.advanceTo(windows.close(3));
+  await time.advanceTo(getMysterySession(db, reservation.sessionId).nextAt);
+  assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'forfeited');
+  assert.match(event.sent.at(-1).embeds[0].data.footer.text, /Unclaimable/);
+});
+
+test('competitive result messages retain every participant without exceeding Discord limits', async (t) => {
+  const { db, event, time, start } = fixture(t, 'deadlock');
+  const windows = await beginContest({ db, time, start });
+  const state = JSON.parse(getMysterySession(db, 1).stateJson);
+  const ids = Array.from({ length: 120 }, (_, index) => String(100000000000000000n + BigInt(index)));
+  for (const id of ids) { state.players[id] = { score: 0 }; state.choices[id] = '5'; }
+  db.prepare('UPDATE mystery_sessions SET state_json = ? WHERE id = 1').run(JSON.stringify(state));
+  await time.advanceTo(windows.close(1));
+  const messages = event.sent.filter((message) => message.payload.content);
+  for (const message of messages) {
+    assert.ok(message.payload.content.length <= 2000);
+    assert.deepEqual(message.payload.allowedMentions.parse, []);
+  }
+  const text = messages.map((message) => message.payload.content).join('\n');
+  for (const id of ids) assert.ok(text.includes(`<@${id}>: picked 5`));
 });

@@ -64,7 +64,7 @@ function reserve(db, { id = '900', user = '101', pool = 'w', random = () => 0, n
     pool, now, random });
 }
 
-function startMystery(db, { id = '900', user = '101', random = seq([0, 0.5, 0.5, 0.9]) } = {}) {
+function startMystery(db, { id = '900', user = '101', random = seq([0, 0.5, 0, 0.9]) } = {}) {
   const reserved = reserveMysteryAwareRoll(db, { guildId: '1', channelId: '10',
     commandMessageId: id, userId: user, pool: 'w', mysteryEnabled: true, now: start, random });
   assert.equal(reserved.status, 'mystery');
@@ -101,7 +101,7 @@ function mysteryRuntimeFixture({ dmFails = false } = {}) {
     } }) } };
   const imagePicker = { pick: async () => ({ url: 'https://example.com/a.png' }) };
   return { timers, setTimer, clockTime, now, sent, dms, channel, message, client, imagePicker,
-    random: seq([0, 0, 0.9]) };
+    random: seq([0, 0, 0.3]) };
 }
 
 async function startMysteryRuntime(db, runtime, { id = '800' } = {}) {
