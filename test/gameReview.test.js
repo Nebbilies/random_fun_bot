@@ -8,6 +8,8 @@ import { openCatalog, setMeta } from '../lib/catalogDb.js';
 import { getRollStatus, getClaimStatus, setMaxRolls } from '../lib/characterRolls.js';
 import { getGuildRates } from '../lib/guildRates.js';
 import { createReviewServer } from '../web/reviewCharacterTags.js';
+import { ITEM_ROSTER } from '../lib/itemRoster.js';
+import { getInventory } from '../lib/itemStorage.js';
 
 test('review portal applies capped rolls and global claim resets with validated requests', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'game-review-'));
@@ -32,6 +34,38 @@ test('review portal applies capped rolls and global claim resets with validated 
   assert.match(page, /Reset claims for everyone/);
   assert.match(page, /Configure server rates/);
   assert.match(page, /Custom rate list/);
+  assert.match(page, /id="giveItemForm"/);
+  assert.match(page, /id="itemUserId"/);
+  assert.match(page, /<select id="itemSelect"/);
+  const itemsResponse = await fetch(`${origin}/api/game/items`);
+  assert.equal(itemsResponse.status, 200);
+  const items = await itemsResponse.json();
+  assert.equal(items.length, ITEM_ROSTER.length);
+  assert.deepEqual(items.map((item) => item.id), ITEM_ROSTER.map((item) => item.id));
+  const multiCharge = ITEM_ROSTER.find((item) => item.maxCharges > 1);
+  assert.ok(multiCharge);
+  const grant = { guildId: '123456789012345678', userId: '987654321098765432', itemId: multiCharge.id };
+  assert.equal((await post('give-item', grant, { origin: 'http://evil.example' })).status, 403);
+  assert.equal((await post('give-item', grant, { 'content-type': 'text/plain' })).status, 415);
+  for (const invalid of [null, [], {}, { ...grant, guildId: '' }, { ...grant, userId: 123 },
+    { ...grant, userId: 'abc' }, { ...grant, userId: '1'.repeat(21) }, { ...grant, itemId: 'missing' }]) {
+    assert.equal((await post('give-item', invalid)).status, 400);
+  }
+  const malformed = await fetch(`${origin}/api/game/give-item`, {
+    method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{',
+  });
+  assert.equal(malformed.status, 400);
+  assert.equal(getInventory(db, grant.guildId, grant.userId).length, 0);
+  const granted = await post('give-item', grant);
+  assert.equal(granted.status, 200);
+  assert.equal((await granted.json()).item.charges, multiCharge.maxCharges);
+  assert.equal(getInventory(db, grant.guildId, grant.userId)[0].item_id, multiCharge.id);
+  assert.equal(getInventory(db, 'other-server', grant.userId).length, 0);
+  for (let index = 1; index < 5; index++) assert.equal((await post('give-item', grant)).status, 200);
+  const full = await post('give-item', grant);
+  assert.equal(full.status, 409);
+  assert.match((await full.json()).error, /Inventory is full/);
+  assert.equal(getInventory(db, grant.guildId, grant.userId).length, 5);
   const now = Date.now();
   const period = Math.floor(now / 3_600_000);
   const insert = db.prepare('INSERT INTO roll_allowances VALUES (?, ?, ?, ?)');

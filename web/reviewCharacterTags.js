@@ -9,6 +9,8 @@ import { handleFranchiseReviewRequest } from './reviewFranchises.js';
 import { addGlobalRolls, resetGlobalClaims } from '../lib/characterRolls.js';
 import { getGuildRates, setGuildRates, listAllGuildRates, isValidRate } from '../lib/guildRates.js';
 import { serveAssets } from './serveAssets.js';
+import { ITEM_ROSTER, getItemDefinition } from '../lib/itemRoster.js';
+import { addItemToInventory } from '../lib/itemStorage.js';
 
 const html = readFileSync(new URL('./reviewCharacterTags.html', import.meta.url));
 const gameHtml = readFileSync(new URL('./reviewGame.html', import.meta.url));
@@ -110,6 +112,28 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
             return json(response, 400, { error: 'Enter a positive whole number of rolls.' });
           json(response, 200, addGlobalRolls(db, body.amount));
         } else json(response, 200, resetGlobalClaims(db));
+      } else if (request.method === 'GET' && url.pathname === '/api/game/items') {
+        json(response, 200, ITEM_ROSTER.map(({ id, name, tier, description, maxCharges }) => ({
+          id, name, tier, description, charges: maxCharges ?? 1,
+        })));
+      } else if (request.method === 'POST' && url.pathname === '/api/game/give-item') {
+        if (request.headers.origin !== requestOrigin)
+          return json(response, 403, { error: 'Invalid origin' });
+        if (!request.headers['content-type']?.startsWith('application/json'))
+          return json(response, 415, { error: 'JSON required' });
+        let body;
+        try { body = await readJsonBody(request); }
+        catch { return json(response, 400, { error: 'Invalid JSON body' }); }
+        const { guildId, userId, itemId } = body || {};
+        const validId = (value) => typeof value === 'string' && /^[1-9]\d{0,19}$/.test(value);
+        if (!validId(guildId) || !validId(userId))
+          return json(response, 400, { error: 'Valid numeric server and user IDs are required (up to 20 digits).' });
+        const item = typeof itemId === 'string' ? getItemDefinition(itemId) : null;
+        if (!item) return json(response, 400, { error: 'Select a valid item.' });
+        const result = transaction(db, () => addItemToInventory(db, guildId, userId, item.id, item.maxCharges ?? 1));
+        if (result.status === 'full')
+          return json(response, 409, { error: `Inventory is full (${result.currentCount}/${result.capacity}). No item was given.` });
+        json(response, 200, { ...result, guildId, userId, itemName: item.name });
       } else if (request.method === 'GET' && url.pathname === '/api/game/rates') {
         const guildId = url.searchParams.get('guildId');
         if (guildId) {

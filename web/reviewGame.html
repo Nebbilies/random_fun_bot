@@ -33,6 +33,23 @@
         <section class="panel game-card"><span class="action-icon coral">↻</span><p class="eyebrow">CLAIM AVAILABILITY</p><h2>Reset claims</h2><p class="muted">Let every user claim a character again immediately.</p><ul class="preserved-list"><li>Existing marriages stay intact</li><li>Roll balances stay the same</li><li>Next scheduled reset stays the same</li></ul><div class="game-card-bottom"><p class="input-hint">Applies immediately to every server.</p><button id="resetClaims" class="danger" type="button">Reset claims for everyone</button></div></section>
       </div>
 
+      <section class="panel game-card" style="margin-top: 32px;">
+        <p class="eyebrow">PLAYER INVENTORY · PER SERVER</p>
+        <h2>Give item</h2>
+        <p class="muted">Give one item to one user in a specific server. Normal item charges and inventory limits apply.</p>
+        <form id="giveItemForm">
+          <label class="field-label" for="itemGuildId">Discord Server (Guild) ID</label>
+          <input id="itemGuildId" name="guildId" type="text" inputmode="numeric" pattern="[1-9][0-9]{0,19}" maxlength="20" required>
+          <label class="field-label" for="itemUserId">Discord User ID</label>
+          <input id="itemUserId" name="userId" type="text" inputmode="numeric" pattern="[1-9][0-9]{0,19}" maxlength="20" required>
+          <label class="field-label" for="itemSelect">Item</label>
+          <select id="itemSelect" name="itemId" aria-describedby="itemDescription" required disabled><option value="">Loading items…</option></select>
+          <p id="itemDescription" class="input-hint" aria-live="polite">Loading the current item roster.</p>
+          <button id="giveItemButton" type="submit" disabled>Give item</button>
+          <p id="giveItemStatus" class="feedback" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
       <div class="scope-notice" style="margin-top: 32px;"><span class="scope-icon">⚙</span><div><strong>Server rates (Guild Game Rates)</strong><p>Configure custom Mystery Vault drop rate and Prank roll rate per server. Cached in memory with zero DB latency on rolls.</p></div><span class="subtle-badge">Per server</span></div>
       <div class="game-grid">
         <section class="panel game-card">
