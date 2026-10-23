@@ -246,7 +246,7 @@ test('v6 migration preserves existing game data, opens read-only, and is repeata
   db.exec('PRAGMA user_version = 6');
   db.close();
   db = openCatalog(path);
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 7);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 8);
   assert.equal(getMarriage(db, '1', 1)?.marriedAt, 'original');
   assert.equal(db.prepare('SELECT period FROM claim_allowances').get()?.period, 12);
   assert.equal(db.prepare('SELECT state FROM mystery_sessions').get()?.state, 'running');
@@ -257,7 +257,7 @@ test('v6 migration preserves existing game data, opens read-only, and is repeata
   db.close();
   db = openCatalog(path);
   const readOnly = openCatalogReadOnly(path);
-  try { assert.equal(readOnly.prepare('PRAGMA user_version').get()?.user_version, 7); }
+  try { assert.equal(readOnly.prepare('PRAGMA user_version').get()?.user_version, 8); }
   finally { readOnly.close(); }
 });
 
