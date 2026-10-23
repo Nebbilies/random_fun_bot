@@ -99,7 +99,8 @@ function doorInteraction(intro, value, userId = '101') {
 }
 
 function roundPrompt(event, name, round) {
-  return event.sent.find((message) => message.payload.content?.includes(`${name} · Round ${round}/`));
+  const needle = `${name} · Round ${round}/`;
+  return event.sent.find((message) => JSON.stringify(message.payload).includes(needle));
 }
 
 function roundInteraction(prompt, round, value, userId = '101') {
@@ -360,8 +361,8 @@ test('Deadlock keeps prompts stable, rejects stale controls and shows final scor
   await onMysteryButton(db, roundInteraction(first, 1, '5', '102'));
   await onMysteryButton(db, roundInteraction(first, 1, '4'));
   assert.equal(event.sent.length, sentBefore, 'choices edit the same prompt without posting new ones');
-  assert.match(first.edits.at(-1).content, /Participants: 2/);
-  assert.ok(first.edits.every((edit) => !/picked|Saved:/.test(edit.content ?? '')));
+  assert.match(JSON.stringify(first.edits.at(-1).components), /Participants: 2/);
+  assert.ok(first.edits.every((edit) => !/picked|Saved:/.test(JSON.stringify(edit.components ?? []))));
   for (const [field, value] of [['guildId', '2'], ['channelId', '10']]) {
     const wrong = { ...roundInteraction(first, 1, '1'), [field]: value };
     await onMysteryButton(db, wrong);
@@ -369,7 +370,8 @@ test('Deadlock keeps prompts stable, rejects stale controls and shows final scor
   }
   await time.advanceTo(windows.close(1));
   assert.match(event.sent.at(-1).payload.content, /<@101>: picked 4 · \+4/);
-  assert.deepEqual(first.components, []);
+  assert.match(JSON.stringify(first.components), /Round closed/);
+  assert.doesNotMatch(JSON.stringify(first.components), /mystery:1:choice/);
   await time.advanceTo(windows.open(2));
   const second = roundPrompt(event, 'Deadlock', 2);
   const stale = roundInteraction(first, 1, '1');
@@ -442,7 +444,7 @@ test('a queued round interaction cannot use controls replaced while waiting', as
   const began = new Promise((resolve) => { editing = resolve; });
   const edit = first.edit.bind(first);
   first.edit = async (payload) => {
-    if (payload.components?.length === 0) { editing(); await blocked; }
+    if (!JSON.stringify(payload.components ?? []).includes('mystery:1:choice')) { editing(); await blocked; }
     return edit(payload);
   };
   const timer = time.advanceTo(windows.close(1));
@@ -513,4 +515,77 @@ test('competitive result messages retain every participant without exceeding Dis
   }
   const text = messages.map((message) => message.payload.content).join('\n');
   for (const id of ids) assert.ok(text.includes(`<@${id}>: picked 5`));
+});
+
+test('round prompts render as Components V2 cards with styled buttons', async (t) => {
+  const { db, event, time, start } = fixture(t, 'deadlock');
+  const windows = await beginContest({ db, time, start });
+  const opening = roundPrompt(event, 'Deadlock', 1);
+  assert.equal(opening.payload.flags, 32768);
+  assert.equal(opening.payload.content, undefined);
+  const card = JSON.stringify(opening.payload.components);
+  assert.match(card, /Deadlock · Round 1\/3/);
+  assert.match(card, /Cumulative standings/);
+  assert.match(card, /"style":1/);
+  assert.match(card, /"name":"1️⃣"/);
+  assert.match(card, /Participants: 0/);
+
+  // Later rounds keep only the round number and the choices: the instructions,
+  // participant count, and standings live on the opening card alone.
+  const state = JSON.parse(getMysterySession(db, 1).stateJson);
+  const ids = Array.from({ length: 200 }, (_, index) => String(100000000000000000n + BigInt(index)));
+  for (const id of ids) { state.players[id] = { score: 0 }; state.choices[id] = '5'; }
+  db.prepare('UPDATE mystery_sessions SET state_json = ? WHERE id = 1').run(JSON.stringify(state));
+  await time.advanceTo(windows.open(2));
+  const second = roundPrompt(event, 'Deadlock', 2);
+  const later = JSON.stringify(second.payload.components);
+  assert.doesNotMatch(later, /Cumulative standings/);
+  assert.doesNotMatch(later, /Pick \*\*1–5\*\*/);
+  assert.doesNotMatch(later, /Participants: /);
+  assert.match(later, /Deadlock · Round 2\/3/);
+  assert.deepEqual(second.payload.allowedMentions.parse, []);
+  for (const message of event.sent) {
+    if (message.payload.content) assert.ok(message.payload.content.length <= 2000);
+  }
+});
+
+test('later rounds drop instructions and participants but keep the choices', async (t) => {
+  const { db, event, time, start } = fixture(t, 'deadlock');
+  const windows = await beginContest({ db, time, start });
+  const opening = roundPrompt(event, 'Deadlock', 1);
+  await onMysteryButton(db, roundInteraction(opening, 1, '5', '101'));
+  await onMysteryButton(db, roundInteraction(opening, 1, '4', '102'));
+  const edited = JSON.stringify(opening.edits.at(-1).components);
+  assert.match(edited, /Participants: 2/);
+  assert.match(edited, /Pick \*\*1–5\*\*/);
+  await time.advanceTo(windows.open(2));
+  const second = roundPrompt(event, 'Deadlock', 2);
+  const later = JSON.stringify(second.payload.components);
+  assert.match(later, /"name":"5️⃣"/);
+  assert.match(later, /mystery:1:choice:2:5/);
+  assert.doesNotMatch(later, /Participants: |Cumulative standings|Pick/);
+  // The closed card still tells players why the buttons are gone.
+  await time.advanceTo(windows.close(2));
+  const closed = JSON.stringify(second.edits.at(-1).components);
+  assert.match(closed, /Round closed · choices are locked/);
+  assert.doesNotMatch(closed, /Participants: |Cumulative standings/);
+  assert.doesNotMatch(closed, /"type":1,/);
+});
+
+test('Greed Chamber styles Stay and Escape as distinct actions', async (t) => {
+  const { db, event, time, start } = fixture(t, 'greed_chamber', 1 - Number.EPSILON);
+  const windows = await beginContest({ db, time, start });
+  const card = JSON.stringify(roundPrompt(event, 'Greed Chamber', 1).payload.components);
+  assert.match(card, /Greed Chamber · Round 1\/5/);
+  assert.match(card, /"label":"Stay","style":3/);
+  assert.match(card, /"label":"Escape","style":4/);
+  assert.match(card, /Entry closes after this round/);
+  assert.doesNotMatch(card, /\d+%|collapse odds/i);
+  const opening = roundPrompt(event, 'Greed Chamber', 1);
+  await onMysteryButton(db, roundInteraction(opening, 1, 'stay'));
+  await time.advanceTo(windows.open(2));
+  const later = JSON.stringify(roundPrompt(event, 'Greed Chamber', 2).payload.components);
+  assert.match(later, /Greed Chamber · Round 2\/5/);
+  assert.match(later, /mystery:1:choice:2:stay/);
+  assert.doesNotMatch(later, /Stay to risk your unbanked points|Participants: |Entry is closed/);
 });

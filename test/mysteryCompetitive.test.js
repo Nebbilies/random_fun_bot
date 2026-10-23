@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { greedChamberEvent as greed } from '../lib/mysteryEvents/greedChamber.js';
 import { deadlockEvent as deadlock } from '../lib/mysteryEvents/deadlock.js';
-import { closesAt, RESULT_DURATION_MS } from '../lib/mysteryEvents/roundContest.js';
+import { closesAt, RESULT_DURATION_MS, SAFETY_DURATION_MS } from '../lib/mysteryEvents/roundContest.js';
 
 const close = (round) => closesAt({ startedAt: 0, round });
 const open = (round) => round === 1 ? 0 : close(round - 1) + RESULT_DURATION_MS;
@@ -25,6 +25,17 @@ function game(event, random = () => SURVIVE) {
     },
   };
 }
+
+test('round contests allow time to join, choose, and read results within the safety timeout', () => {
+  assert.equal(close(1), 30_000);
+  assert.equal(RESULT_DURATION_MS, 8_000);
+  for (let round = 2; round <= 5; round++) {
+    assert.equal(close(round) - open(round), 20_000);
+  }
+  assert.equal(close(3), 86_000);
+  assert.equal(close(5), 142_000);
+  assert.ok(SAFETY_DURATION_MS > close(5) + RESULT_DURATION_MS);
+});
 
 test('Greed revisions stay private, entry locks, and Escape banks before a shared collapse', () => {
   const draws = [SURVIVE, 0][Symbol.iterator]();
