@@ -1,6 +1,6 @@
 # Character Game
 
-Language for the character catalog, ownership, and tag review.
+Language for the character catalog, ownership, tag review, and mystery events.
 
 ## Language
 
@@ -67,3 +67,19 @@ _Avoid_: Single character view, harem carousel
 **Catalog top list**:
 A paged view of the catalog's highest ranked characters, listed in rank order.
 _Avoid_: Leaderboard, popularity board
+
+**Greed Chamber**:
+A mystery event where players choose between banking their points by escaping and risking their unbanked points against a shared collapse for a higher score.
+_Avoid_: Greed mode, individual collapse
+
+**Banked score**:
+A Greed Chamber score secured by escaping or surviving the final round, retained if the chamber later collapses.
+_Avoid_: Unbanked score, prize
+
+**Unbanked score**:
+A Greed Chamber score still exposed to collapse while its player remains inside the chamber.
+_Avoid_: Banked score, winnings
+
+**Deadlock**:
+A mystery event where players secretly choose a number each round and earn its value only when nobody else chose the same number. Round scores accumulate toward the event result.
+_Avoid_: Highest unique bid, auction
