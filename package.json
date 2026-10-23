@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node index.js",
+    "test": "node --test test/*.test.js",
     "catalog:import": "node scripts/importCharacterCatalog.js",
     "catalog:match": "node scripts/matchCharacterTags.js",
     "catalog:google-match": "node scripts/matchGoogleTags.js",
