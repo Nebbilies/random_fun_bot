@@ -25,7 +25,7 @@ test('catalog migration adds franchise storage and preserves the published chara
   t.after(() => { db?.close(); rmSync(directory, { recursive: true, force: true }); });
   db = openCatalog(path);
 
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 8);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 9);
   assert.equal(db.prepare('SELECT name_full FROM characters WHERE id = 11757').get().name_full, 'Kirito');
   const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
   for (const name of ['anime', 'character_anime', 'anime_relations', 'franchises', 'franchise_anime', 'franchise_aliases']) {

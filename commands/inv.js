@@ -8,11 +8,13 @@ import {
 import {
   getInventory,
   getInventoryCapacity,
+  getUsableInventory,
   getActiveBuffs,
 } from '../lib/itemStorage.js';
 import { getItemDefinition, ITEM_TIERS } from '../lib/itemRoster.js';
 import { resolveUserTarget, resolveTargetUsername } from '../lib/userTarget.js';
 import { executeItemUseById } from './use.js';
+import { startItemAction } from '../lib/itemActionRuntime.js';
 
 export function renderInventoryEmbed(db, guildId, userId, username, now = Date.now(), isSelf = true) {
   const inv = getInventory(db, guildId, userId);
@@ -77,9 +79,9 @@ export function renderInventoryEmbed(db, guildId, userId, username, now = Date.n
 
 export function renderInventoryComponents(db, guildId, userId) {
   const inv = getInventory(db, guildId, userId);
-  const usableItems = inv.filter((item) => {
+  const usableItems = getUsableInventory(db, guildId, userId).filter((item) => {
     const def = getItemDefinition(item.item_id);
-    return def && def.type === 'active';
+    return def && (def.type === 'active' || def.type === 'item_action');
   });
 
   if (!usableItems.length) return [];
@@ -101,6 +103,11 @@ export function getItemHelpBullet(def) {
   const tier = ITEM_TIERS[def.tier] || { emoji: '⚪', name: def.tier };
 
   switch (def.id) {
+    case 'double_or_nothing':
+      return `• **${tier.emoji} Double or Nothing**: Choose Keep or Gamble when a qualifying vault reward is revealed.`;
+    case 'alchemist': case 'chaos_exchange': case 'counterfeit_crown': case 'heart_for_a_heart':
+    case 'hostage_note': case 'severed_fate': case 'grand_masquerade':
+      return `• **${tier.emoji} ${def.name}**: Type \`!use ${def.id}\` to select costs/targets and confirm. ${def.description}`;
     case 'franchise_passport':
       return `• **${tier.emoji} Franchise Passport**: Type \`!use passport <franchise name>\` (e.g. \`!use passport Jujutsu Kaisen\`) to guarantee your next 5 rolls from that series.`;
     case 'hourglass_of_haste':
@@ -234,6 +241,16 @@ export async function onInventoryButton(db, interaction) {
 
   const invId = Number(invIdStr);
   const result = executeItemUseById(db, interaction.guildId, interaction.user.id, invId);
+
+  if (result.pendingAction) {
+    await interaction.deferUpdate();
+    await startItemAction({ db, inventoryId: result.inventoryId, message: {
+      guildId: interaction.guildId, channelId: interaction.channelId, channel: interaction.channel,
+      author: interaction.user, id: interaction.id,
+      reply: (payload) => interaction.followUp(payload),
+    } });
+    return true;
+  }
 
   if (!result.success) {
     await interaction.reply({

@@ -166,7 +166,7 @@ test('version 4 upgrade preserves existing marriage and prefix', (t) => {
   old.close();
   const db = openCatalog(path);
   t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
-  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 8);
+  assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 9);
   assert.equal(db.prepare("SELECT owner_id FROM marriages WHERE guild_id = '1'").get()?.owner_id, '101');
   assert.equal(db.prepare("SELECT prefix FROM guild_prefixes WHERE guild_id = '1'").get()?.prefix, '?');
 });

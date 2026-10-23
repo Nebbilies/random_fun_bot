@@ -41,9 +41,9 @@ function accentOf(card) {
   return container.toJSON().accent_color;
 }
 
-test('catalog database reaches version 8 and shares the wish table with every server', (t) => {
+test('catalog database reaches version 9 and shares the wish table with every server', (t) => {
   const db = fixture(t);
-  assert.equal(Number(db.prepare('PRAGMA user_version').get().user_version), 8);
+  assert.equal(Number(db.prepare('PRAGMA user_version').get().user_version), 9);
   assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'character_wishes'").get());
   assert.equal(WISHLIST_LIMIT, 7);
 });
