@@ -103,7 +103,7 @@ test('reward eligibility is independent, requires eligible pools and positive we
   save(db, 'items', { 'items.hourglass_of_haste.rewardEligible': false });
   assert.equal(getGameConfig(db).items.hourglass_of_haste.startingCharges, 1);
   assert.throws(() => save(db, 'items', { 'items.four_leaf_clover.rewardEligible': false, 'items.binoculars.rewardEligible': false }), { code: 'CONFIG_VALIDATION' });
-  assert.throws(() => save(db, 'vault', Object.fromEntries(['common', 'rare', 'epic', 'legendary'].map((tier) => [`vault.tierWeights.${tier}`, 0]))), { code: 'CONFIG_VALIDATION' });
+  assert.throws(() => save(db, 'vault', Object.fromEntries(['common', 'rare', 'epic', 'legendary', '???'].map((tier) => [`vault.tierWeights.${tier}`, 0]))), { code: 'CONFIG_VALIDATION' });
 });
 
 test('explicit schedule activation resets only affected allowance cycles and retains daily/player state', (t) => {

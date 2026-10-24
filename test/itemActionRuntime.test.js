@@ -56,6 +56,38 @@ async function nominate(f, action, own, target) {
   assert.equal(updateItemSelection(f.db, action.id, '1', '101', selections), true);
 }
 
+test('Kaimetsu warns about all harems and confirms without character selection', async (t) => {
+  const f = fixture(t);
+  marry(f, 1, '101'); marry(f, 2, '101');
+  marry(f, 3, '202'); marry(f, 4, '202');
+  const action = await launch(f, 'kaimetsu');
+  assert.equal(menus(f.sent[0]).length, 0);
+  const text = JSON.stringify(components(f.sent[0]));
+  assert.match(text, /including your own/);
+  assert.match(text, /Only soulbound characters are immune/);
+  assert.deepEqual(f.sent[0].payload.allowedMentions.parse, []);
+  const confirm = control(f.sent[0], 'confirm');
+  await onItemActionInteraction(f.db, f.click(confirm, f.sent[0], '202'));
+  assert.equal(getItemAction(f.db, action.id).state, 'confirming');
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM marriages').get().n, 4);
+  await onItemActionInteraction(f.db, f.click(confirm));
+  assert.equal(getItemAction(f.db, action.id).state, 'resolved');
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM marriages').get().n, 2);
+  assert.equal(getInventory(f.db, '1', '101').length, 0);
+  await onItemActionInteraction(f.db, f.click(confirm));
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM marriages').get().n, 2);
+});
+
+test('Kaimetsu cancellation leaves the item and ownership intact', async (t) => {
+  const f = fixture(t);
+  marry(f, 1, '101'); marry(f, 2, '101');
+  const action = await launch(f, 'kaimetsu');
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'cancel')));
+  assert.equal(getItemAction(f.db, action.id).state, 'canceled');
+  assert.equal(getInventory(f.db, '1', '101').length, 1);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM marriages').get().n, 2);
+});
+
 test('Alchemist selects exact Common entries and confirms once through owner-bound controls', async (t) => {
   const f = fixture(t);
   const source = f.grant('alchemist');

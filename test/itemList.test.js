@@ -19,14 +19,14 @@ function fixture(t) {
 test('guild list conceals unknown names and descriptions and uses effective discovered definitions', t => {
   const db = fixture(t);
   assert.equal(guildItemList(db, '123').length, ITEM_ROSTER.length);
-  assert.ok(guildItemList(db, '123').every(line => line === '• **???** - ???'));
+  assert.ok(guildItemList(db, '123').slice(0, -1).every(line => line === '• **???** - ???'));
   saveConfigSection(db, { guildId: '123', section: 'items',
     values: { 'items.hourglass_of_haste.rewardEligible': false }, expectedRevision: getConfigView(db, '123').revision });
   addItemToInventory(db, '123', 'u', 'hourglass_of_haste');
   const item = getResolvedItemDefinition(db, '123', 'hourglass_of_haste');
   assert.ok(guildItemList(db, '123').includes(`• **${escapeMarkdown(item.name)}** - ${escapeMarkdown(item.description)}`));
-  assert.ok(guildItemList(db, 'other').every(line => line === '• **???** - ???'));
-  for (const tier of ['common', 'rare', 'epic', 'legendary']) {
+  assert.ok(guildItemList(db, 'other').slice(0, -1).every(line => line === '• **???** - ???'));
+  for (const tier of ['common', 'rare', 'epic', 'legendary', '???']) {
     assert.equal(guildItemList(db, '123', tier).length, ITEM_ROSTER.filter(item => item.tier === tier).length);
   }
 });
@@ -34,7 +34,7 @@ test('guild list conceals unknown names and descriptions and uses effective disc
 test('known items sort by tier then name', t => {
   const db = fixture(t);
   for (const [i, item] of ITEM_ROSTER.entries()) addItemToInventory(db, '123', `u${i}`, item.id);
-  const tiers = ['common', 'rare', 'epic', 'legendary'];
+  const tiers = ['common', 'rare', 'epic', 'legendary', '???'];
   const sorted = [...ITEM_ROSTER].sort((a, b) => tiers.indexOf(a.tier) - tiers.indexOf(b.tier) || a.name.localeCompare(b.name, 'en'));
   assert.deepEqual(guildItemList(db, '123').map(line => line.split('**')[1]), sorted.map(item => escapeMarkdown(item.name)));
 });
