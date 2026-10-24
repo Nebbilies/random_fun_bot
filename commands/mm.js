@@ -6,6 +6,7 @@ import { listMarriages, listMarriagesByFranchise } from '../lib/characterMarriag
 import { formatNumber } from '../lib/formatNumber.js';
 import { HArem_PAGE_SIZE, haremListComponents } from '../lib/haremView.js';
 import { resolveUserTarget } from '../lib/userTarget.js';
+import { characterListName, markCharacterOwnership } from '../lib/characterOwnershipDisplay.js';
 
 const PAGE_SIZE = HArem_PAGE_SIZE;
 
@@ -102,7 +103,7 @@ function franchisePageComponents(groups, rows, targetId, sort, page, disabled = 
 
     const slice = group.characters.slice(firstIndexInGroup, overlapEnd - groupStart);
     const lines = slice.map((row) => {
-      const name = escapeMarkdown(short(row.name_full || `Character ${row.characterId}`));
+      const name = characterListName(short(row.name_full || `Character ${row.characterId}`), row.married !== false);
       return sort === 'rank' ? `**#${formatNumber(row.rank)}** - ${name}` : name;
     });
 
@@ -230,8 +231,16 @@ export async function runMarriages(ctx, options = {}) {
 
   const render = (disabled = false) => {
     if (view === 'individual') return individualCardComponents(rows, targetId, page, disabled);
-    if (view === 'franchise') return franchisePageComponents(groups, rows, targetId, sort, page, disabled);
-    return haremListComponents(rows, targetId, sort, page, { disabled });
+    const markedRows = markCharacterOwnership(ctx.yoshiko.catalogDb, ctx.message.guildId, rows);
+    if (view === 'franchise') {
+      const ownership = new Map(markedRows.map((row) => [row.characterId, row.married]));
+      const markedGroups = groups.map((group) => ({
+        ...group,
+        characters: group.characters.map((row) => ({ ...row, married: ownership.get(row.characterId) ?? false })),
+      }));
+      return franchisePageComponents(markedGroups, markedRows, targetId, sort, page, disabled);
+    }
+    return haremListComponents(markedRows, targetId, sort, page, { disabled });
   };
 
   let expired = false;

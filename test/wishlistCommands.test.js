@@ -317,3 +317,20 @@ test('an item-forced escape announces wishers, greens the card, and pings once',
   assert.equal(container.toJSON().accent_color, 0x57f287);
   assert.ok(timers.length > 0);
 });
+
+
+test('wishlist marks current-server marriages, including missing catalog entries', async (t) => {
+  const db = fixture(t);
+  for (const characterId of [1, 2, 3]) {
+    addWish(db, { guildId: '1', userId: '101', characterId });
+  }
+  db.exec(`INSERT INTO marriages (guild_id, character_id, owner_id, married_at) VALUES
+    ('1', 1, 'other', 'now'), ('2', 2, '101', 'now'), ('1', 3, 'other', 'now');
+    DELETE FROM characters WHERE id = 3`);
+  const harness = context(db, ['wl']);
+  await listWishes(harness.ctx);
+  const text = content(harness.payload());
+  assert.match(text, /One 💞/);
+  assert.doesNotMatch(text, /Two 💞/);
+  assert.match(text, /Three 💞 \(not in catalog\)/);
+});

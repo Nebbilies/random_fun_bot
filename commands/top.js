@@ -1,3 +1,4 @@
+import { markCharacterOwnership } from '../lib/characterOwnershipDisplay.js';
 import { getGameConfig } from '../lib/gameConfig.js';
 import { MessageFlags } from 'discord.js';
 import { topCharacters, topListComponents, topPageCount } from '../lib/topCharacters.js';
@@ -10,13 +11,15 @@ import { topCharacters, topListComponents, topPageCount } from '../lib/topCharac
  */
 export async function run(ctx) {
   const rows = topCharacters(ctx.yoshiko.catalogDb);
+  const render = (disabled = false) => topListComponents(
+    markCharacterOwnership(ctx.yoshiko.catalogDb, ctx.message.guildId, rows), page, { disabled });
   const pages = topPageCount(rows);
   const requested = Number.parseInt(ctx.args[1] ?? '', 10);
   let page = Number.isInteger(requested) && requested > 0 ? Math.min(requested, pages) - 1 : 0;
 
   const reply = await ctx.message.reply({
     flags: MessageFlags.IsComponentsV2,
-    components: topListComponents(rows, page),
+    components: render(),
     allowedMentions: { parse: [], repliedUser: false },
   });
   if (!reply?.createMessageComponentCollector) return;
@@ -34,12 +37,12 @@ export async function run(ctx) {
       try {
         if (interaction.customId === 'top:prev' && page > 0) {
           page -= 1;
-          await reply.edit({ components: topListComponents(rows, page) });
+          await reply.edit({ components: render() });
         } else if (interaction.customId === 'top:next' && page + 1 < pages) {
           page += 1;
-          await reply.edit({ components: topListComponents(rows, page) });
+          await reply.edit({ components: render() });
         }
-        if (expired) await reply.edit({ components: topListComponents(rows, page, { disabled: true }) });
+        if (expired) await reply.edit({ components: render(true) });
       } finally {
         busy = false;
       }
@@ -56,6 +59,6 @@ export async function run(ctx) {
 
   collector.on('end', () => {
     expired = true;
-    reply.edit({ components: topListComponents(rows, page, { disabled: true }) }).catch(console.error);
+    reply.edit({ components: render(true) }).catch(console.error);
   });
 }

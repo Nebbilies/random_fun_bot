@@ -5,6 +5,7 @@ import {
 } from 'discord.js';
 import { findFranchises, isFranchiseCatalogCurrent, loadFranchiseCharacters, loadFranchiseCover, loadFranchiseIndex } from '../../lib/franchiseLookup.js';
 import { formatNumber } from '../../lib/formatNumber.js';
+import { characterListName, markCharacterOwnership } from '../../lib/characterOwnershipDisplay.js';
 
 const CHARACTER_PAGE_SIZE = 15;
 const FRANCHISE_PAGE_SIZE = 25;
@@ -73,8 +74,10 @@ export async function runFranchiseCommand(ctx) {
 
     if (!characters.length) return [container(`## ${escapeMarkdown(selected.name)}\nNo current catalog characters found in this franchise.`)];
     const pages = Math.max(1, Math.ceil(characters.length / CHARACTER_PAGE_SIZE));
-    const lines = characters.slice(page * CHARACTER_PAGE_SIZE, (page + 1) * CHARACTER_PAGE_SIZE).map((character) => {
-      const name = `${character.married ? '💞 ' : ''}${escapeMarkdown(character.name_full)}`;
+    const visible = markCharacterOwnership(db, guildId,
+      characters.slice(page * CHARACTER_PAGE_SIZE, (page + 1) * CHARACTER_PAGE_SIZE));
+    const lines = visible.map((character) => {
+      const name = characterListName(character.name_full, character.married);
       return showRank ? `#${formatNumber(character.rank)} - ${name}` : name;
     });
     const content = `## ${escapeMarkdown(selected.name)}\n${formatNumber(characters.length)} characters • Page ${page + 1} of ${pages}\n\n${lines.join('\n')}`;
