@@ -6,6 +6,7 @@ import {
 } from 'discord.js';
 import { findCharacters } from '../lib/gameCharacterLookup.js';
 import { reportCharacterTag } from '../lib/catalogDb.js';
+import { getMarriage } from '../lib/characterMarriage.js';
 import { formatNumber } from '../lib/formatNumber.js';
 
 const PAGE_SIZE = 25;
@@ -54,7 +55,7 @@ function chooserComponents(matches, page, disabled = false) {
     ))];
 }
 
-function cardComponents(character, image, position, hasMoreImages, canGoBack, disabled = false) {
+function buildCardComponents(character, image, position, hasMoreImages, canGoBack, disabled = false, ownerId = null) {
   const titles = jsonArray(character.anime_titles);
   const names = [character.name_native, ...jsonArray(character.name_alternatives)]
     .filter((name, index, all) => name && name !== character.name_full && all.indexOf(name) === index)
@@ -94,6 +95,9 @@ function cardComponents(character, image, position, hasMoreImages, canGoBack, di
   }
   if (canGoBack) controls.push(button('char:back', 'Back to results', disabled));
   container.addActionRowComponents(new ActionRowBuilder().addComponents(controls));
+  if (ownerId) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`Married by <@${ownerId}>`));
+  }
   return [container];
 }
 
@@ -134,6 +138,13 @@ export async function run(ctx) {
       ctx.message.guildId, character.id, approved?.tag_name, character.image_url,
     );
     return { character, approved, image };
+  }
+
+  function cardComponents(character, image, position, hasMoreImages, canGoBack, disabled = false) {
+    const marriage = ctx.message.guildId
+      ? getMarriage(ctx.yoshiko.catalogDb, ctx.message.guildId, character.id) : null;
+    return buildCardComponents(character, image, position, hasMoreImages, canGoBack, disabled,
+      marriage?.ownerId ?? null);
   }
 
   function renderCard(disabled = false) {
