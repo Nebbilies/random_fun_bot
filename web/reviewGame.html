@@ -19,6 +19,7 @@
         <a href="/" data-combined-only><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><circle cx="12" cy="9" r="2.5"/><path d="M7 17c0-4 10-4 10 0"/></svg><span>Character review</span></a>
         <a href="/franchise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Franchises</span></a>
         <a href="/game" aria-current="page" data-combined-only><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h8c3 0 4 3 5 9 .5 4-3 4-5 0H8c-2 4-5.5 4-5 0 1-6 2-9 5-9Z"/><path d="M7 10v5m-2.5-2.5h5M16 11h.01M18 14h.01"/></svg><span>Game controls</span><span class="nav-dot"></span></a>
+        <a href="/config" data-combined-only><span aria-hidden="true">⚙</span><span>Configuration</span></a>
     </nav>
     <div class="sidebar-footer"><span class="workspace-icon">Y</span><div>Yoshiko workspace<span>Catalog & game management</span></div></div>
   </aside>
@@ -50,48 +51,7 @@
         </form>
       </section>
 
-      <div class="scope-notice" style="margin-top: 32px;"><span class="scope-icon">⚙</span><div><strong>Server rates (Guild Game Rates)</strong><p>Configure custom Mystery Vault drop rate and Prank roll rate per server. Cached in memory with zero DB latency on rolls.</p></div><span class="subtle-badge">Per server</span></div>
-      <div class="game-grid">
-        <section class="panel game-card">
-          <span class="action-icon">💎</span>
-          <p class="eyebrow">CUSTOM RATES</p>
-          <h2>Configure server rates</h2>
-          <p class="muted">Set the drop chance for Mystery Vault and Prank rolls for a specific Discord Server.</p>
-          <form id="rateForm">
-            <label class="field-label" for="guildId">Discord Server (Guild) ID</label>
-            <input id="guildId" name="guildId" type="text" placeholder="e.g. 1146835427668541570" pattern="\d+" required>
-            <p class="input-hint">Numeric ID of the Discord guild.</p>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px;">
-              <div>
-                <label class="field-label" for="vaultRate">Vault rate (%)</label>
-                <input id="vaultRate" name="vaultRate" type="number" min="0" max="100" step="0.1" value="1.0" required>
-                <p class="input-hint">Default: 1.0%</p>
-              </div>
-              <div>
-                <label class="field-label" for="prankRate">Prank rate (%)</label>
-                <input id="prankRate" name="prankRate" type="number" min="0" max="100" step="0.1" value="1.0" required>
-                <p class="input-hint">Default: 1.0%</p>
-              </div>
-            </div>
-
-            <div style="display: flex; gap: 10px; margin-top: 16px;">
-              <button type="submit">Save server rates</button>
-              <button id="loadRatesBtn" type="button" class="subtle">Load current</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="panel game-card">
-          <span class="action-icon purple">📋</span>
-          <p class="eyebrow">CONFIGURED SERVERS</p>
-          <h2>Custom rate list</h2>
-          <p class="muted">Servers with customized game rates stored in SQLite.</p>
-          <div id="customRatesList" style="max-height: 220px; overflow-y: auto; font-size: 12px; margin-top: 10px;">
-            <p class="muted">Loading configured servers...</p>
-          </div>
-        </section>
-      </div>
+      <p class="notice">Game rules and server rates have moved to <a href="/config">Configuration</a>.</p>
 
       <p id="status" class="feedback" role="status" aria-live="polite"></p>
       <footer class="page-footer">Yoshiko<span>Made for a better-managed catalog.</span></footer>

@@ -8,6 +8,8 @@ const assets = new Map([
   ['reviewCharacterTags.js', 'text/javascript'],
   ['reviewFranchises.js', 'text/javascript'],
   ['reviewGame.js', 'text/javascript'],
+  ['reviewConfig.js', 'text/javascript'],
+  ['config.css', 'text/css'],
 ].map(([name, type]) => [`/assets/${name}`, {
   type: `${type}; charset=utf-8`,
   body: readFileSync(new URL(`./assets/${name}`, import.meta.url)),
