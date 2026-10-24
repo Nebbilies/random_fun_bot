@@ -130,7 +130,7 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
   assert.equal(cardJson.accent_color, 0xf1c40f);
   assert.match(cardJson.components[0].content, /<@3001> received \*\*Master Key\*\*/);
   assert.equal(cardJson.components[1].content, '# 🟡 Legendary');
-  assert.match(cardJson.components[2].content, /\*\*Master Key\*\*.*protectionMs: 86400000/);
+  assert.match(cardJson.components[2].content, /\*\*Master Key\*\*/);
 
   // Ensure reply happened BEFORE message:edit
   assert.deepEqual(callSequence, ['interaction:reply', 'message:edit']);

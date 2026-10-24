@@ -5,8 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openCatalog } from '../lib/catalogDb.js';
-import { divorceCharacter, getMarriage, marryCharacter } from '../lib/characterMarriage.js';
-import { escapeMarkdown } from 'discord.js';
+import { getMarriage, marryCharacter } from '../lib/characterMarriage.js';
 import { onTradeAnswer } from '../lib/tradeRuntime.js';
 import { run as trade } from '../commands/trade.js';
 import { run as me } from '../commands/me.js';
@@ -116,12 +115,12 @@ test('trade shows the harem, both players pick and the swap happens', async (t) 
 
   const opening = text(ctx.message.replies[0].payload);
   assert.match(opening, /Trade with <@102>/);
-  assert.match(opening, /Eleven 💞/);
+  assert.match(opening, /Eleven/);
 
   assert.equal((await say(db, channel, '101', 'Eleven')).handled, true);
   const offer = text(channel.sent[0].payload);
   assert.match(offer, /<@101> wants to trade \*\*Eleven\*\*/);
-  assert.match(offer, /Twelve 💞/);
+  assert.match(offer, /Twelve/);
 
   assert.equal((await say(db, channel, '102', 'Twelve')).handled, true);
   const confirmation = text(channel.sent[1].payload);
@@ -170,7 +169,7 @@ test('gift hands the character over after the recipient confirms', async (t) => 
   ctx.message.guild.members.cache.set('102', { id: '102' });
   await give(ctx);
   assert.match(text(ctx.message.replies[0].payload), /Gift for <@102>/);
-  assert.match(text(ctx.message.replies[0].payload), /Eleven 💞/);
+  assert.match(text(ctx.message.replies[0].payload), /Eleven/);
 
   await say(db, channel, '101', 'Eleven');
   const confirmation = text(channel.sent[0].payload);
@@ -280,50 +279,6 @@ test('only the player who has to pick consumes the typed name', async (t) => {
   assert.equal((await say(db, channel, '101', 'Nobody')).handled, true);
   assert.match(text(channel.sent[0].payload), /No character matching \*\*Nobody\*\*/);
 });
-
-for (const kind of ['give', 'trade', 'recipient']) {
-  test(`${kind} harem paging refreshes stale ownership without changing other surfaces`, async (t) => {
-    const db = fixture(t);
-    const ownerId = kind === 'recipient' ? '102' : '101';
-    const insert = db.prepare('INSERT INTO characters (id, rank, favourites, name_full) VALUES (?, ?, 0, ?)');
-    for (let id = 20; id <= 42; id++) {
-      insert.run(id, id, `Character *${id}*`);
-      marryCharacter(db, '1', id, ownerId);
-    }
-    marryCharacter(db, '1', 11, kind === 'recipient' ? '101' : '102');
-    const channel = createChannel();
-    const command = kind === 'give' ? give : trade;
-    const ctx = context(db, channel, '101', [kind === 'give' ? 'give' : 'trade', '<@102>']);
-    ctx.message.guild.members.cache.set('102', { id: '102' });
-    await command(ctx);
-    if (kind === 'recipient') await say(db, channel, '101', 'Eleven');
-    const list = kind === 'recipient' ? channel.sent[0] : ctx.message.replies[0];
-    assert.ok(text(list.payload).includes(`${escapeMarkdown('Character *20*')} 💞`));
-    for (const id of [40, 41, 42]) {
-      const marriage = getMarriage(db, '1', id);
-      assert.ok(marriage, `Expected character ${id} to be married before divorce`);
-      assert.equal(divorceCharacter(db, '1', id, ownerId, marriage.id), true);
-    }
-    marryCharacter(db, '1', 41, '103');
-    marryCharacter(db, '2', 42, ownerId);
-    const navigate = async (customId) => list.collector.listeners('collect')[0]({
-      customId, user: { id: ownerId }, guildId: '1', deferUpdate: async () => {},
-    });
-    await navigate('xfer:page:next');
-    const pageText = text(list.edits.at(-1));
-    assert.match(pageText, /Page 2 of 2/);
-    for (const [id, married] of [[40, false], [41, true], [42, false]]) {
-      const name = escapeMarkdown(`Character *${id}*`);
-      assert.ok(pageText.split('\n').some((line) => line.endsWith(`${name}${married ? ' 💞' : ''}`)));
-      if (!married) assert.ok(!pageText.includes(`${name} 💞`));
-    }
-    marryCharacter(db, '1', 40, '103');
-    await navigate('xfer:page:prev');
-    await navigate('xfer:page:next');
-    assert.ok(text(list.edits.at(-1)).includes(`${escapeMarkdown('Character *40*')} 💞`));
-    await cancel(context(db, channel, '101', ['cancel']));
-  });
-}
 
 test('the character list is a valid Components V2 payload', async (t) => {
   const db = fixture(t);

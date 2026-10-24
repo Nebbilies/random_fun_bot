@@ -156,10 +156,10 @@ test('franchise view (!mma) lists franchises alphabetically without rank and gro
 
   // Without 'r', no rank format '#253'
   assert.ok(!text.includes('#253'), 'Should not display rank in mma without r');
-  assert.ok(text.includes('Rangiku Matsumoto 💞'));
-  assert.ok(text.includes('Casca 💞'));
-  assert.ok(text.includes('Mei Misaki 💞'));
-  assert.ok(text.includes('Wanderer 💞'));
+  assert.ok(text.includes('Rangiku Matsumoto'));
+  assert.ok(text.includes('Casca'));
+  assert.ok(text.includes('Mei Misaki'));
+  assert.ok(text.includes('Wanderer'));
 });
 
 test('franchise rank view (!mmar) shows bold rank and sorts characters within franchise by rank', async (t) => {
@@ -256,7 +256,7 @@ test('combining a and i (!mmai) runs individual card view', async (t) => {
   assert.ok(text.includes("<@101>'s harem • Character 1 of 1"));
 });
 
-test('harem renderer defaults marriage rows to owned, respects false, and escapes names', () => {
+test('harem renderer escapes names without mutating marriage rows', () => {
   const rows = [
     { characterId: 1, name_full: '*Owned*', rank: 1 },
     { characterId: 2, name_full: '_Released_', rank: 2, married: false },
@@ -264,20 +264,20 @@ test('harem renderer defaults marriage rows to owned, respects false, and escape
   ];
   const before = structuredClone(rows);
   const rendered = textContent({ components: haremListComponents(rows, '101') });
-  assert.ok(rendered.includes(`${escapeMarkdown('*Owned*')} 💞`));
+  assert.ok(rendered.includes(escapeMarkdown('*Owned*')));
   assert.ok(rendered.includes(escapeMarkdown('_Released_')));
-  assert.ok(!rendered.includes(`${escapeMarkdown('_Released_')} 💞`));
-  assert.ok(rendered.includes(`${escapeMarkdown('`Taken`')} 💞`));
+  assert.ok(rendered.includes(escapeMarkdown('`Taken`')));
+  assert.ok(!rendered.includes('💞'));
   assert.deepEqual(rows, before);
 });
 
-test('grouped franchise view escapes character names before the ownership marker', async (t) => {
+test('grouped franchise view escapes character names', async (t) => {
   const db = fixture(t);
   db.prepare('UPDATE characters SET name_full = ? WHERE id = 1').run('*Rangiku*');
   marryCharacter(db, '1', 1, '101');
   const mock = context(db, ['mma']);
   await mmCommand(mock.ctx);
-  assert.ok(textContent(mock.payload()).includes(`${escapeMarkdown('*Rangiku*')} 💞`));
+  assert.ok(textContent(mock.payload()).includes(escapeMarkdown('*Rangiku*')));
 });
 
 test('invalid modifier rejects with clear error', async (t) => {
