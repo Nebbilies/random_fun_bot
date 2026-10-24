@@ -190,7 +190,10 @@ test('partial setter rolls back legacy values, overrides and revision on failure
     assert.throws(() => setGuildRates(db, '123', { vaultRate: 0.5 }), /reject rate/);
     assert.equal(db.prepare('SELECT * FROM guild_game_rates WHERE guild_id=?').get('123'), undefined);
     assert.deepEqual(getConfigView(db, '123'), before);
-    assert.equal(db.isTransaction, false);
+    // A fresh BEGIN proves the failed setter left no transaction open,
+    // including on Node versions without DatabaseSync.isTransaction.
+    db.exec('BEGIN');
+    db.exec('ROLLBACK');
   } finally { db.close(); }
 });
 
@@ -200,7 +203,8 @@ test('partial setter participates in an outer transaction without committing it'
     const before = getConfigView(db, '123');
     db.exec('BEGIN');
     setGuildRates(db, '123', { prankRate: 0.5 });
-    assert.equal(db.isTransaction, true);
+    // ROLLBACK below must still undo the setter's writes: it must not
+    // commit the caller's transaction.
     assert.equal(getGuildRates(db, '123').prankRate, 0.5);
     db.exec('ROLLBACK');
     assert.deepEqual(getConfigView(db, '123'), before);
