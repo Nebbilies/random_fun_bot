@@ -1,4 +1,5 @@
 import { getClaimStatus } from '../lib/characterRolls.js';
+import { getActiveBuffs } from '../lib/itemStorage.js';
 import { resolveUserTarget } from '../lib/userTarget.js';
 
 export async function run(ctx) {
@@ -16,6 +17,12 @@ export async function run(ctx) {
   const minutes = Math.ceil((resetAt - now) / 60_000);
   const duration = `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')} min`;
   const subject = isSelf ? 'You' : `<@${targetId}>`;
-  const status = canClaim ? 'can claim right now!' : "can't claim right now.";
-  await ctx.message.reply(`${subject} ${status} The next claim reset is in **${duration}**.`);
+  const extraClaims = getActiveBuffs(ctx.yoshiko.catalogDb, ctx.message.guildId, targetId, now)
+    .filter(buff => ['pinata_claim_token', 'crown_of_the_sovereign'].includes(buff.buff_id))
+    .reduce((total, buff) => total + Math.max(0, buff.remaining_rolls ?? 0), 0);
+  const status = canClaim ? 'can claim right now!' : extraClaims > 0
+    ? (isSelf ? 'have a normal claim on cooldown.' : 'has a normal claim on cooldown.')
+    : "can't claim right now.";
+  const tokens = extraClaims > 0 ? `\nExtra claim tokens: **${extraClaims}** — usable during the normal cooldown.` : '';
+  await ctx.message.reply(`${subject} ${status} The next claim reset is in **${duration}**.${tokens}`);
 }

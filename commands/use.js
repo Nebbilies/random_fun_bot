@@ -91,7 +91,7 @@ export async function run(ctx) {
   }
   if (result.success && result.startVault) {
     await startVaultRoll({ db, channel: message.channel, guildId, rollerId: userId,
-      remaining: getRollStatus(db, guildId, userId).remaining });
+      remaining: getRollStatus(db, guildId, userId).remaining, commandMessageId: message.id });
   }
 
   await message.reply(result.message);

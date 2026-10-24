@@ -50,6 +50,14 @@ test('vaultCard creates container with 3 buttons A, B, C and mystery vault asset
   assert.equal(disabledCard.files, undefined);
 });
 
+test('vault appearance replies to the triggering command without pinging its author', async t => {
+  const db = openCatalog(':memory:'); t.after(() => db.close());
+  const channel = mockChannel();
+  await startVaultRoll({ db, channel, guildId: '1001', rollerId: '3001', remaining: 4, commandMessageId: '777' });
+  assert.deepEqual(channel.sent[0].payload.reply, { messageReference: '777', failIfNotExists: false });
+  assert.deepEqual(channel.sent[0].payload.allowedMentions, { parse: [], repliedUser: false });
+});
+
 test('vaultRewardCard builds container with tier color, large markdown title, and description like roll card', () => {
   const outcome = {
     tier: 'epic',

@@ -123,7 +123,7 @@ export function getItemHelpBullet(def) {
     case 'hostage_note': case 'severed_fate': case 'grand_masquerade':
       return `• **${tier.emoji} ${def.name}**: Type \`!use ${def.id}\` to select costs/targets and confirm. ${def.description}`;
     case 'franchise_passport':
-      return `• **${tier.emoji} Franchise Passport**: Type \`!use passport <franchise name>\` (e.g. \`!use passport Jujutsu Kaisen\`) to guarantee your next 5 rolls from that series.`;
+      return `• **${tier.emoji} Franchise Passport**: Type \`!use passport <franchise name>\` (e.g. \`!use passport Jujutsu Kaisen\`) to activate it. ${def.description}`;
     case 'hourglass_of_haste':
       return `• **${tier.emoji} Hourglass of Haste**: Click the button on \`!inv\` or type \`!use hourglass\` to instantly reset your hourly roll limit.`;
     case 'four_leaf_clover':
@@ -141,7 +141,7 @@ export function getItemHelpBullet(def) {
     case 'adrenaline_rush':
       return `• **${tier.emoji} Adrenaline Rush**: Click the button on \`!inv\` or type \`!use adrenaline\` to double your hourly roll allowance for 1 hour.`;
     case 'pinata':
-      return `• **${tier.emoji} Piñata**: Click the button on \`!inv\` or type \`!use pinata\` to shower chat with luck and reset your claim cooldown.`;
+      return `• **${tier.emoji} Piñata**: Click the button on \`!inv\` or type \`!use pinata\` to activate it. ${def.description}`;
     case 'engagement_ring':
       return `• **${tier.emoji} Engagement Ring**: Click the button on \`!inv\` or type \`!use ring\` to halve your next marriage claim cooldown (1.5h instead of 3h).`;
     case 'pickpockets_hook':
@@ -151,15 +151,15 @@ export function getItemHelpBullet(def) {
     case 'bag_of_holding':
       return `• **${tier.emoji} Bag of Holding**: Click the button on \`!inv\` or type \`!use bag\` to permanently expand your inventory capacity by +1 slot.`;
     case 'double_date':
-      return `• **${tier.emoji} Double Date**: Click the button on \`!inv\` or type \`!use date\` to suspend your claim cooldown for 10 minutes upon marrying.`;
+      return `• **${tier.emoji} Double Date**: Click the button on \`!inv\` or type \`!use date\` to activate it. ${def.description}`;
     case 'golden_hour':
-      return `• **${tier.emoji} Golden Hour**: Click the button on \`!inv\` or type \`!use golden\` to start a 5-minute Happy Hour with unlimited rolls for the channel.`;
+      return `• **${tier.emoji} Golden Hour**: Click the button on \`!inv\` or type \`!use golden\` to reset everyone's hourly rolls in this server and open a mystery vault for yourself.`;
     case 'blood_pact':
-      return `• **${tier.emoji} Blood Pact**: Type \`!use blood <char1>, <char2>, <char3>\` to sacrifice 3 characters for a higher-ranked one.`;
+      return `• **${tier.emoji} Blood Pact**: Type \`!use blood <char1>, <char2>, <char3>\` to activate it. ${def.description}`;
     case 'master_key':
       return `• **${tier.emoji} Master Key**: Type \`!use masterkey @user <character name>\` to steal a specific married character from them.`;
     case 'wish_upon_a_star':
-      return `• **${tier.emoji} Wish Upon A Star**: Type \`!use wish <franchise name>\` (e.g. \`!use wish Frieren\`) to marry one of its top 3 characters.`;
+      return `• **${tier.emoji} Wish Upon A Star**: Type \`!use wish <franchise name>\` (e.g. \`!use wish Frieren\`) to activate it. ${def.description}`;
     case 'aegis_of_fidelity':
       return `• **${tier.emoji} Aegis of Fidelity**: Type \`!use aegis <character name>\` to permanently soulbind a character you own so they can never be stolen or escape.`;
     case 'crown_of_the_sovereign':
