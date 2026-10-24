@@ -92,6 +92,14 @@ _Avoid_: Favorite, target, wanted character
 A player's bounded set of wishes in one Discord server, holding at most seven. It is a target list, so wishing for an already owned character is allowed and changes nothing about ownership.
 _Avoid_: Harem wishlist, global wishlist
 
+**Guild item discovery**:
+A server's permanent knowledge of an item kind after any player successfully acquires it there. The item remains discovered after all copies are consumed; revealing an unacquired reward does not establish discovery.
+_Avoid_: Current ownership, personal discovery
+
+**Guild item list**:
+A server's view of the full item catalog, showing names and descriptions for discovered items and concealing both for undiscovered items. It can be filtered by rarity tier.
+_Avoid_: Inventory, behavior-type list
+
 **Wish match**:
 A roll whose character appears on at least one wishlist in that server. A wish match is announced as one wish line naming every matching player and is presented with the wishlist accent color.
 _Avoid_: Wish alert, wish notification

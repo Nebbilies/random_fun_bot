@@ -160,7 +160,7 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const args = message.content.trim().split(/ +/g);
         const gameCommand = args[0].startsWith(prefix) ? args[0].slice(prefix.length).toLowerCase() : '';
         const isMarriage = /^(mm|mymarry)([a-z]*)$/.test(gameCommand);
-        if (isMarriage || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
+        if (isMarriage || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
             args[0] = gameCommand;
             try {
                 const commandModule = isMarriage ? './commands/mm.js' : `./commands/${gameCommand}.js`;
