@@ -1,3 +1,4 @@
+import { getGameConfig } from '../lib/gameConfig.js';
 import {
   ActionRowBuilder, ContainerBuilder, escapeMarkdown, MessageFlags, StringSelectMenuBuilder,
   TextDisplayBuilder,
@@ -5,30 +6,30 @@ import {
 import { findCharacters } from '../lib/gameCharacterLookup.js';
 import { formatNumber } from '../lib/formatNumber.js';
 import {
-  WISHLIST_LIMIT, addWish, clearWishes, getWishes, matchWishes, removeWish,
+  WISHLIST_LIMIT, getWishlistLimit, addWish, clearWishes, getWishes, matchWishes, removeWish,
 } from '../lib/characterWishlist.js';
 
-const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
+
 const CHOOSE_ID = 'wish:choose';
 
 function label(wish) {
   return wish.rank == null ? `#? • ${wish.name}` : `#${formatNumber(wish.rank)} • ${wish.name}`;
 }
 
-export function wishlistView(wishes, prefix = '!') {
+export function wishlistView(wishes, prefix = '!', limit = WISHLIST_LIMIT) {
   const lines = wishes.map((wish) => wish.inCatalog && wish.rank != null
     ? `#${formatNumber(wish.rank)} • ${escapeMarkdown(wish.name)}`
     : `#? • ${escapeMarkdown(wish.name)} (not in catalog)`);
   const body = lines.length ? lines.join('\n') : `No wishes yet. Add one with ${prefix}wish <name>.`;
   return new ContainerBuilder().setAccentColor(0x5865f2)
     .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`## Wishlist (${wishes.length}/${WISHLIST_LIMIT})`),
+      new TextDisplayBuilder().setContent(`## Wishlist (${wishes.length}/${limit})`),
       new TextDisplayBuilder().setContent(body),
     );
 }
 
-function listPayload(wishes, prefix) {
-  return { flags: MessageFlags.IsComponentsV2, components: [wishlistView(wishes, prefix)],
+function listPayload(wishes, prefix, limit = WISHLIST_LIMIT) {
+  return { flags: MessageFlags.IsComponentsV2, components: [wishlistView(wishes, prefix, limit)],
     allowedMentions: { parse: [], repliedUser: false } };
 }
 
@@ -54,12 +55,12 @@ function wishesOf(ctx) {
 
 /** Renders the caller's wishlist. The `!wl` and `!wishlist` aliases use this directly. */
 export async function listWishes(ctx) {
-  await ctx.message.reply(listPayload(wishesOf(ctx), ctx.prefix));
+  await ctx.message.reply(listPayload(wishesOf(ctx), ctx.prefix, getWishlistLimit(ctx.yoshiko.catalogDb, ctx.message.guildId)));
 }
 
-function refusal(status, count, name, prefix) {
+function refusal(status, count, name, prefix, limit) {
   if (status === 'full') {
-    return `Your wishlist is full (${count}/${WISHLIST_LIMIT}). Remove one with ${prefix}wish remove <name>.`;
+    return `Your wishlist is full (${count}/${limit}). Remove one with ${prefix}wish remove <name>.`;
   }
   return `**${escapeMarkdown(name)}** is already on your wishlist.`;
 }
@@ -68,13 +69,13 @@ async function save(ctx, characterId, name, { target }) {
   const result = addWish(ctx.yoshiko.catalogDb, { guildId: ctx.message.guildId,
     userId: ctx.message.author.id, characterId });
   if (result.status !== 'added') {
-    const content = refusal(result.status, result.count, name, ctx.prefix);
+    const content = refusal(result.status, result.count, name, ctx.prefix, getWishlistLimit(ctx.yoshiko.catalogDb, ctx.message.guildId));
     if (target) await target.reply({ content, flags: MessageFlags.Ephemeral });
     else await ctx.message.reply(content);
     return;
   }
-  if (target) await target.update(listPayload(wishesOf(ctx), ctx.prefix));
-  else await ctx.message.reply(listPayload(wishesOf(ctx), ctx.prefix));
+  if (target) await target.update(listPayload(wishesOf(ctx), ctx.prefix, getWishlistLimit(ctx.yoshiko.catalogDb, ctx.message.guildId)));
+  else await ctx.message.reply(listPayload(wishesOf(ctx), ctx.prefix, getWishlistLimit(ctx.yoshiko.catalogDb, ctx.message.guildId)));
 }
 /**
  * Shows the `!char` style picker and applies the caller's choice to the same message.
@@ -83,7 +84,8 @@ async function save(ctx, characterId, name, { target }) {
 async function pick(ctx, wishes, mode) {
   const reply = await ctx.message.reply(pickerPayload(wishes, mode));
   if (!reply?.createMessageComponentCollector) return;
-  const collector = reply.createMessageComponentCollector({ time: CONTROL_LIFETIME_MS });
+  const controlLifetime = getGameConfig(ctx.yoshiko.catalogDb, ctx.message.guildId).controls.lifetimeMs;
+  const collector = reply.createMessageComponentCollector({ time: controlLifetime });
   const ownerId = ctx.message.author.id;
   collector.on('collect', async (interaction) => {
     if (interaction.customId !== CHOOSE_ID) return;
@@ -99,7 +101,7 @@ async function pick(ctx, wishes, mode) {
       if (mode === 'remove') {
         removeWish(ctx.yoshiko.catalogDb, { guildId: ctx.message.guildId,
           userId: ownerId, characterId });
-        await interaction.update(listPayload(wishesOf(ctx), ctx.prefix));
+        await interaction.update(listPayload(wishesOf(ctx), ctx.prefix, getWishlistLimit(ctx.yoshiko.catalogDb, ctx.message.guildId)));
         return;
       }
       await save(ctx, characterId, wish.name, { target: interaction });
@@ -146,7 +148,7 @@ async function removeCommand(ctx, query) {
   }
   removeWish(ctx.yoshiko.catalogDb, { guildId: ctx.message.guildId,
     userId: ctx.message.author.id, characterId: matches[0].characterId });
-  await ctx.message.reply(listPayload(wishesOf(ctx), ctx.prefix));
+  await ctx.message.reply(listPayload(wishesOf(ctx), ctx.prefix, getWishlistLimit(ctx.yoshiko.catalogDb, ctx.message.guildId)));
 }
 
 export async function run(ctx) {
@@ -156,7 +158,7 @@ export async function run(ctx) {
   if (keyword === 'clear') {
     clearWishes(ctx.yoshiko.catalogDb, { guildId: ctx.message.guildId,
       userId: ctx.message.author.id });
-    await ctx.message.reply(listPayload(wishesOf(ctx), ctx.prefix));
+    await ctx.message.reply(listPayload(wishesOf(ctx), ctx.prefix, getWishlistLimit(ctx.yoshiko.catalogDb, ctx.message.guildId)));
     return;
   }
   if (keyword === 'remove') { await removeCommand(ctx, args.slice(1).join(' ').trim()); return; }

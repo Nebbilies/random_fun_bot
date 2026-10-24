@@ -1,3 +1,4 @@
+import { getGameConfig } from '../../lib/gameConfig.js';
 import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, escapeMarkdown,
   MessageFlags, SectionBuilder, StringSelectMenuBuilder, TextDisplayBuilder, ThumbnailBuilder,
@@ -7,7 +8,7 @@ import { formatNumber } from '../../lib/formatNumber.js';
 
 const CHARACTER_PAGE_SIZE = 15;
 const FRANCHISE_PAGE_SIZE = 25;
-const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
+
 
 function short(value, length = 100) {
   return value.length > length ? `${value.slice(0, length - 1)}…` : value;
@@ -90,7 +91,8 @@ export async function runFranchiseCommand(ctx) {
 
   const sent = await ctx.message.reply({ flags: MessageFlags.IsComponentsV2, components: render(), allowedMentions: { parse: [] } });
   if (!sent?.createMessageComponentCollector) return;
-  const collector = sent.createMessageComponentCollector({ time: CONTROL_LIFETIME_MS });
+  const controlLifetime = getGameConfig(ctx.yoshiko.catalogDb, ctx.message.guildId).controls.lifetimeMs;
+  const collector = sent.createMessageComponentCollector({ time: controlLifetime });
   const ownerId = ctx.message.author?.id;
   let busy = false;
   let expired = false;

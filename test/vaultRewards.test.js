@@ -16,7 +16,7 @@ function fixture(path = ':memory:') {
   initVaultRewards(db);
   return db;
 }
-const scope = { guildId: 'guild', userId: 'roller', channelId: 'channel', messageId: 'prompt' };
+const scope = { guildId: '10001', userId: 'roller', channelId: 'channel', messageId: 'prompt' };
 function reveal(db, id = 'vault', options = {}) {
   const item = getItemsInTier('common')[0];
   return revealVaultReward(db, { vaultId: id, ...scope, outcome: { tier: 'common', tierData: ITEM_TIERS.common, item }, now: 100, ...options });
@@ -107,7 +107,7 @@ test('overflow rejects forged scope, foreign and escrowed discard IDs and repeat
   for (const field of ['guildId', 'userId', 'channelId', 'messageId']) {
     assert.equal(decide(db, 'decline', { [field]: 'forged' }).status, 'forbidden');
   }
-  const foreign = addItemToInventory(db, 'other', 'other', 'double_or_nothing').item;
+  const foreign = addItemToInventory(db, '10002', 'other', 'double_or_nothing').item;
   assert.equal(decide(db, 'replace', { inventoryId: foreign.id }).status, 'invalid_inventory');
   const own = getInventory(db, scope.guildId, scope.userId)[0];
   db.prepare('INSERT INTO item_action_costs VALUES (?, ?, ?)').run('note', own.id, '{}');

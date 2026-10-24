@@ -1,3 +1,4 @@
+import { getGameConfig } from '../lib/gameConfig.js';
 import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, escapeMarkdown,
   LabelBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder, MessageFlags,
@@ -8,7 +9,7 @@ import { reportCharacterTag } from '../lib/catalogDb.js';
 import { formatNumber } from '../lib/formatNumber.js';
 
 const PAGE_SIZE = 25;
-const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
+
 const PAGE_INPUT_ID = 'char:page-number';
 
 function jsonArray(value) {
@@ -153,7 +154,8 @@ export async function run(ctx) {
   });
   if (!reply?.createMessageComponentCollector) return;
 
-  const collector = reply.createMessageComponentCollector({ time: CONTROL_LIFETIME_MS });
+  const controlLifetime = getGameConfig(ctx.yoshiko.catalogDb, ctx.message.guildId).controls.lifetimeMs;
+  const collector = reply.createMessageComponentCollector({ time: controlLifetime });
   const ownerId = ctx.message.author.id;
 
   async function handleJump(interaction) {
@@ -163,7 +165,7 @@ export async function run(ctx) {
     let submission;
     try {
       submission = await interaction.awaitModalSubmit({
-        time: 60_000,
+        time: controlLifetime,
         filter: (item) => item.customId === modalId && item.user.id === ownerId,
       });
     } catch {
@@ -221,14 +223,14 @@ export async function run(ctx) {
           decision = card.approved;
           history = [card.image];
           position = 0;
-          collector.resetTimer({ time: CONTROL_LIFETIME_MS });
+          collector.resetTimer({ time: controlLifetime });
         } else if (id === 'char:back' && selected && matches.length > 1) {
           await reply.edit({ components: chooserComponents(matches, page) });
           selected = null;
           decision = null;
           history = [];
           position = 0;
-          collector.resetTimer({ time: CONTROL_LIFETIME_MS });
+          collector.resetTimer({ time: controlLifetime });
         } else if (id === 'char:page:prev' && !selected && page > 0) {
           await reply.edit({ components: chooserComponents(matches, page - 1) });
           page--;

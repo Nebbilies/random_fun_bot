@@ -11,6 +11,14 @@ import {
   isValidRate,
 } from '../lib/guildRates.js';
 import { reserveRoll } from '../lib/characterRolls.js';
+import { getConfigView, initGameConfig, saveConfigSection } from '../lib/gameConfig.js';
+
+function saveRate(db, guildId, key, value) {
+  return saveConfigSection(db, {
+    guildId, section: key.split('.')[0], values: { [key]: value },
+    expectedRevision: getConfigView(db).revision,
+  });
+}
 
 beforeEach(() => {
   clearGuildRateCache();
@@ -59,7 +67,7 @@ test('setGuildRates stores custom rates in DB and caches immediately', () => {
   db.close();
 });
 
-test('cache serves rates without querying database repeatedly until TTL expires', () => {
+test('rate reads see committed changes immediately without a process-local cache', () => {
   const db = openCatalog(':memory:');
   const guildId = '55555';
   let now = 10_000_000;
@@ -69,9 +77,9 @@ test('cache serves rates without querying database repeatedly until TTL expires'
   // Directly tamper database row without using setGuildRates
   db.prepare('UPDATE guild_game_rates SET vault_rate = 0.5 WHERE guild_id = ?').run(guildId);
 
-  // Within TTL: getGuildRates should still return cached 0.1
+  // Separate web/bot processes must observe committed changes on their next action.
   const cached = getGuildRates(db, guildId, now + 1_000);
-  assert.equal(cached.vaultRate, 0.1);
+  assert.equal(cached.vaultRate, 0.5);
 
   // After TTL: cache expires and refreshes from DB
   const refreshed = getGuildRates(db, guildId, now + CACHE_TTL_MS + 1);
@@ -102,6 +110,114 @@ test('setGuildRates rejects invalid rates and invalid guildId', () => {
   assert.throws(() => setGuildRates(db, '123', { vaultRate: 1.5 }), /Invalid vaultRate/);
   assert.throws(() => setGuildRates(db, '123', { prankRate: 2 }), /Invalid prankRate/);
   db.close();
+});
+
+for (const [field, key, companion, companionKey] of [
+  ['vaultRate', 'vault.dropRate', 'prankRate', 'rolls.prankRate'],
+  ['prankRate', 'rolls.prankRate', 'vaultRate', 'vault.dropRate'],
+]) {
+  test(`partial ${field} setter preserves companion inheritance and newer overrides`, () => {
+    const db = openCatalog(':memory:');
+    try {
+      saveRate(db, null, companionKey, 0.2);
+      setGuildRates(db, '123', { [field]: 0.3 });
+      assert.equal(getConfigView(db, '123').sources[companionKey], 'global');
+      saveRate(db, null, companionKey, 0.4);
+      assert.equal(getGuildRates(db, '123')[companion], 0.4);
+
+      saveRate(db, '123', companionKey, 0.6);
+      setGuildRates(db, '123', { [field]: 0.5 });
+      assert.equal(getGuildRates(db, '123')[companion], 0.6);
+      assert.equal(getConfigView(db, '123').sources[companionKey], 'guild');
+
+      // Setting the same legacy value must still replace a newer web override.
+      saveRate(db, '123', key, 0.8);
+      setGuildRates(db, '123', { [field]: 0.5 });
+      assert.equal(getGuildRates(db, '123')[field], 0.5);
+    } finally { db.close(); }
+  });
+
+  test(`raw legacy ${field} UPDATE preserves unrelated web overrides and inheritance`, () => {
+    const db = openCatalog(':memory:');
+    const column = field === 'vaultRate' ? 'vault_rate' : 'prank_rate';
+    try {
+      setGuildRates(db, '123', { vaultRate: 0.1, prankRate: 0.2 });
+      saveRate(db, '123', companionKey, 0.6);
+      db.prepare(`UPDATE guild_game_rates SET ${column}=? WHERE guild_id=?`).run(0.3, '123');
+      assert.equal(getGuildRates(db, '123')[field], 0.3);
+      assert.equal(getGuildRates(db, '123')[companion], 0.6);
+
+      saveConfigSection(db, { guildId: '123', section: companionKey.split('.')[0],
+        reset: [companionKey], expectedRevision: getConfigView(db).revision });
+      saveRate(db, null, companionKey, 0.7);
+      db.prepare(`UPDATE guild_game_rates SET ${column}=? WHERE guild_id=?`).run(0.4, '123');
+      assert.equal(getConfigView(db, '123').sources[companionKey], 'global');
+      assert.equal(getGuildRates(db, '123')[companion], 0.7);
+
+      saveRate(db, '123', key, 0.9);
+      db.prepare(`UPDATE guild_game_rates SET ${column}=${column}, updated_at=42 WHERE guild_id=?`).run('123');
+      assert.equal(getGuildRates(db, '123')[field], 0.9);
+    } finally { db.close(); }
+  });
+}
+
+test('schema initialization replaces old unconditional legacy UPDATE triggers', () => {
+  const db = openCatalog(':memory:');
+  try {
+    db.exec(`DROP TRIGGER game_config_guild_game_rates_update;
+      CREATE TRIGGER game_config_guild_game_rates_update AFTER UPDATE ON guild_game_rates BEGIN
+        INSERT INTO game_config_overrides(scope_id,key,value_json)
+        VALUES(NEW.guild_id,'rolls.prankRate',CAST(NEW.prank_rate AS TEXT))
+        ON CONFLICT(scope_id,key) DO UPDATE SET value_json=excluded.value_json;
+      END;`);
+    setGuildRates(db, '123', { vaultRate: 0.1, prankRate: 0.2 });
+    saveRate(db, '123', 'rolls.prankRate', 0.8);
+    initGameConfig(db);
+    initGameConfig(db);
+    db.prepare('UPDATE guild_game_rates SET vault_rate=0.3 WHERE guild_id=?').run('123');
+    assert.deepEqual(getGuildRates(db, '123'), { vaultRate: 0.3, prankRate: 0.8 });
+  } finally { db.close(); }
+});
+
+test('partial setter rolls back legacy values, overrides and revision on failure', () => {
+  const db = openCatalog(':memory:');
+  try {
+    const before = getConfigView(db, '123');
+    // Fail after the legacy INSERT and its bridge have already succeeded.
+    db.exec(`CREATE TRIGGER reject_rate BEFORE DELETE ON game_config_overrides
+      WHEN OLD.scope_id='123' AND OLD.key='rolls.prankRate'
+      BEGIN SELECT RAISE(ABORT, 'reject rate'); END;`);
+    assert.throws(() => setGuildRates(db, '123', { vaultRate: 0.5 }), /reject rate/);
+    assert.equal(db.prepare('SELECT * FROM guild_game_rates WHERE guild_id=?').get('123'), undefined);
+    assert.deepEqual(getConfigView(db, '123'), before);
+    assert.equal(db.isTransaction, false);
+  } finally { db.close(); }
+});
+
+test('partial setter participates in an outer transaction without committing it', () => {
+  const db = openCatalog(':memory:');
+  try {
+    const before = getConfigView(db, '123');
+    db.exec('BEGIN');
+    setGuildRates(db, '123', { prankRate: 0.5 });
+    assert.equal(db.isTransaction, true);
+    assert.equal(getGuildRates(db, '123').prankRate, 0.5);
+    db.exec('ROLLBACK');
+    assert.deepEqual(getConfigView(db, '123'), before);
+    assert.equal(db.prepare('SELECT * FROM guild_game_rates WHERE guild_id=?').get('123'), undefined);
+  } finally { db.close(); }
+});
+
+test('raw legacy INSERT intentionally maps both rates', () => {
+  const db = openCatalog(':memory:');
+  try {
+    db.prepare('INSERT INTO guild_game_rates(guild_id,vault_rate,prank_rate,updated_at) VALUES(?,?,?,?)')
+      .run('123', 0.2, 0.3, 0);
+    assert.deepEqual(getGuildRates(db, '123'), { vaultRate: 0.2, prankRate: 0.3 });
+    const { sources } = getConfigView(db, '123');
+    assert.equal(sources['vault.dropRate'], 'guild');
+    assert.equal(sources['rolls.prankRate'], 'guild');
+  } finally { db.close(); }
 });
 
 test('custom guild rates are respected by reserveRoll in characterRolls', () => {

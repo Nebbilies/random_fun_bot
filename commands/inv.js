@@ -11,7 +11,7 @@ import {
   getUsableInventory,
   getActiveBuffs,
 } from '../lib/itemStorage.js';
-import { getItemDefinition, ITEM_TIERS } from '../lib/itemRoster.js';
+import { getItemDefinition, getResolvedItemDefinition, ITEM_TIERS } from '../lib/itemRoster.js';
 import { resolveUserTarget, resolveTargetUsername } from '../lib/userTarget.js';
 import { executeItemUseById } from './use.js';
 import { startItemAction } from '../lib/itemActionRuntime.js';
@@ -33,7 +33,7 @@ export function renderInventoryEmbed(db, guildId, userId, username, now = Date.n
     }
   } else {
     for (const item of inv) {
-      const def = getItemDefinition(item.item_id);
+      const def = getResolvedItemDefinition(db, guildId, item.item_id);
       const tier = def ? ITEM_TIERS[def.tier] : { emoji: '⚪' };
       const chargeText = item.charges > 1 ? ` (${item.charges} charges)` : '';
       embed.addFields({
@@ -100,6 +100,18 @@ export function renderInventoryComponents(db, guildId, userId) {
 
 export function getItemHelpBullet(def) {
   if (!def) return null;
+  if (def.rules) {
+    const tier = ITEM_TIERS[def.tier] || { emoji: '⚪' };
+    const examples = {
+      franchise_passport: 'passport <franchise name>', pickpockets_hook: 'hook @user',
+      sirens_call: 'siren @user', master_key: 'masterkey @user <character name>',
+      wish_upon_a_star: 'wish <franchise name>', aegis_of_fidelity: 'aegis <character name>',
+    };
+    const usage = def.type === 'passive' ? 'Passive item: activates automatically.'
+      : def.id === 'double_or_nothing' ? 'Choose Keep or Gamble on a qualifying vault reward.'
+      : `Use \`!use ${examples[def.id] ?? def.id}\` (follow prompts for costs or targets).`;
+    return `• **${tier.emoji} ${def.name}**: ${usage} ${def.description}`;
+  }
   const tier = ITEM_TIERS[def.tier] || { emoji: '⚪', name: def.tier };
 
   switch (def.id) {
@@ -176,7 +188,7 @@ export function renderInventoryHelpEmbed(db, guildId, userId, username, isSelf =
 
   const uniqueItemIds = [...new Set(inv.map((item) => item.item_id))];
   const bullets = uniqueItemIds
-    .map((id) => getItemHelpBullet(getItemDefinition(id)))
+    .map((id) => getItemHelpBullet(getResolvedItemDefinition(db, guildId, id)))
     .filter(Boolean);
 
   const prefix = isSelf

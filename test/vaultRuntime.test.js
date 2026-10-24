@@ -130,7 +130,7 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
   assert.equal(cardJson.accent_color, 0xf1c40f);
   assert.match(cardJson.components[0].content, /<@3001> received \*\*Master Key\*\*/);
   assert.equal(cardJson.components[1].content, '# 🟡 Legendary');
-  assert.equal(cardJson.components[2].content, '**Master Key** — Steals a chosen character.');
+  assert.match(cardJson.components[2].content, /\*\*Master Key\*\*.*protectionMs: 86400000/);
 
   // Ensure reply happened BEFORE message:edit
   assert.deepEqual(callSequence, ['interaction:reply', 'message:edit']);
@@ -148,15 +148,15 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
 test('revealed Keep/Gamble prompt is owner/message scoped and timeout keeps through recovery', async () => {
   const db = openCatalog(':memory:');
   initVaultRewards(db);
-  addItemToInventory(db, 'guild', 'roller', 'double_or_nothing');
+  addItemToInventory(db, '10001', 'roller', 'double_or_nothing');
   const channel = mockChannel('channel');
   let clock = 100;
-  const vault = await startVaultRoll({ db, channel, guildId: 'guild', rollerId: 'roller', remaining: 1,
+  const vault = await startVaultRoll({ db, channel, guildId: '10001', rollerId: 'roller', remaining: 1,
     now: () => clock, rollOutcome: () => ({ tier: 'common', tierData: ITEM_TIERS.common, item: getItemsInTier('common')[0] }) });
   const prompt = { id: 'reward-prompt', channelId: 'channel', edit: async () => prompt };
   const replies = [];
   const interaction = { isButton: () => true, isStringSelectMenu: () => false,
-    customId: `vault:${vault.vaultId}:A`, guildId: 'guild', channelId: 'channel', channel,
+    customId: `vault:${vault.vaultId}:A`, guildId: '10001', channelId: 'channel', channel,
     user: { id: 'roller' }, message: vault.message,
     reply: async p => { replies.push(p); return prompt; }, fetchReply: async () => prompt };
   await onVaultInteraction(db, interaction, { now: () => clock });
@@ -171,7 +171,7 @@ test('revealed Keep/Gamble prompt is owner/message scoped and timeout keeps thro
   const { recoverVaultRewards } = await import('../lib/vaultRuntime.js');
   await recoverVaultRewards(db, { channels: { fetch: async () => ({ messages: { fetch: async () => prompt } }) } }, { now: () => clock });
   assert.equal(getVaultReward(db, vault.vaultId).state, 'delivered');
-  assert.equal(getInventory(db, 'guild', 'roller').length, 2);
+  assert.equal(getInventory(db, '10001', 'roller').length, 2);
   db.close();
 });
 
@@ -179,14 +179,14 @@ test('revealed Keep/Gamble prompt is owner/message scoped and timeout keeps thro
 test('forged legacy replacement controls cannot grant rewards or delete inventory', async () => {
   const db = openCatalog(':memory:');
   initVaultRewards(db);
-  const held = addItemToInventory(db, 'guild', 'victim', getItemsInTier('common')[0].id).item;
+  const held = addItemToInventory(db, '10001', 'victim', getItemsInTier('common')[0].id).item;
   const replies = [];
   await onVaultInteraction(db, { isButton: () => false, isStringSelectMenu: () => true,
     customId: 'vault:invented:replace:master_key', values: [String(held.id)],
-    user: { id: 'attacker' }, guildId: 'guild', channelId: 'channel', message: { id: 'forged' },
+    user: { id: 'attacker' }, guildId: '10001', channelId: 'channel', message: { id: 'forged' },
     reply: async payload => replies.push(payload) });
-  assert.equal(getInventory(db, 'guild', 'victim')[0].id, held.id);
-  assert.equal(getInventory(db, 'guild', 'attacker').length, 0);
+  assert.equal(getInventory(db, '10001', 'victim')[0].id, held.id);
+  assert.equal(getInventory(db, '10001', 'attacker').length, 0);
   assert.equal(replies.length, 1);
   db.close();
 });
