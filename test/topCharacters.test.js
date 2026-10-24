@@ -141,3 +141,27 @@ test('the top list never covers more than the top 1000 characters', async (t) =>
   assert.equal(rows[999].rank, 1000);
   assert.equal(topPageCount(rows), 67);
 });
+
+
+test('top markers use current server ownership and refresh on navigation', async (t) => {
+  const db = fixture(t);
+  seed(db, 20);
+  db.exec(`INSERT INTO marriages (guild_id, character_id, owner_id, married_at) VALUES
+    ('1', 1, 'another-player', 'now'), ('2', 2, 'owner', 'now')`);
+  const harness = collectorFixture();
+  await topCommand({ args: ['top'], message: { guildId: '1',
+    reply: async (value) => { harness.state.payload = value; return harness.sent; } },
+    yoshiko: { catalogDb: db } });
+  let text = container(harness.state.payload).components[1].content;
+  assert.match(text, /Character 1 💞/);
+  assert.doesNotMatch(text, /Character 2 💞/);
+  db.exec(`DELETE FROM marriages WHERE guild_id = '1';
+    INSERT INTO marriages (guild_id, character_id, owner_id, married_at)
+    VALUES ('1', 16, 'other', 'now')`);
+  const collect = harness.collector.listeners('collect')[0];
+  await collect({ customId: 'top:next', deferUpdate: async () => {} });
+  text = container(harness.state.payload).components[1].content;
+  assert.match(text, /Character 16 💞/);
+  await collect({ customId: 'top:prev', deferUpdate: async () => {} });
+  assert.doesNotMatch(container(harness.state.payload).components[1].content, /💞/);
+});

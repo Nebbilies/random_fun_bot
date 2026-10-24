@@ -47,8 +47,8 @@ test('!ima shows franchise characters by name without rank metadata', async (t) 
   assert.equal(container.components[0].accessory.media.url, 'https://example.com/sao.jpg');
   const content = container.components[0].components[0].content;
   assert.match(content, /Kirito/);
-  assert.match(content, /💞 Asuna/);
-  assert.doesNotMatch(content, /💞 Kirito/);
+  assert.match(content, /Asuna 💞/);
+  assert.doesNotMatch(content, /Kirito 💞/);
   assert.doesNotMatch(content, /#1|#2/);
 });
 
@@ -76,7 +76,7 @@ test('!imar lets the player choose between matching franchises and displays char
   assert.equal(section.accessory.media.url, 'https://example.com/sao.jpg');
   const result = section.components[0].content;
   assert.match(result, /#1 - Kirito/);
-  assert.match(result, /#2 - 💞 Asuna/);
+  assert.match(result, /#2 - Asuna 💞/);
 });
 
 test('franchise character pages show at most 15 names', async (t) => {
@@ -103,11 +103,19 @@ test('franchise character pages show at most 15 names', async (t) => {
   assert.match(content, /#15 - Character 15/);
   assert.doesNotMatch(content, /#16 - Character 16/);
 
+  db.exec(`INSERT INTO marriages (guild_id, character_id, owner_id, married_at)
+    VALUES ('1', 16, 'another-owner', 'now'), ('2', 15, 'owner', 'now')`);
   await collector.listeners('collect')[0]({
     customId: 'franchise:characters:next', user: { id: 'owner' }, deferUpdate: async () => {},
   });
   content = payload.components[0].toJSON().components[0].components[0].content;
   assert.match(content, /Page 2 of 2/);
-  assert.match(content, /#1,234 - Character 16/);
+  assert.match(content, /#1,234 - Character 16 💞/);
   assert.doesNotMatch(content, /#15 - Character 15/);
+  db.exec(`DELETE FROM marriages WHERE guild_id = '1'`);
+  await collector.listeners('collect')[0]({
+    customId: 'franchise:characters:prev', user: { id: 'owner' }, deferUpdate: async () => {},
+  });
+  content = payload.components[0].toJSON().components[0].components[0].content;
+  assert.doesNotMatch(content, /💞/);
 });

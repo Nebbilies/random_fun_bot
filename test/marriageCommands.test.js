@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PermissionFlagsBits } from 'discord.js';
+import { escapeMarkdown, PermissionFlagsBits } from 'discord.js';
 import { openCatalog } from '../lib/catalogDb.js';
 import { divorceCharacter, getMarriage, marryCharacter } from '../lib/characterMarriage.js';
 import { run as divorce } from '../commands/divorce.js';
@@ -64,6 +64,8 @@ test('mm and mymarry show newest marriages first; mmr uses current rank', async 
     const mock = context(db, [name]);
     await run(mock.ctx);
     assert.match(content(mock.payload()), expected);
+    assert.match(content(mock.payload()), /Eleven 💞/);
+    assert.match(content(mock.payload()), /Twelve 💞/);
     assert.match(content(mock.payload()), /<@101>'s harem/);
     assert.equal(mock.payload().components[0].toJSON().components[0].accessory.media.url,
       'https://example.com/top.png');
@@ -159,6 +161,44 @@ test('long marriage lists have working pages', async (t) => {
   assert.match(content(mock.payload()), /Page 2 of 2/);
   assert.match(content(mock.payload()), /Character 35/);
 });
+
+for (const command of ['mm', 'mmr', 'mma', 'mmar']) {
+  test(`${command} refreshes ownership markers on stale pages in the current guild`, async (t) => {
+    const db = fixture(t);
+    const insert = db.prepare('INSERT INTO characters (id, rank, favourites, name_full) VALUES (?, ?, ?, ?)');
+    for (let id = 15; id <= 35; id++) insert.run(id, id - 10, 100 - id, `Character *${id}*`);
+    for (let id = 11; id <= 35; id++) marryCharacter(db, '1', id, '101');
+    // Keep time and rank ordering identical for all four command variants.
+    for (let id = 11; id <= 35; id++) {
+      db.prepare('UPDATE marriages SET married_at = ? WHERE character_id = ?')
+        .run(`2026-01-${String(36 - id).padStart(2, '0')}T00:00:00.000Z`, id);
+    }
+    const mock = context(db, [command]);
+    await mm(mock.ctx);
+    assert.match(content(mock.payload()), /Eleven 💞/);
+    for (const id of [31, 32, 33]) {
+      const marriage = getMarriage(db, '1', id);
+      assert.ok(marriage, `Expected character ${id} to be married before divorce`);
+      assert.equal(divorceCharacter(db, '1', id, '101', marriage.id), true);
+    }
+    marryCharacter(db, '1', 32, '102');
+    marryCharacter(db, '2', 33, '101');
+    const navigate = async (customId) => mock.collector.listeners('collect')[0]({
+      customId, user: { id: '101' }, guildId: '1', deferUpdate: async () => {},
+    });
+    await navigate('mm:next');
+    let lines = content(mock.payload()).split('\n');
+    for (const [id, married] of [[31, false], [32, true], [33, false]]) {
+      const name = escapeMarkdown(`Character *${id}*`);
+      assert.ok(lines.some((line) => line.endsWith(`${name}${married ? ' 💞' : ''}`)), `live marker for ${id}`);
+      if (!married) assert.ok(!content(mock.payload()).includes(`${name} 💞`));
+    }
+    marryCharacter(db, '1', 31, '103');
+    await navigate('mm:prev');
+    await navigate('mm:next');
+    assert.ok(content(mock.payload()).includes(`${escapeMarkdown('Character *31*')} 💞`));
+  });
+}
 
 test('ambiguous married names use a picker, and stale confirmation cannot remove a new marriage', async (t) => {
   const db = fixture(t);

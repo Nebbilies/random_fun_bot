@@ -1,3 +1,4 @@
+import { characterListName, markCharacterOwnership } from '../lib/characterOwnershipDisplay.js';
 import { getGameConfig } from '../lib/gameConfig.js';
 import {
   ActionRowBuilder, ContainerBuilder, escapeMarkdown, MessageFlags, StringSelectMenuBuilder,
@@ -18,8 +19,8 @@ function label(wish) {
 
 export function wishlistView(wishes, prefix = '!', limit = WISHLIST_LIMIT) {
   const lines = wishes.map((wish) => wish.inCatalog && wish.rank != null
-    ? `#${formatNumber(wish.rank)} • ${escapeMarkdown(wish.name)}`
-    : `#? • ${escapeMarkdown(wish.name)} (not in catalog)`);
+    ? `#${formatNumber(wish.rank)} • ${characterListName(wish.name, wish.married)}`
+    : `#? • ${characterListName(wish.name, wish.married)} (not in catalog)`);
   const body = lines.length ? lines.join('\n') : `No wishes yet. Add one with ${prefix}wish <name>.`;
   return new ContainerBuilder().setAccentColor(0x5865f2)
     .addTextDisplayComponents(
@@ -48,9 +49,10 @@ function pickerPayload(wishes, mode) {
 }
 
 function wishesOf(ctx) {
-  return getWishes(ctx.yoshiko.catalogDb, {
-    guildId: ctx.message.guildId, userId: ctx.message.author.id,
-  });
+  return markCharacterOwnership(ctx.yoshiko.catalogDb, ctx.message.guildId,
+    getWishes(ctx.yoshiko.catalogDb, {
+      guildId: ctx.message.guildId, userId: ctx.message.author.id,
+    }));
 }
 
 /** Renders the caller's wishlist. The `!wl` and `!wishlist` aliases use this directly. */
