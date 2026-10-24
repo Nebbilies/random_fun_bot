@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { getConfigView, saveConfigSection } from '../lib/gameConfig.js';
 import { openCatalog } from '../lib/catalogDb.js';
 import { addItemToInventory, getInventory } from '../lib/itemStorage.js';
 import { getItemAction } from '../lib/itemActionStorage.js';
@@ -77,6 +78,21 @@ test('Alchemist selects exact Common entries and confirms once through owner-bou
   assert.equal(getItemAction(f.db, action.id).delivery_pending, 0);
 });
 
+
+test('Alchemist controls honor the snapshotted configured material cost', async (t) => {
+  const f = fixture(t);
+  const saveCost = (cost) => saveConfigSection(f.db, { guildId: '1', section: 'itemActions', values: { 'itemActions.alchemistCost': cost }, expectedRevision: getConfigView(f.db).revision });
+  saveCost(2);
+  const source = f.grant('alchemist');
+  const costs = [f.grant('hourglass_of_haste'), f.grant('hourglass_of_haste')];
+  const action = await startItemAction({ db: f.db, message: f.message, inventoryId: source });
+  assert.equal(menus(f.sent[0])[0].max_values, 2);
+  saveCost(3);
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'costs'), f.sent[0], '101', costs.map(String)));
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'confirm')));
+  assert.equal(getItemAction(f.db, action.id).state, 'resolved');
+  assert.equal(getInventory(f.db, '1', '101').length, 1);
+});
 
 test('character picker pages exact marriage snapshots and rejects foreign server/message and expired controls', async (t) => {
   const f = fixture(t);

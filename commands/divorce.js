@@ -1,3 +1,4 @@
+import { getGameConfig } from '../lib/gameConfig.js';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
   escapeMarkdown, MessageFlags, PermissionFlagsBits, StringSelectMenuBuilder,
   TextDisplayBuilder } from 'discord.js';
@@ -6,7 +7,7 @@ import { findCharacters } from '../lib/gameCharacterLookup.js';
 import { formatNumber } from '../lib/formatNumber.js';
 
 const PAGE_SIZE = 25;
-const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
+
 
 /** @param {import('discord.js').MessageActionRowComponentBuilder[]} components */
 function actionRow(...components) {
@@ -102,7 +103,8 @@ export async function run(ctx) {
     allowedMentions: { parse: [] },
   });
   if (!reply?.createMessageComponentCollector) return;
-  const collector = reply.createMessageComponentCollector({ time: CONTROL_LIFETIME_MS });
+  const controlLifetime = getGameConfig(ctx.yoshiko.catalogDb, ctx.message.guildId).controls.lifetimeMs;
+  const collector = reply.createMessageComponentCollector({ time: controlLifetime });
   collector.on('collect', async (interaction) => {
     try {
       if (interaction.user.id !== actorId || interaction.guildId !== guildId) {

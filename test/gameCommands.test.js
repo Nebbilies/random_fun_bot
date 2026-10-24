@@ -136,7 +136,7 @@ test('rank lookup uses the V2 card and shared image navigation', async () => {
     message: { author: { id: 'owner' }, guildId: '1', reply: async (value) => { payload = value; return sent; } },
     yoshiko: {
       characterIndex: [character],
-      catalogDb: { prepare: () => ({ get: () => ({ tag_name: 'rem' }) }) },
+      catalogDb: { prepare: (sql) => ({ get: () => sql.includes('sqlite_master') ? undefined : ({ tag_name: 'rem' }) }) },
       imagePicker: { pick: async () => ({
         url: `https://cdn.donmai.us/${++imageNumber}.jpg`, source: 'danbooru',
         postId: imageNumber, poolSize: 2,

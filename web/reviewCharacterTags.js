@@ -7,9 +7,10 @@ import { DANBOORU_USER_AGENT, DanbooruApi } from '../lib/danbooruApi.js';
 import { getMeta, openCatalog, resolveCharacterTagReports, saveDecision, transaction } from '../lib/catalogDb.js';
 import { handleFranchiseReviewRequest } from './reviewFranchises.js';
 import { addGlobalRolls, resetGlobalClaims } from '../lib/characterRolls.js';
-import { getGuildRates, setGuildRates, listAllGuildRates, isValidRate } from '../lib/guildRates.js';
+import { getGuildRates, setGuildRates, isValidRate } from '../lib/guildRates.js';
 import { serveAssets } from './serveAssets.js';
-import { ITEM_ROSTER, getItemDefinition } from '../lib/itemRoster.js';
+import { handleConfigRequest } from './reviewConfig.js';
+import { getResolvedItemDefinitions, getResolvedItemDefinition } from '../lib/itemRoster.js';
 import { addItemToInventory } from '../lib/itemStorage.js';
 
 const html = readFileSync(new URL('./reviewCharacterTags.html', import.meta.url));
@@ -92,6 +93,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
       }
       const url = new URL(request.url, requestOrigin);
       if (serveAssets(request, response, url)) return;
+      if (await handleConfigRequest({ db, request, response, url, origin: requestOrigin })) return;
       if (await handleFranchiseReviewRequest({ db, request, response, url, origin: requestOrigin })) return;
       if (request.method === 'GET' && url.pathname === '/') {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
@@ -113,7 +115,10 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
           json(response, 200, addGlobalRolls(db, body.amount));
         } else json(response, 200, resetGlobalClaims(db));
       } else if (request.method === 'GET' && url.pathname === '/api/game/items') {
-        json(response, 200, ITEM_ROSTER.map(({ id, name, tier, description, maxCharges }) => ({
+        const guildId = url.searchParams.get('guildId');
+        if (guildId !== null && !/^[1-9]\d{0,19}$/.test(guildId))
+          return json(response, 400, { error: 'Invalid server ID' });
+        json(response, 200, getResolvedItemDefinitions(db, guildId).map(({ id, name, tier, description, maxCharges }) => ({
           id, name, tier, description, charges: maxCharges ?? 1,
         })));
       } else if (request.method === 'POST' && url.pathname === '/api/game/give-item') {
@@ -128,9 +133,9 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
         const validId = (value) => typeof value === 'string' && /^[1-9]\d{0,19}$/.test(value);
         if (!validId(guildId) || !validId(userId))
           return json(response, 400, { error: 'Valid numeric server and user IDs are required (up to 20 digits).' });
-        const item = typeof itemId === 'string' ? getItemDefinition(itemId) : null;
+        const item = typeof itemId === 'string' ? getResolvedItemDefinition(db, guildId, itemId) : null;
         if (!item) return json(response, 400, { error: 'Select a valid item.' });
-        const result = transaction(db, () => addItemToInventory(db, guildId, userId, item.id, item.maxCharges ?? 1));
+        const result = transaction(db, () => addItemToInventory(db, guildId, userId, item.id));
         if (result.status === 'full')
           return json(response, 409, { error: `Inventory is full (${result.currentCount}/${result.capacity}). No item was given.` });
         json(response, 200, { ...result, guildId, userId, itemName: item.name });
@@ -140,7 +145,11 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
           if (!/^\d+$/.test(guildId)) return json(response, 400, { error: 'Invalid guild ID' });
           json(response, 200, { guildId, ...getGuildRates(db, guildId) });
         } else {
-          json(response, 200, listAllGuildRates(db));
+          const guilds = new Set(db.prepare('SELECT guild_id FROM guild_game_rates').all().map((row) => row.guild_id));
+          if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='game_config_overrides'").get()) {
+            for (const row of db.prepare("SELECT DISTINCT scope_id FROM game_config_overrides WHERE scope_id != '' AND key IN ('vault.dropRate', 'rolls.prankRate')").all()) guilds.add(row.scope_id);
+          }
+          json(response, 200, [...guilds].sort().map((guildId) => ({ guildId, ...getGuildRates(db, guildId) })));
         }
       } else if (request.method === 'POST' && url.pathname === '/api/game/rates') {
         if (request.headers.origin !== requestOrigin)

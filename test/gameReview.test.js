@@ -32,8 +32,8 @@ test('review portal applies capped rolls and global claim resets with validated 
   const page = await fetch(`${origin}/game`).then((response) => response.text());
   assert.match(page, /Add rolls to everyone/);
   assert.match(page, /Reset claims for everyone/);
-  assert.match(page, /Configure server rates/);
-  assert.match(page, /Custom rate list/);
+  assert.match(page, /href="\/config"/);
+  assert.doesNotMatch(page, /id="setRatesForm"/);
   assert.match(page, /id="giveItemForm"/);
   assert.match(page, /id="itemUserId"/);
   assert.match(page, /<select id="itemSelect"/);
@@ -79,7 +79,7 @@ test('review portal applies capped rolls and global claim resets with validated 
   const claimPeriod = Math.floor((now + 7 * 3_600_000) / (3 * 3_600_000));
   db.prepare('INSERT INTO claim_allowances VALUES (?, ?, ?)').run('1', '101', claimPeriod);
   db.prepare('INSERT INTO claim_allowances VALUES (?, ?, ?)').run('2', '102', claimPeriod);
-  db.prepare('INSERT INTO daily_roll_claims VALUES (?, ?, ?)').run('1', '101', 1);
+  db.prepare('INSERT INTO daily_roll_claims(guild_id,user_id,period) VALUES (?, ?, ?)').run('1', '101', 1);
   for (const amount of [0, -1, 1.5, '3', null, Number.MAX_SAFE_INTEGER + 1]) {
     assert.equal((await post('add-rolls', { amount })).status, 400);
   }

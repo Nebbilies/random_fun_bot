@@ -1,7 +1,8 @@
+import { getGameConfig } from '../lib/gameConfig.js';
 import { MessageFlags } from 'discord.js';
 import { topCharacters, topListComponents, topPageCount } from '../lib/topCharacters.js';
 
-const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
+
 
 /**
  * `!top` lists the highest ranked characters of the catalog, 15 per page.
@@ -20,7 +21,8 @@ export async function run(ctx) {
   });
   if (!reply?.createMessageComponentCollector) return;
 
-  const collector = reply.createMessageComponentCollector({ time: CONTROL_LIFETIME_MS });
+  const controlLifetime = getGameConfig(ctx.yoshiko.catalogDb, ctx.message.guildId).controls.lifetimeMs;
+  const collector = reply.createMessageComponentCollector({ time: controlLifetime });
   let busy = false;
   let expired = false;
 

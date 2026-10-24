@@ -235,7 +235,7 @@ body[data-standalone=true] [data-combined-only] { display: none; }
   .brand-mark { width: 34px; height: 36px; font-size: 28px; border-radius: 10px; }
   .brand-caption { font-size: 7px; }
   .nav-label, .sidebar-footer { display: none; }
-  .sidebar nav { display: flex; gap: 6px; }
+  .sidebar nav { display: flex; flex-wrap: wrap; gap: 6px; }
   .sidebar nav a { font-size: 10px; padding: 9px; min-height: 42px; gap: 7px; flex: 1; justify-content: center; white-space: nowrap; }
   .sidebar nav svg { width: 16px; height: 16px; }
   .nav-dot { display: none; }

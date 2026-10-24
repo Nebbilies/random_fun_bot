@@ -1,3 +1,4 @@
+import { getGameConfig } from '../lib/gameConfig.js';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
   escapeMarkdown, MediaGalleryBuilder, MediaGalleryItemBuilder, MessageFlags,
   SectionBuilder, ThumbnailBuilder, TextDisplayBuilder } from 'discord.js';
@@ -7,7 +8,7 @@ import { HArem_PAGE_SIZE, haremListComponents } from '../lib/haremView.js';
 import { resolveUserTarget } from '../lib/userTarget.js';
 
 const PAGE_SIZE = HArem_PAGE_SIZE;
-const CONTROL_LIFETIME_MS = 60 * 60 * 1000;
+
 
 /** @param {import('discord.js').MessageActionRowComponentBuilder[]} components */
 function actionRow(...components) {
@@ -242,7 +243,8 @@ export async function runMarriages(ctx, options = {}) {
 
   if (maxPages <= 1 || !reply?.createMessageComponentCollector) return;
 
-  const collector = reply.createMessageComponentCollector({ time: CONTROL_LIFETIME_MS });
+  const controlLifetime = getGameConfig(ctx.yoshiko.catalogDb, ctx.message.guildId).controls.lifetimeMs;
+  const collector = reply.createMessageComponentCollector({ time: controlLifetime });
   collector.on('collect', async (interaction) => {
     try {
       if (interaction.user.id !== ctx.message.author.id || interaction.guildId !== ctx.message.guildId) {
