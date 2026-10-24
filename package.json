@@ -4,6 +4,7 @@
   "scripts": {
     "start": "node index.js",
     "test": "node --test test/*.test.js",
+    "items:sync-discovery": "node scripts/syncItemDiscovery.js",
     "catalog:import": "node scripts/importCharacterCatalog.js",
     "catalog:match": "node scripts/matchCharacterTags.js",
     "catalog:google-match": "node scripts/matchGoogleTags.js",
