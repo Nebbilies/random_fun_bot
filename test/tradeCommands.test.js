@@ -301,6 +301,7 @@ for (const kind of ['give', 'trade', 'recipient']) {
     assert.ok(text(list.payload).includes(`${escapeMarkdown('Character *20*')} 💞`));
     for (const id of [40, 41, 42]) {
       const marriage = getMarriage(db, '1', id);
+      assert.ok(marriage, `Expected character ${id} to be married before divorce`);
       assert.equal(divorceCharacter(db, '1', id, ownerId, marriage.id), true);
     }
     marryCharacter(db, '1', 41, '103');

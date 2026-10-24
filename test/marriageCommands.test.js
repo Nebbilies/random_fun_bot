@@ -178,6 +178,7 @@ for (const command of ['mm', 'mmr', 'mma', 'mmar']) {
     assert.match(content(mock.payload()), /Eleven 💞/);
     for (const id of [31, 32, 33]) {
       const marriage = getMarriage(db, '1', id);
+      assert.ok(marriage, `Expected character ${id} to be married before divorce`);
       assert.equal(divorceCharacter(db, '1', id, '101', marriage.id), true);
     }
     marryCharacter(db, '1', 32, '102');
