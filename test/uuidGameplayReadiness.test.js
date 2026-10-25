@@ -85,8 +85,8 @@ function interaction(value, customId = 'wish:choose') {
 }
 
 test('ID bridge accepts canonical UUID and legacy integers without treating source strings as catalog IDs', () => {
-  for (const id of [A, B, A.toUpperCase(), 1, Number.MAX_SAFE_INTEGER]) assert.equal(isValidCharacterId(id), true);
-  for (const id of [null, undefined, {}, [], 0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1,
+  for (const id of [A, B, 1, Number.MAX_SAFE_INTEGER]) assert.equal(isValidCharacterId(id), true);
+  for (const id of [A.toUpperCase(), null, undefined, {}, [], 0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1,
     '11', 'anilist:11', ` ${A}`, A.replaceAll('-', ''), `${A}x`]) assert.equal(isValidCharacterId(id), false);
   const rows = [{ id: A, rank: 1, name_full: 'Shared' }];
   assert.equal(findCharacters(rows, 'Shared')[0].id, A);
