@@ -18,6 +18,7 @@ import {onTradeAnswer} from "./lib/tradeRuntime.js";
 import {onVaultInteraction, recoverVaultRewards} from "./lib/vaultRuntime.js";
 import {onItemActionInteraction, recoverItemActionRuntime} from "./lib/itemActionRuntime.js";
 import {onInventoryButton} from "./commands/inv.js";
+import {parseFranchiseCommand} from "./lib/franchiseModifiers.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
@@ -160,10 +161,12 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const args = message.content.trim().split(/ +/g);
         const gameCommand = args[0].startsWith(prefix) ? args[0].slice(prefix.length).toLowerCase() : '';
         const isMarriage = /^(mm|mymarry)([a-z]*)$/.test(gameCommand);
-        if (isMarriage || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
+        const franchiseModifiers = parseFranchiseCommand(gameCommand);
+        if (isMarriage || franchiseModifiers || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
             args[0] = gameCommand;
             try {
-                const commandModule = isMarriage ? './commands/mm.js' : `./commands/${gameCommand}.js`;
+                const commandModule = isMarriage ? './commands/mm.js'
+                    : franchiseModifiers ? './commands/ima.js' : `./commands/${gameCommand}.js`;
                 const command = await import(commandModule);
                 await command.run({ yoshiko, message, args, prefix });
             } catch (error) {

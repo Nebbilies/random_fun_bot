@@ -12,6 +12,10 @@ _Avoid_: Rank, catalog position
 The association of one player with a character in one Discord server. A character has at most one owner per server.
 _Avoid_: Global ownership, character copy
 
+**Franchise ownership view**:
+A franchise's character list that identifies each currently married character's owner in the viewer's Discord server. Unmarried characters have no owner annotation.
+_Avoid_: Global ownership list, marriage list
+
 **Harem**:
 The set of characters owned by one player in one Discord server.
 _Avoid_: Global collection, inventory

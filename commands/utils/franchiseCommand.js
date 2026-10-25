@@ -77,7 +77,8 @@ export async function runFranchiseCommand(ctx) {
     const visible = markCharacterOwnership(db, guildId,
       characters.slice(page * CHARACTER_PAGE_SIZE, (page + 1) * CHARACTER_PAGE_SIZE));
     const lines = visible.map((character) => {
-      const name = characterListName(character.name_full, character.married);
+      const owner = ctx.showOwner && character.ownerId ? ` => <@${character.ownerId}>` : '';
+      const name = characterListName(character.name_full, character.married) + owner;
       return showRank ? `#${formatNumber(character.rank)} - ${name}` : name;
     });
     const content = `## ${escapeMarkdown(selected.name)}\n${formatNumber(characters.length)} characters • Page ${page + 1} of ${pages}\n\n${lines.join('\n')}`;

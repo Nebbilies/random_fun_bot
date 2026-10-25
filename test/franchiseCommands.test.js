@@ -7,6 +7,8 @@ import { EventEmitter } from 'node:events';
 import { ComponentType, MessageFlags } from 'discord.js';
 import { openCatalog, setMeta } from '../lib/catalogDb.js';
 import { runFranchiseCommand } from '../commands/utils/franchiseCommand.js';
+import { run as runIma } from '../commands/ima.js';
+import { parseFranchiseCommand } from '../lib/franchiseModifiers.js';
 
 function setup(t) {
   const directory = mkdtempSync(join(tmpdir(), 'franchise-command-'));
@@ -49,7 +51,7 @@ test('!ima shows franchise characters by name without rank metadata', async (t) 
   assert.match(content, /Kirito/);
   assert.match(content, /Asuna 💞/);
   assert.doesNotMatch(content, /Kirito 💞/);
-  assert.doesNotMatch(content, /#1|#2/);
+  assert.doesNotMatch(content, /#1|#2|=>|<@/);
 });
 
 test('!imar lets the player choose between matching franchises and displays character ranks', async (t) => {
@@ -118,4 +120,55 @@ test('franchise character pages show at most 15 names', async (t) => {
   });
   content = payload.components[0].toJSON().components[0].components[0].content;
   assert.doesNotMatch(content, /💞/);
+});
+
+
+test('franchise flags require a and support order-independent ownership and rank', () => {
+  for (const command of ['imao', 'imoa', 'imaoo']) {
+    assert.deepEqual(parseFranchiseCommand(command), { showRank: false, showOwner: true });
+  }
+  for (const command of ['imaro', 'imora', 'imrao', 'imoar']) {
+    assert.deepEqual(parseFranchiseCommand(command), { showRank: true, showOwner: true });
+  }
+  assert.deepEqual(parseFranchiseCommand('ima'), { showRank: false, showOwner: false });
+  assert.deepEqual(parseFranchiseCommand('imar'), { showRank: true, showOwner: false });
+  for (const command of ['im', 'imo', 'imro', 'charo', 'mmo', 'imax']) {
+    assert.equal(parseFranchiseCommand(command), null);
+  }
+});
+
+test('franchise owner modifier uses current guild and refreshes owners without pinging', async (t) => {
+  const db = setup(t);
+  db.exec(`INSERT INTO marriages (guild_id, character_id, owner_id, married_at)
+    VALUES ('2', 1, 'foreign-owner', 'now'), ('2', 2, 'other-owner', 'now')`);
+  for (const command of ['imao', 'imoa', 'imaro', 'imora']) {
+    const collector = new EventEmitter();
+    let payload;
+    const sent = {
+      edit: async (value) => { payload = value; },
+      createMessageComponentCollector: () => collector,
+    };
+    db.exec("UPDATE marriages SET owner_id = 'owner' WHERE guild_id = '1'");
+    await runIma({
+      args: [command, 'Sword Art Online'], prefix: '!',
+      message: { guildId: '1', author: { id: 'viewer' }, reply: async (value) => { payload = value; return sent; } },
+      yoshiko: { catalogDb: db },
+    });
+    const content = () => payload.components[0].toJSON().components[0].components[0].content;
+    assert.match(content(), /Asuna 💞 => <@owner>/);
+    assert.doesNotMatch(content(), /Kirito 💞|foreign-owner|other-owner/);
+    assert.equal(content().includes('#2 - Asuna'), command.includes('r'));
+    assert.deepEqual(payload.allowedMentions, { parse: [] });
+    db.exec("UPDATE marriages SET owner_id = 'new-owner' WHERE guild_id = '1'");
+    await collector.listeners('collect')[0]({
+      customId: 'franchise:characters:prev', user: { id: 'viewer' }, deferUpdate: async () => {},
+    });
+    assert.match(content(), /Asuna 💞 => <@new-owner>/);
+    assert.deepEqual(payload.allowedMentions, { parse: [] });
+    db.exec("UPDATE marriages SET guild_id = '3' WHERE guild_id = '1'");
+    await collector.listeners('end')[0]();
+    assert.doesNotMatch(content(), /💞|=>|<@/);
+    assert.deepEqual(payload.allowedMentions, { parse: [] });
+    db.exec("UPDATE marriages SET guild_id = '1' WHERE guild_id = '3'");
+  }
 });
