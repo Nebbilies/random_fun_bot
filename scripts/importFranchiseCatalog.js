@@ -86,18 +86,24 @@ export async function runFranchiseImport({ db, api, refresh = false, batchSize =
 
   const knownIds = stageAnimeIds(db);
   let cursor = Number(getMeta(db, 'franchise_character_cursor') ?? 0);
-  const totalCharacters = db.prepare('SELECT COUNT(*) AS n FROM characters').get().n;
-  const alreadyProcessed = db.prepare('SELECT COUNT(*) AS n FROM characters WHERE id <= ?').get(cursor).n;
+  const sourceAware = Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='character_sources'").get());
+  // Cursor is an external source ID, never an internal character UUID or rank.
+  const sourceRows = sourceAware
+    ? `SELECT c.id,c.name_full,CAST(s.external_id AS INTEGER) AS external_id FROM characters c
+       JOIN character_sources s ON s.character_id=c.id WHERE s.source='anilist'`
+    : 'SELECT id,name_full,id AS external_id FROM characters';
+  const totalCharacters = db.prepare(`SELECT COUNT(*) AS n FROM (${sourceRows})`).get().n;
+  const alreadyProcessed = db.prepare(`SELECT COUNT(*) AS n FROM (${sourceRows}) WHERE external_id <= ?`).get(cursor).n;
   log(`==== ${phase === 'running' && !refresh ? 'Resuming' : 'Starting'} franchise import: ${totalCharacters} catalog characters; ${alreadyProcessed} already processed; cursor ${cursor}. ====`);
   for (;;) {
-    const characters = db.prepare('SELECT id, name_full FROM characters WHERE id > ? ORDER BY id LIMIT ?').all(cursor, batchSize);
+    const characters = db.prepare(`SELECT * FROM (${sourceRows}) WHERE external_id > ? ORDER BY external_id LIMIT ?`).all(cursor, batchSize);
     if (!characters.length) break;
     log(`==== Processing ${characters.length} characters (${characters[0].id}-${characters.at(-1).id}) ====`);
     const appearances = [];
     const appearanceIds = new Set();
-    for (const { id, name_full: name } of characters) {
+    for (const { id, external_id: externalId, name_full: name } of characters) {
       log(`Character #${id}: ${name || `Character ${id}`}`);
-      const characterAnimeIds = await characterAppearances(api, id, name || `Character ${id}`, log);
+      const characterAnimeIds = await characterAppearances(api, externalId, name || `Character ${id}`, log);
       log(`  Found ${characterAnimeIds.length} unique anime appearances.`);
       for (const animeId of characterAnimeIds) {
         appearances.push([id, animeId]);
@@ -106,7 +112,7 @@ export async function runFranchiseImport({ db, api, refresh = false, batchSize =
     }
     log(`Fetching metadata for ${appearanceIds.size} distinct anime across this character batch.`);
     const { media, relations } = await relatedMedia(api, appearanceIds, knownIds, log);
-    cursor = characters.at(-1).id;
+    cursor = characters.at(-1).external_id;
     stageFranchiseBatch(db, { media, appearances, relations, cursor });
     log(`Saved anime metadata for ${media.length} new entries and ${appearances.length} appearances through character ${cursor}.`);
   }

@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { isValidCharacterId } from '../lib/gameCharacterLookup.js';
 import { createPortalAuth, loadPortalEnvironment } from './portalAuth.js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -246,7 +247,8 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
         if (!request.headers['content-type']?.startsWith('application/json'))
           return json(response, 415, { error: 'JSON required' });
         const { characterId, status, tag } = await readJsonBody(request);
-        if (!Number.isInteger(characterId) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
+        // Temporary UUID/legacy bridge. Query only the exact catalog ID, never a source ID.
+        if (!isValidCharacterId(characterId) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
           return json(response, 400, { error: 'Unknown character' });
         if (!['approve', 'no_match'].includes(status)) return json(response, 400, { error: 'Invalid decision' });
         let canonicalTag = null;
@@ -265,7 +267,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
         if (!request.headers['content-type']?.startsWith('application/json'))
           return json(response, 415, { error: 'JSON required' });
         const { characterId, outcome, tag } = await readJsonBody(request);
-        if (!Number.isInteger(characterId) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
+        if (!isValidCharacterId(characterId) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
           return json(response, 400, { error: 'Unknown character' });
         if (!['corrected', 'dismissed'].includes(outcome)) return json(response, 400, { error: 'Invalid resolution' });
         if (!db.prepare(`SELECT 1 FROM character_tag_reports WHERE character_id = ? AND resolved_at IS NULL`).get(characterId))

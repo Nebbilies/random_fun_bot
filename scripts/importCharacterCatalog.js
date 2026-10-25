@@ -101,9 +101,13 @@ async function qualifyingMedia(api, character) {
 }
 
 export async function hydrateOneBatch(db, api, log = () => {}) {
+  const sourceAware = Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='character_sources'").get());
+  const existing = sourceAware
+    ? `SELECT 1 FROM character_sources AS source JOIN characters AS c ON c.id=source.character_id
+       WHERE source.source='anilist' AND source.external_id=CAST(stage.id AS TEXT)`
+    : 'SELECT 1 FROM characters WHERE characters.id = stage.id';
   const ids = db.prepare(`SELECT stage.id FROM stage_characters AS stage
-    WHERE stage.name_full IS NULL AND NOT EXISTS
-      (SELECT 1 FROM characters WHERE characters.id = stage.id)
+    WHERE stage.name_full IS NULL AND NOT EXISTS (${existing})
     ORDER BY stage.id LIMIT 25`).all().map((row) => row.id);
   if (!ids.length) return false;
   log(`==== Fetching character metadata for ${ids.length} finalists (IDs ${ids[0]}-${ids.at(-1)}) ====`);

@@ -14,25 +14,26 @@ This is a partial implementation, not rollout approval. The confirmed design and
 
 ## Migration limitations — do not deploy as a completed conversion
 
-- Nonempty character-bearing historical JSON requires the shape-specific adapters identified in the inventory. Current preflight deliberately refuses it.
-- Pending gameplay, reservations and escrow require reviewed domain cancellation/refund handling; preflight refuses unsafe state rather than inventing refunds.
-- Existing schema version/initialization, source-aware import/publication, gameplay references, lookup SQL, caches and portal identifier parsing are not converted to UUIDs.
+- Reviewed producer-specific historical JSON adapters now convert item selections/results/Crowns and validate built-in mystery, buff and inventory-escrow snapshots. Unknown shapes, fields, kinds and unresolved references still deliberately block preflight.
+- Explicit offline settlement now cancels no-cost confirmations and validated undelivered Hostages, releases escrow/reservations, restores eligible Crowns, and retains cancellation evidence. It preserves determined vault rewards. Delivered Hostages, live rolls/Siren and active mysteries still block: legacy records lack exact cost provenance, so drain/reconciliation or a reviewed consumption ledger is required rather than guessed refunds.
+- Existing schema version/initialization is not cut over. Gameplay ownership/trade/wish/lookup and portal parsing now accept UUIDs alongside temporary legacy numeric support. Source-aware character publication/hydration and franchise import are tested against explicitly migrated fixtures. Full consumer, deterministic selection-order, reload/cache and startup cutover acceptance remains unfinished.
 - Library commit primitive exists only for explicit future schema integration; normal startup does not invoke it. No production-capable migration CLI is exposed.
 - Tests for version gates use current synthetic legacy schemas, not an exhaustive historical schema fixture library.
 
 ## Verification at checkpoint
 
 - Before changes: `npm test` — 456 passed; `npm run typecheck:catalog` passed.
-- After changes: `npm test` — 504 passed, 0 failed; `npm run typecheck:catalog` passed.
+- First foundation checkpoint: `npm test` — 504 passed, 0 failed; `npm run typecheck:catalog` passed.
+- Historical adapters/settlement/source-publication/UUID-readiness checkpoint: `npm test` — 568 passed, 0 failed; `npm run typecheck:catalog` passed. Includes settlement-to-migration integration and migrated-fixture import/publication tests.
 - Focused migration fixtures: 29 passed, including rollback/cascade/reference checks.
 - Focused auth verification includes authenticated portal behavior, role/API denial, login/logout and startup validation.
 - No production-data rehearsal, measured downtime, or production browser smoke test has occurred.
 
 ## Next integration work
 
-1. Finish historical JSON adapters and domain-specific maintenance settlement.
-2. Coordinate explicit new schema, UUID consumer conversion and fixtures; retain source IDs only at API boundaries.
-3. Implement source-aware imports and shared revision-bound atomic publication, preserving curation and generated likes.
+1. Expand historical fixtures as needed and finish exact-cost journaling/drain/reconciliation for remaining unsafe legacy live interactions.
+2. Coordinate explicit new schema/startup gates and complete UUID consumer conversion/fixtures; retain source IDs only at API boundaries.
+3. Finish shared revision-bound preview/confirm publication and source-change completeness semantics. Source-aware import/publication foundations now preserve manual metadata, generated counts, existing ties and cascading tag-search history.
 4. Implement durable direct franchise memberships and relevant enrichment completeness.
 5. Wire validated preview/confirm mutation service, audit/idempotency, and manual-character portal workflows.
 6. Cover coherent cross-process reloads and active gameplay rules; run full acceptance/browser checks.

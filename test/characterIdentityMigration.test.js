@@ -140,11 +140,11 @@ for (const [label, sql, reason] of [
   ['reservation', "INSERT INTO item_character_reservations VALUES('guild',99,'action','owner',501)", /reservations\/escrow/],
   ['escrow', "INSERT INTO item_action_costs VALUES('action',901,'{}')", /reservations\/escrow/],
   ['pending delivery', "UPDATE item_actions SET delivery_pending=1", /Live item_actions/],
-  ['selection snapshot', `UPDATE item_actions SET selections_json='{"own":{"characterId":99,"marriageId":501}}'`, /shape-specific/],
+  ['selection snapshot', `UPDATE item_actions SET selections_json='{"own":{"characterId":99,"marriageId":501}}'`, /invalid ownership choice/],
   ['result snapshot', `UPDATE item_actions SET result_json='{"characters":[{"characterId":99}]}'`, /shape-specific/],
-  ['crown snapshot', `UPDATE item_actions SET crown_json='[{"character_id":99}]'`, /shape-specific/],
-  ['mystery snapshot', `UPDATE mystery_sessions SET state_json='{"animeId":777}'`, /shape-specific/],
-  ['buff snapshot', `UPDATE active_user_buffs SET data_json='{"franchiseId":42}'`, /shape-specific/],
+  ['crown snapshot', `UPDATE item_actions SET crown_json='[{"character_id":99}]'`, /invalid crown row/],
+  ['mystery snapshot', `UPDATE mystery_sessions SET state_json='{"animeId":777}'`, /shape-specific|unknown mystery/],
+  ['buff snapshot', `UPDATE active_user_buffs SET data_json='{"franchiseId":42}'`, /unknown buff/],
   ['invalid JSON', "UPDATE item_actions SET selections_json='broken'", /Invalid JSON/],
   ['trigger', 'CREATE TRIGGER extra AFTER INSERT ON marriages BEGIN SELECT 1; END;', /Views\/triggers/],
 ]) test(`preflight refuses ${label} without writes`, t => {
@@ -153,6 +153,77 @@ for (const [label, sql, reason] of [
   const before = snapshot(db);
   assert.throws(() => migrateCharacterIdentities(db), reason);
   assert.deepEqual(snapshot(db), before);
+});
+
+function historicalSnapshots(db) {
+  // Same number in unrelated namespaces deliberately must not be remapped.
+  const own = { characterId: 99, marriageId: 99, ownerId: '99', rank: 99, name: 'Captured name 99' };
+  const selections = { own, targets: [own], originals: [own], inventoryIds: [99],
+    _ui: { slot: 'target0', page: 99, users: ['99'] }, _rules: { hostageDecisionMs: 99 } };
+  const crown = { guild_id: '99', user_id: '99', character_id: 99, marriage_id: 99, generation_id: '99' };
+  db.prepare("UPDATE item_actions SET kind='hostage_note',selections_json=?,result_json=?,crown_json=?")
+    .run(JSON.stringify(selections), JSON.stringify({ status: 'resolved', choice: 'exchange', loser: null,
+      characters: [own, own], message: 'Historical name/ID 99 rank 99' }), JSON.stringify([crown]));
+  db.prepare("UPDATE active_user_buffs SET buff_id='franchise_passport',data_json=?")
+    .run(JSON.stringify({ franchiseId: 99, name: 'Historical franchise', rolls: 99 }));
+  db.prepare("UPDATE mystery_sessions SET event_id='clue_reveal',state_json=?")
+    .run(JSON.stringify({ animeId: 99, title: 'Captured title', aliases: ['99'], clues: ['Year: 1999'],
+      stage: 2, startedAt: 99, guessedAtStage: { 99: 2 }, rules: { durationMs: 99 } }));
+  // Retained identity appears only in JSON, not any relational reference.
+  db.exec("INSERT INTO character_identities VALUES(888,'Only captured',NULL)");
+  db.prepare(`INSERT INTO item_actions(id,kind,guild_id,actor_id,channel_id,inventory_id,state,selections_json,result_json,created_at,expires_at)
+    VALUES('chaos-history','chaos_exchange','g','u','c',99,'resolved','{}',?,1,2)`)
+    .run(JSON.stringify({ status: 'resolved', character: { id: 888, name: 'Old reward', rank: 99 }, message: 'Won 888' }));
+  return { own, selections, crown };
+}
+
+test('retained representative history migrates through rebuild and snapshot-only tables', t => {
+  const { db } = fixture(t);
+  const { own, selections, crown } = historicalSnapshots(db);
+  const report = inventoryCharacterIdentities(db);
+  assert.deepEqual(report.blockers, []);
+  assert.deepEqual(report.identities, [3, 12, 99, 888]);
+  const before = snapshot(db);
+  migrateCharacterIdentities(db);
+  assert.deepEqual(snapshot(db), before, 'rehearsal rolls back JSON too');
+  const unchanged = db.prepare('SELECT state_json FROM mystery_sessions').get().state_json;
+  const buff = db.prepare('SELECT data_json FROM active_user_buffs').get().data_json;
+  migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 });
+  const map = new Map(db.prepare('SELECT * FROM character_identity_migration').all().map(r => [r.legacy_id, r.character_id]));
+  const action = db.prepare("SELECT * FROM item_actions WHERE id='action'").get();
+  const migratedOwn = { ...own, characterId: map.get(99) };
+  assert.deepEqual(JSON.parse(action.selections_json), { ...selections, own: migratedOwn, targets: [migratedOwn], originals: [migratedOwn] });
+  assert.deepEqual(JSON.parse(action.crown_json), [{ ...crown, character_id: map.get(99) }]);
+  assert.deepEqual(JSON.parse(action.result_json), { status: 'resolved', choice: 'exchange', loser: null,
+    characters: [migratedOwn, migratedOwn], message: 'Historical name/ID 99 rank 99' });
+  const chaos = JSON.parse(db.prepare("SELECT result_json FROM item_actions WHERE id='chaos-history'").get().result_json);
+  assert.deepEqual(chaos.character, { id: map.get(888), name: 'Old reward', rank: 99 });
+  assert.equal(db.prepare('SELECT state_json FROM mystery_sessions').get().state_json, unchanged);
+  assert.equal(db.prepare('SELECT data_json FROM active_user_buffs').get().data_json, buff);
+  assert.equal(db.prepare('SELECT character_id FROM mystery_sessions').get().character_id, map.get(12));
+});
+
+for (const [column, value] of [
+  ['selections_json', { own: { characterId: 404, marriageId: 99, ownerId: '99' } }],
+  ['result_json', { privateCharacter: { characterId: 404, marriageId: 99, ownerId: '99' } }],
+  ['crown_json', [{ character_id: 404, marriage_id: 99, user_id: '99', guild_id: '99', generation_id: '99' }]],
+]) test(`unknown historical reference rolls back with row/path diagnostic: ${column}`, t => {
+  const { db } = fixture(t);
+  db.prepare(`UPDATE item_actions SET ${column}=?`).run(JSON.stringify(value));
+  const before = snapshot(db);
+  assert.throws(() => migrateCharacterIdentities(db), error => error.message.includes(`Unresolved reference item_actions[action].${column}`) && error.message.includes('404'));
+  assert.deepEqual(snapshot(db), before);
+});
+
+test('failure after JSON rewrite rolls back retained history and schema atomically', t => {
+  const { db } = fixture(t);
+  historicalSnapshots(db);
+  // This intentional name conflict is reached after both rebuild and JSON rewrites.
+  db.exec('CREATE INDEX character_tie_order ON user_inventory(charges)');
+  const before = snapshot(db);
+  assert.throws(() => migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 }), /already exists/);
+  assert.deepEqual(snapshot(db), before);
+  assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
 });
 
 test('published identity absent from retained table is included; staging-only IDs are not retained', t => {
