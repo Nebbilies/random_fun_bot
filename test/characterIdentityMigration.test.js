@@ -239,11 +239,8 @@ test('empty catalog and supported legacy version gates', t => {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const db = openCatalog(join(dir, 'empty.sqlite'));
   try {
-    for (let version = 1; version <= 10; version++) {
-      db.exec(`PRAGMA user_version=${version}`);
-      assert.equal(migrateCharacterIdentities(db).identities, 0);
-    }
-    for (const version of [0, 11]) {
+    assert.equal(migrateCharacterIdentities(db).identities, 0);
+    for (const version of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11]) {
       db.exec(`PRAGMA user_version=${version}`);
       assert.throws(() => migrateCharacterIdentities(db), /Unsupported legacy/);
     }

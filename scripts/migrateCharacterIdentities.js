@@ -17,7 +17,8 @@ Before rehearsal:
   3. Verify backup integrity and restoration with the compatible pre-migration application version.
   4. Run this tool against a separate disposable restored backup, never the original or recovery backup.
   5. Compare ownership, wishes, tag decisions, ties, history and reference counts; time the rehearsal.
-Nonempty identity JSON snapshots are refused until shape-specific adapters are reviewed.
+Input must be fully upgraded legacy v10. Older schemas require normalization with the compatible legacy application on a disposable copy.
+Reviewed identity JSON shapes are converted; unknown variants and unresolved references are refused.
 Production schema/consumer coordination, cancellation, acceptance and recovery gates remain outstanding.
 `;
 

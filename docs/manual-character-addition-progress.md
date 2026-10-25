@@ -25,7 +25,7 @@ This is a partial implementation, not rollout approval. The confirmed design and
 - Before changes: `npm test` — 456 passed; `npm run typecheck:catalog` passed.
 - First foundation checkpoint: `npm test` — 504 passed, 0 failed; `npm run typecheck:catalog` passed.
 - Historical adapters/settlement/source-publication/UUID-readiness checkpoint: `npm test` — 568 passed, 0 failed; `npm run typecheck:catalog` passed. Includes settlement-to-migration integration and migrated-fixture import/publication tests.
-- Focused migration fixtures: 29 passed, including rollback/cascade/reference checks.
+- Database-shape re-review: 576 tests passed, 0 failed; catalog type check passed. Corrected empty-table sequence loss, nullable converted primary keys, sparse picker history, and UUID case acceptance. Actual rebuilt-schema gameplay tests added; see `uuid-schema-verification.md` for findings and remaining acceptance blockers.
 - Focused auth verification includes authenticated portal behavior, role/API denial, login/logout and startup validation.
 - No production-data rehearsal, measured downtime, or production browser smoke test has occurred.
 
