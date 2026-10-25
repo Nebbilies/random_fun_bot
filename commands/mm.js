@@ -4,6 +4,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
   SectionBuilder, ThumbnailBuilder, TextDisplayBuilder } from 'discord.js';
 import { listMarriages, listMarriagesByFranchise } from '../lib/characterMarriage.js';
 import { formatNumber } from '../lib/formatNumber.js';
+import { formatCharacterLikes } from "../lib/characterLikes.js";
 import { HArem_PAGE_SIZE, haremListComponents } from '../lib/haremView.js';
 import { resolveUserTarget } from '../lib/userTarget.js';
 
@@ -153,7 +154,7 @@ function individualCardComponents(rows, targetId, index, disabled = false) {
   const anime = titles.length ? `${short(titles[0])}${titles.length > 1 ? ` (+${titles.length - 1} more)` : ''}` : 'Unknown';
   const details = [
     `**Anime:** ${escapeMarkdown(anime)}`,
-    `**Rank:** #${formatNumber(row.rank)} • **Favorites:** ${formatNumber(row.favourites ?? 0)}`,
+    `**Rank:** #${formatNumber(row.rank)} • **Favorites:** ${formatCharacterLikes(row)}`,
   ];
   const footer = `<@${targetId}>'s harem • Character ${index + 1} of ${total}`;
 

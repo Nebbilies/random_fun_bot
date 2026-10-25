@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { authConfig, authenticatedFetch as fetch, login, password } from './helpers/portalAuth.js';
 import test from 'node:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { chromium } from 'playwright-core';
@@ -14,7 +15,7 @@ test('configuration portal validates atomic writes, inheritance, reset, revision
   const db = openCatalog(join(directory, 'catalog.sqlite'));
   initGameConfig(db);
   setMeta(db, 'import_phase', 'complete');
-  const server = createReviewServer({ db, port: 0 });
+  const server = createReviewServer({ db, port: 0, authConfig });
   t.after(async () => {
     await new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); });
     db.close(); rmSync(directory, { recursive: true, force: true });
@@ -92,6 +93,8 @@ test('configuration portal validates atomic writes, inheritance, reset, revision
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));
+      const session = await login(origin);
+      await page.context().addCookies([{ name: 'portal_session', value: session.cookie.split('=')[1], url: origin }]);
       await page.goto(`${origin}/config`);
       const input = page.locator('[data-key="rolls.maxRolls"]');
       await input.fill('13');
@@ -111,6 +114,18 @@ test('configuration portal validates atomic writes, inheritance, reset, revision
       assert.equal(await structured.getAttribute('aria-invalid'), 'true');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
       assert.deepEqual(errors, []);
+      await page.getByRole('button', { name: 'Sign out (test-admin)', exact: true }).click();
+      await page.waitForURL(`${origin}/login`);
+      await page.locator('[name="username"]').fill('test-moderator');
+      await page.locator('[name="password"]').fill(password);
+      await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+      await page.waitForURL(`${origin}/`);
+      await page.getByRole('button', { name: 'Sign out (test-moderator)', exact: true }).waitFor();
+      assert.equal(await page.locator('nav a[href="/config"]').isVisible(), false);
+      assert.equal(await page.locator('nav a[href="/game"]').isVisible(), false);
+      assert.equal(await page.evaluate(() => fetch('/api/config').then((response) => response.status)), 403);
+      await page.getByRole('button', { name: 'Sign out (test-moderator)', exact: true }).click();
+      await page.waitForURL(`${origin}/login`);
     } finally { await browser.close(); }
   });
 });

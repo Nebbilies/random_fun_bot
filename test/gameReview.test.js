@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { authConfig, authenticatedFetch as fetch } from './helpers/portalAuth.js';
 import test from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,7 +16,7 @@ test('review portal applies capped rolls and global claim resets with validated 
   const directory = mkdtempSync(join(tmpdir(), 'game-review-'));
   const db = openCatalog(join(directory, 'catalog.sqlite'));
   setMeta(db, 'import_phase', 'complete');
-  const server = createReviewServer({ db, port: 0 });
+  const server = createReviewServer({ db, port: 0, authConfig });
   t.after(async () => {
     await new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); });
     db.close();

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const assets = new Map([
   ['portal.css', 'text/css'],
   ['portal.js', 'text/javascript'],
+  ['login.js', 'text/javascript'],
   ['franchisePicker.js', 'text/javascript'],
   ['reviewCharacterTags.js', 'text/javascript'],
   ['reviewFranchises.js', 'text/javascript'],

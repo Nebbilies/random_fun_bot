@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { createPortalAuth, loadPortalEnvironment } from './portalAuth.js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -74,7 +75,8 @@ function safePreviewUrl(value) {
   } catch { return null; }
 }
 
-export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImpl = fetch, host = '127.0.0.1', publicHost = host, port = 8787 }) {
+export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImpl = fetch, host = '127.0.0.1', publicHost = host, port = 8787, authConfig }) {
+  const auth = createPortalAuth(authConfig);
   if (getMeta(db, 'import_phase') !== 'complete') throw new Error('Publish the catalog before reviewing tags');
   if (!publicHost || publicHost === '0.0.0.0') throw new Error('Set a public host when listening on all interfaces');
   const server = createServer(async (request, response) => {
@@ -91,7 +93,9 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
       } catch {
         return json(response, 403, { error: 'Invalid host' });
       }
+      requestOrigin = auth.origin(requestOrigin);
       const url = new URL(request.url, requestOrigin);
+      if (await auth.handle(request, response, url, requestOrigin)) return;
       if (serveAssets(request, response, url)) return;
       if (await handleConfigRequest({ db, request, response, url, origin: requestOrigin })) return;
       if (await handleFranchiseReviewRequest({ db, request, response, url, origin: requestOrigin })) return;
@@ -301,9 +305,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const port = Number(values.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('--port must be between 1 and 65535');
     if (!values.host) throw new Error('--host must not be empty');
+    const authConfig = loadPortalEnvironment();
     db = openCatalog();
     const publicHost = values['public-host'] ?? values.host;
-    const server = createReviewServer({ db, host: values.host, publicHost, port });
+    const server = createReviewServer({ db, host: values.host, publicHost, port, authConfig });
     server.on('listening', () => console.log(`Review UI: http://${publicHost}:${port} (listening on ${values.host})`));
     server.on('close', () => db.close());
   } catch (error) {

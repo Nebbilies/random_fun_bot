@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { authConfig, authenticatedFetch as fetch } from './helpers/portalAuth.js';
 import { test } from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -171,7 +172,7 @@ test('localhost review exposes candidates and saves a validated manual choice', 
   saveDecision(db, 20, 'approve', 'automatic', 'automatic');
   db.prepare(`INSERT INTO tag_candidates (character_id, tag_name, post_count) VALUES (1, 'example_(anime)', 10)`).run();
   const previewQueries = [];
-  const server = createReviewServer({ db, port: 0,
+  const server = createReviewServer({ db, port: 0, authConfig,
     api: { exactTag: async (name) => name === 'Example (Anime)' ? { name: 'example_(anime)' } : null },
     fetchImpl: async (url) => {
       previewQueries.push({ tags: url.searchParams.get('tags'), limit: url.searchParams.get('limit') });
@@ -222,7 +223,7 @@ test('reported tags deduplicate viewers, resolve through review, and retain hist
   assert.equal(reportCharacterTag(db, 1, 'viewer-a'), false);
   assert.equal(reportCharacterTag(db, 1, 'viewer-b'), true);
   assert.equal(reportCharacterTag(db, 2, 'viewer-a'), true);
-  const server = createReviewServer({ db, port: 0,
+  const server = createReviewServer({ db, port: 0, authConfig,
     api: { exactTag: async (tag) => tag === 'correct_tag' ? { name: tag } : null },
   });
   await once(server, 'listening');
