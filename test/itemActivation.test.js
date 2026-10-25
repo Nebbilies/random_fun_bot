@@ -1,0 +1,157 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { openCatalog } from '../lib/catalogDb.js';
+import { addItemToInventory, getInventory } from '../lib/itemStorage.js';
+import { run } from '../commands/use.js';
+import { onInventoryButton } from '../commands/inv.js';
+import { activateItem } from '../lib/itemActivation.js';
+
+function fixture(t, { failSend = false } = {}) {
+  const db = openCatalog(':memory:');
+  t.after(() => db.close());
+  const sent = [], feedback = [], edits = [];
+  const channel = { id: '10', send: async (payload) => {
+    if (failSend) throw new Error('Discord unavailable');
+    sent.push(payload);
+    return { id: '500', edit: async () => {}, react: async () => {} };
+  } };
+  const message = { id: '900', guildId: '1', channelId: '10', author: { id: '101' }, channel,
+    reply: async (payload) => { feedback.push(payload); return { id: '501' }; } };
+  const interaction = { id: '999', guildId: '1', channelId: '10', channel,
+    user: { id: '101', username: 'Player' }, isButton: () => true,
+    deferUpdate: async () => { interaction.deferred = true; },
+    editReply: async (payload) => { edits.push(payload); },
+    reply: async (payload) => { feedback.push(payload); },
+    followUp: async (payload) => { feedback.push(payload); return { id: '502' }; } };
+  return { db, sent, feedback, edits, message, interaction };
+}
+
+for (const entry of ['command', 'button']) {
+  test(`${entry}: ordinary activation consumes once and retains its feedback style`, async (t) => {
+    const x = fixture(t);
+    const granted = addItemToInventory(x.db, '1', '101', 'love_letter', 2);
+    if (entry === 'command') {
+      await run({ message: x.message, args: ['use', 'love_letter'], yoshiko: { catalogDb: x.db } });
+      assert.equal(typeof x.feedback[0], 'string');
+    } else {
+      x.interaction.customId = `inv:use:101:${granted.item.id}`;
+      await onInventoryButton(x.db, x.interaction);
+      assert.equal(x.edits.length, 1);
+      assert.equal(x.feedback[0].flags, 64);
+    }
+    assert.equal(getInventory(x.db, '1', '101')[0].charges, 1);
+    assert.equal(x.sent.length, 0);
+    assert.equal(x.feedback.length, 1);
+  });
+
+  for (const failSend of [false, true]) {
+    test(`${entry}: Golden Hour completes its vault follow-up; send failure=${failSend}`, async (t) => {
+      const x = fixture(t, { failSend });
+      const granted = addItemToInventory(x.db, '1', '101', 'golden_hour');
+      x.db.prepare('INSERT INTO roll_allowances(guild_id,user_id,period,used) VALUES(?,?,?,?)').run('1', '202', 0, 5);
+      if (entry === 'command') {
+        await run({ message: x.message, args: ['use', 'golden_hour'], yoshiko: { catalogDb: x.db } });
+      } else {
+        x.interaction.customId = `inv:use:101:${granted.item.id}`;
+        assert.equal(await onInventoryButton(x.db, x.interaction), true);
+        assert.equal(x.interaction.deferred, true);
+        assert.equal(x.edits.length, 1);
+      }
+      assert.equal(getInventory(x.db, '1', '101').length, 0);
+      assert.equal(x.db.prepare('SELECT used FROM roll_allowances WHERE user_id=?').get('202').used, 0);
+      assert.equal(x.feedback.length, 1);
+      if (failSend) {
+        assert.match(JSON.stringify(x.feedback), /committed effect and cost remain unchanged/);
+        assert.equal(x.sent.length, 0);
+      } else {
+        assert.equal(x.sent.length, 1);
+        if (entry === 'button') assert.equal(x.sent[0].reply, undefined);
+        else assert.equal(x.sent[0].reply.messageReference, '900');
+      }
+    });
+  }
+
+  test(`${entry}: invalid argument-based use preserves item and reports requirements`, async (t) => {
+    const x = fixture(t);
+    const granted = addItemToInventory(x.db, '1', '101', 'franchise_passport');
+    if (entry === 'command') {
+      await run({ message: x.message, args: ['use', 'franchise_passport'], yoshiko: { catalogDb: x.db } });
+    } else {
+      x.interaction.customId = `inv:use:101:${granted.item.id}`;
+      await onInventoryButton(x.db, x.interaction);
+    }
+    assert.equal(getInventory(x.db, '1', '101').length, 1);
+    assert.equal(x.sent.length, 0);
+    assert.match(JSON.stringify(x.feedback), /franchise/i);
+  });
+
+  test(`${entry}: durable action opens confirmation without spending its item`, async (t) => {
+    const x = fixture(t);
+    const granted = addItemToInventory(x.db, '1', '101', 'kaimetsu');
+    if (entry === 'command') {
+      await run({ message: x.message, args: ['use', 'kaimetsu'], yoshiko: { catalogDb: x.db } });
+    } else {
+      x.interaction.customId = `inv:use:101:${granted.item.id}`;
+      await onInventoryButton(x.db, x.interaction);
+    }
+    assert.equal(getInventory(x.db, '1', '101').length, 1);
+    assert.match(JSON.stringify(x.feedback), /Confirm guild-wide divorce/);
+    assert.equal(x.db.prepare('SELECT state FROM item_actions').get().state, 'confirming');
+  });
+}
+
+test('shared activation opens a forced escape and consumes its source once', async (t) => {
+  const x = fixture(t);
+  x.db.exec(`INSERT INTO characters(id,rank,favourites,name_full,gender,anime_titles) VALUES(1,1,100,'Alpha','Female','[]');
+    INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES('1',1,'202','now');`);
+  addItemToInventory(x.db, '1', '101', 'sirens_call');
+  await activateItem({ db: x.db, message: x.message, itemQuery: 'sirens_call', args: ['202'] });
+  assert.equal(x.sent.length, 1);
+  assert.equal(x.feedback.length, 0);
+  assert.equal(getInventory(x.db, '1', '101').length, 0);
+  assert.equal(x.db.prepare('SELECT state FROM character_rolls').get().state, 'open');
+});
+
+test('failed inventory refresh still delivers private feedback without replay', async (t) => {
+  const x = fixture(t);
+  const granted = addItemToInventory(x.db, '1', '101', 'golden_hour');
+  x.interaction.customId = `inv:use:101:${granted.item.id}`;
+  x.interaction.editReply = async () => { throw new Error('Inventory deleted'); };
+  await onInventoryButton(x.db, x.interaction);
+  assert.equal(x.sent.length, 1);
+  assert.equal(x.feedback.length, 1);
+  assert.equal(x.feedback[0].flags, 64);
+  assert.equal(getInventory(x.db, '1', '101').length, 0);
+});
+
+test('failed escape send preserves committed cost and pending recovery without replay', async (t) => {
+  const x = fixture(t, { failSend: true });
+  x.db.exec(`INSERT INTO characters(id,rank,favourites,name_full,gender,anime_titles) VALUES(1,1,100,'Alpha','Female','[]');
+    INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES('1',1,'202','now');`);
+  addItemToInventory(x.db, '1', '101', 'sirens_call');
+  const result = await activateItem({ db: x.db, message: x.message, itemQuery: 'sirens_call', args: ['202'] });
+  assert.equal(result.deliveryFailed, true);
+  assert.equal(x.feedback.length, 1);
+  assert.equal(getInventory(x.db, '1', '101').length, 0);
+  assert.equal(x.db.prepare('SELECT state FROM character_rolls').get().state, 'pending');
+});
+
+test('stale inventory button reports failure without activating anything', async (t) => {
+  const x = fixture(t);
+  x.interaction.customId = 'inv:use:101:999';
+  await onInventoryButton(x.db, x.interaction);
+  assert.equal(x.sent.length, 0);
+  assert.equal(x.edits.length, 0);
+  assert.match(x.feedback[0].content, /Item not found/);
+});
+
+test('inventory ownership check rejects another player before activation', async (t) => {
+  const x = fixture(t);
+  const granted = addItemToInventory(x.db, '1', '101', 'golden_hour');
+  x.interaction.customId = `inv:use:101:${granted.item.id}`;
+  x.interaction.user.id = '202';
+  await onInventoryButton(x.db, x.interaction);
+  assert.equal(x.interaction.deferred, undefined);
+  assert.equal(getInventory(x.db, '1', '101').length, 1);
+  assert.equal(x.sent.length, 0);
+});
