@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { openCatalog, publishCatalog } from '../lib/catalogDb.js';
 import { migrateCharacterIdentities } from '../lib/characterIdentityMigration.js';
 import { createCharacterId } from '../lib/characterIdentity.js';
+import { initializeCatalogReleaseSchema } from '../lib/catalogReleaseSchema.js';
 import { hydrateOneBatch } from '../scripts/importCharacterCatalog.js';
 import { runFranchiseImport } from '../scripts/importFranchiseCatalog.js';
 
@@ -32,6 +33,18 @@ test('UUID publication reuses source identities, preserves ties and cascaded his
   assert.equal(publishCatalog(db), 4);
   assert.deepEqual(order(), ['20','10','25','30']);
   assert.equal(db.prepare("SELECT value FROM catalog_meta WHERE key='catalog_revision'").get().value, '2');
+});
+
+test('release publication advances typed revision atomically with legacy revision metadata', (t) => {
+  const db = fixture(t);
+  initializeCatalogReleaseSchema(db);
+  db.exec("INSERT INTO stage_characters(id,favourites,name_full) VALUES(20,101,'Refresh')");
+  publishCatalog(db);
+  assert.equal(db.prepare('SELECT revision FROM catalog_state').get().revision, 1);
+  assert.equal(db.prepare("SELECT value FROM catalog_meta WHERE key='catalog_revision'").get().value, '1');
+  db.exec("INSERT INTO stage_characters(id,favourites) VALUES(999,200)");
+  assert.throws(() => publishCatalog(db), /incomplete/);
+  assert.equal(db.prepare('SELECT revision FROM catalog_state').get().revision, 1);
 });
 
 test('source refresh preserves manual metadata and generated counts independently', (t) => {

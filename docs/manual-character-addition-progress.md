@@ -6,11 +6,19 @@ This is a partial implementation, not rollout approval. The confirmed design and
 
 - Full reference inventory: `manual-character-reference-inventory.md`.
 - Shared portal authentication for both server entry points, explicit environment accounts, role enforcement, sessions, CSRF, throttling, login/logout UI, password hash utility. See `portal-authentication.md` before restarting the portal: credentials are now mandatory.
-- Pure UUID identity/source-key validation and unique source-link primitives. Not yet integrated into existing numeric-ID consumers.
+- UUID identity/source-key validation and unique source-link primitives, with a temporary legacy numeric bridge across several gameplay consumers. Complete UUID-only cutover remains pending.
 - Pure rank insertion/reposition previews, generated likes, safe-integer/overflow validation, deterministic integer tie order.
-- Shared revealed-count formatter wired into character, marriage, roll and mystery displays. Imported presentation is unchanged; hidden mystery counts stay hidden. Provenance must still be selected/persisted through subsequent schema work.
+- Shared revealed-count formatter and schema-aware provenance projections through lookup, marriage lists, rolls, forced escapes and mystery reads. Imported presentation is unchanged; hidden mystery counts stay hidden. Captured-term persistence still needs complete acceptance.
 - Manual metadata validation (HTTPS portrait/reference URLs, explicit gender, nonempty franchise selection, normalized aliases). No manual editor/publication endpoint yet.
 - Offline UUID migration foundation and rollback-only rehearsal CLI. Explicit database path is mandatory; CLI rejects default `bot.sqlite`. It neither invokes network imports nor commits a migration.
+
+## Additional partial release integration
+
+- Explicit synthetic v11→v12 extension initializer adds independent curated aliases, direct franchise memberships, a deduplicated read view, typed revisions, previews, audit and confirmation results. It validates existing data but does not replace inherited DDL or enable normal startup.
+- Shared manual-create preview/confirm service supports revision-bound rank generation, authenticated ownership, expiry, duplicate warnings/override reasons, atomic UUID publication and audit, and durable request-bound retries. Supplied tags are explicitly rejected until tag handling is implemented. No HTTP route or editor is exposed yet.
+- Curated aliases join gameplay search without modifying imported alias fields. Direct memberships join franchise lists, marriage grouping, Passport, Blood Pact and Wish targets. Wish ties follow catalog rank. Cover selection prefers a valid anime cover, then curated HTTPS, then text-only.
+- Source publication invalidates typed catalog previews atomically. Relevant source/appearance freshness and all-writer revision participation remain unfinished.
+- Independent synthetic review found and corrected retry request-binding and tied Wish selection defects. This is still not rollout approval.
 
 ## Migration limitations — do not deploy as a completed conversion
 
@@ -21,6 +29,8 @@ This is a partial implementation, not rollout approval. The confirmed design and
 - Tests for version gates use current synthetic legacy schemas, not an exhaustive historical schema fixture library.
 
 ## Verification at checkpoint
+
+- Latest partial release integration: **627 tests passed, 0 failed**, catalog type check passed. Tests use synthetic legacy/migrated/extension fixtures only; this does not establish production restart or rollout readiness.
 
 - Before changes: `npm test` — 456 passed; `npm run typecheck:catalog` passed.
 - First foundation checkpoint: `npm test` — 504 passed, 0 failed; `npm run typecheck:catalog` passed.
