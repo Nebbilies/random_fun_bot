@@ -91,6 +91,35 @@ test('Grand Masquerade redistributes all contributions with no fixed points and 
   } finally { db.close(); }
 });
 
+for (const [ownRank, targetRank, expected] of [
+  [101, 10000, 'resolved'], // No 2× cap.
+  [101, 41, 'resolved'], // ceil(0.4 × 101).
+  [101, 40, 'invalid'],
+  [100, 1, 'resolved'], // Top-100 exception.
+  [101, 1, 'invalid'],
+]) test(`Grand Masquerade rank ${ownRank} targeting ${targetRank}: ${expected}`, () => {
+  const db = openCatalog(':memory:');
+  try {
+    const choices = [ownRank, targetRank, 150, 160].map((rank, index) => {
+      const id = index + 1;
+      const ownerId = `${id}01`;
+      db.prepare('INSERT INTO characters(id,rank,favourites,name_full) VALUES(?,?,1,?)').run(id, rank, `Character ${id}`);
+      const marriage = marryCharacter(db, '1', id, ownerId).marriage;
+      return { characterId: id, ownerId, marriageId: marriage.id };
+    });
+    const item = addItemToInventory(db, '1', '101', 'grand_masquerade').item;
+    const action = createItemAction(db, { guildId: '1', actorId: '101', channelId: '10', inventoryId: item.id,
+      selections: { own: choices[0], targets: choices.slice(1) }, now: 1000 });
+    assert.equal(action.expires_at, 181000);
+    const result = activateItemAction(db, { actionId: action.id, guildId: '1', actorId: '101', now: 180999, random: () => 0 });
+    assert.equal(result.status, expected);
+    if (expected === 'invalid') {
+      assert.deepEqual(getInventory(db, '1', '101'), [item]);
+      choices.forEach((choice) => assert.equal(getMarriage(db, '1', choice.characterId).ownerId, choice.ownerId));
+    }
+  } finally { db.close(); }
+});
+
 test('Chaos Exchange empty pool preserves sacrifice and item', () => {
   const db = openCatalog(':memory:');
   try {
