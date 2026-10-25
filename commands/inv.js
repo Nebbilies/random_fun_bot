@@ -13,8 +13,7 @@ import {
 } from '../lib/itemStorage.js';
 import { getItemDefinition, getResolvedItemDefinition, ITEM_TIERS } from '../lib/itemRoster.js';
 import { resolveUserTarget, resolveTargetUsername } from '../lib/userTarget.js';
-import { executeItemUseById } from './use.js';
-import { startItemAction } from '../lib/itemActionRuntime.js';
+import { activateItem } from '../lib/itemActivation.js';
 
 export function renderInventoryEmbed(db, guildId, userId, username, now = Date.now(), isSelf = true) {
   const inv = getInventory(db, guildId, userId);
@@ -253,39 +252,30 @@ export async function onInventoryButton(db, interaction) {
     return true;
   }
 
-  const invId = Number(invIdStr);
-  const result = executeItemUseById(db, interaction.guildId, interaction.user.id, invId);
-
-  if (result.pendingAction) {
-    await interaction.deferUpdate();
-    await startItemAction({ db, inventoryId: result.inventoryId, message: {
-      guildId: interaction.guildId, channelId: interaction.channelId, channel: interaction.channel,
-      author: interaction.user, id: interaction.id,
-      reply: (payload) => interaction.followUp(payload),
-    } });
-    return true;
-  }
-
-  if (!result.success) {
-    await interaction.reply({
-      content: `❌ ${result.message}`,
+  // Acknowledge before channel delivery; an interaction ID is not a Discord
+  // message ID and must never be used as a vault reply reference.
+  await interaction.deferUpdate();
+  await activateItem({ db, inventoryId: Number(invIdStr), message: {
+    guildId: interaction.guildId, channelId: interaction.channelId, channel: interaction.channel,
+    author: interaction.user,
+    reply: (payload) => interaction.followUp(payload),
+  }, notify: async (result) => {
+    if (result.success) {
+      try {
+        await interaction.editReply({
+          embeds: [renderInventoryEmbed(db, interaction.guildId, interaction.user.id, interaction.user.username)],
+          components: renderInventoryComponents(db, interaction.guildId, interaction.user.id),
+        });
+      } catch (error) {
+        // A deleted inventory message must not suppress private status feedback.
+        console.error('Inventory refresh failed:', error);
+      }
+    }
+    await interaction.followUp({
+      content: `${result.success && !result.deliveryFailed ? '✅' : '❌'} ${result.message}`,
       flags: MessageFlags.Ephemeral,
     });
-    return true;
-  }
-
-  const embed = renderInventoryEmbed(db, interaction.guildId, interaction.user.id, interaction.user.username);
-  const components = renderInventoryComponents(db, interaction.guildId, interaction.user.id);
-
-  await interaction.update({
-    embeds: [embed],
-    components,
-  });
-
-  await interaction.followUp({
-    content: `✅ ${result.message}`,
-    flags: MessageFlags.Ephemeral,
-  });
+  } });
 
   return true;
 }
