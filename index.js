@@ -12,6 +12,7 @@ import {openCatalog} from "./lib/catalogDb.js";
 import {getGuildPrefix} from "./lib/guildPrefix.js";
 import {createCatalogCache} from "./lib/catalogCache.js";
 import {isCatalogDraining, isNewGameActionCommand} from './lib/catalogMaintenance.js';
+import {assertCatalogRuntimeRestartReady} from './lib/catalogRuntimeRecovery.js';
 import {createCharacterImagePicker} from "./lib/characterImages.js";
 import {onRollReaction, onRollReport, recoverRollRuntime, recoverForcedEscapes} from "./lib/characterRollRuntime.js";
 import {onMysteryAnswer, onMysteryButton, cancelMysteryRuntime} from "./lib/mysteryRuntime.js";
@@ -29,6 +30,11 @@ const intents = [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, Gat
 const client = new Client({ intents, partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
 client.cooldowns = new Collection();
 client.catalogDb = openCatalog();
+// Final-schema startup must not silently cancel paid actions or guess recovery.
+// Run before handlers, timers, recovery writes, or Discord login are enabled.
+if (client.catalogDb.prepare('PRAGMA user_version').get().user_version === 12) {
+    assertCatalogRuntimeRestartReady(client.catalogDb);
+}
 const catalogCache = createCatalogCache(client.catalogDb);
 
 export const yoshiko = {
@@ -269,6 +275,15 @@ for (const file of commandFiles) {
 }
 
 yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
+    // Collector-only dialogs are process-local. The collector handles live ones;
+    // after restart/cutover provide an explicit expired response, never replay.
+    if (/^(?:char|wish|divorce|xfer):/.test(interaction.customId ?? '')) {
+        const timer = setTimeout(() => {
+            if (!interaction.replied && !interaction.deferred) interaction.reply({ content: 'This character-game dialog expired. Run the command again.', ephemeral: true }).catch(console.error);
+        }, 500);
+        timer.unref();
+        return;
+    }
     if (interaction.isButton() && interaction.customId.startsWith('mystery:')) {
         try {
             await onMysteryButton(yoshiko.catalogDb, interaction);

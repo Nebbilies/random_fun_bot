@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
-import { getMeta, openCatalog, transaction } from '../lib/catalogDb.js';
+import { getMeta, openCatalog, saveDecision, transaction } from '../lib/catalogDb.js';
 import { DanbooruApi } from '../lib/danbooruApi.js';
 import { inspectDanbooruResult } from '../lib/danbooruSearchResult.js';
 import { normalizeTag, searchNames } from '../lib/danbooruTagMatcher.js';
@@ -89,27 +89,27 @@ function saveAttempt(db, row, query, results, outcome) {
   return transaction(db, () => {
     if (db.prepare('SELECT 1 FROM tag_decisions WHERE character_id = ?').get(row.id))
       return false;
-    if (db.prepare('SELECT 1 FROM google_tag_attempts WHERE character_id = ?').get(row.id))
+    if (db.prepare('SELECT 1 FROM duckduckgo_tag_attempts WHERE character_id = ?').get(row.id))
       return false;
-    db.prepare(`INSERT INTO google_tag_attempts
+    // Historical shared search-attempt contract: one completed search per character,
+    // regardless of engine. Do not add an engine-specific table to authoritative v12.
+    db.prepare(`INSERT INTO duckduckgo_tag_attempts
       (character_id, query, first_url, second_url, outcome, tag_name, details, searched_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(row.id, query, results[0]?.url ?? null,
         results[1]?.url ?? null, outcome.tag ? 'approved' : 'manual',
         outcome.tag ?? null, outcome.details, new Date().toISOString());
-    if (outcome.tag) {
-      db.prepare(`INSERT INTO tag_decisions (character_id, status, tag_name, source, updated_at)
-        VALUES (?, 'approve', ?, 'automatic', ?)`)
-        .run(row.id, outcome.tag, new Date().toISOString());
-    }
+    if (outcome.tag) saveDecision(db, row.id, 'approve', outcome.tag, 'automatic');
     return true;
   });
 }
 
 export async function matchGoogleTags({ db, api, page, limit = 25, delayMs = 10_000, dryRun = false, log = console.log }) {
-  if (getMeta(db, 'import_phase') !== 'complete') throw new Error('Publish the catalog before matching tags');
+  if (limit === 0) { log('Google search complete: 0 approved, 0 left for manual review, 0 searched.'); return; }
+  if (db.prepare('PRAGMA user_version').get().user_version !== 12
+    && getMeta(db, 'import_phase') !== 'complete') throw new Error('Publish the catalog before matching tags');
   const pending = db.prepare(`SELECT c.* FROM characters c
     LEFT JOIN tag_decisions d ON d.character_id = c.id
-    LEFT JOIN google_tag_attempts a ON a.character_id = c.id
+    LEFT JOIN duckduckgo_tag_attempts a ON a.character_id = c.id
     WHERE d.character_id IS NULL AND a.character_id IS NULL
     ORDER BY c.rank LIMIT ?`).all(limit);
   let approved = 0;
@@ -162,18 +162,22 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     } });
     const limit = Number(values.limit);
     const delayMs = Number(values['delay-ms']);
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 15_000)
-      throw new Error('--limit must be an integer between 1 and 15000');
+    if (!Number.isSafeInteger(limit) || limit < 0 || limit > 15_000)
+      throw new Error('--limit must be an integer between 0 and 15000');
     if (!Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > 600_000)
       throw new Error('--delay-ms must be an integer between 0 and 600000');
     if (!['chrome', 'msedge'].includes(values.browser))
       throw new Error('--browser must be chrome or msedge');
     db = openCatalog();
-    browser = await chromium.launch({ channel: values.browser, headless: true });
-    const context = await browser.newContext({ locale: 'en-US' });
-    const page = await context.newPage();
-    const api = new DanbooruApi({ db: values['dry-run'] ? null : db });
-    await matchGoogleTags({ db, api, page, limit, delayMs, dryRun: values['dry-run'] });
+    if (limit === 0) {
+      await matchGoogleTags({ db, limit });
+    } else {
+      browser = await chromium.launch({ channel: values.browser, headless: true });
+      const context = await browser.newContext({ locale: 'en-US' });
+      const page = await context.newPage();
+      const api = new DanbooruApi({ db: values['dry-run'] ? null : db });
+      await matchGoogleTags({ db, api, page, limit, delayMs, dryRun: values['dry-run'] });
+    }
   } catch (error) {
     console.error(error);
     process.exitCode = 1;

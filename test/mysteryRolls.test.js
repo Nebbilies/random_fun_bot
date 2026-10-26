@@ -73,15 +73,17 @@ test('mystery reserves one roll, pauses guild, and starts five seconds after int
   assert.equal(normal(db, '102').status, 'reserved');
 });
 
-test('unavailable event and active pause do not charge a roll', (t) => {
+test('unavailable mystery falls back to one ordinary roll and active pause does not charge', (t) => {
   const db = fixture(t);
-  assert.equal(mystery(db, '200', () => null).status, 'unavailable');
-  assert.equal(getRollStatus(db, '1', '101', start).remaining, 7);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM character_rolls').get().n, 0);
+  const fallback = mystery(db, '200', () => null);
+  assert.equal(fallback.status, 'reserved');
+  assert.equal(getRollStatus(db, '1', '101', start).remaining, 6);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM character_rolls').get().n, 1);
+  failRoll(db, fallback.rollId);
   const active = mystery(db, '201');
   assert.equal(active.status, 'mystery');
   assert.equal(normal(db, '202').status, 'paused');
-  assert.equal(getRollStatus(db, '1', '101', start).remaining, 6);
+  assert.equal(getRollStatus(db, '1', '101', start).remaining, 5);
   assert.equal(failRoll(db, active.rollId), true);
   assert.equal(getMysterySession(db, active.sessionId).state, 'failed');
   assert.equal(normal(db, '203').status, 'reserved');

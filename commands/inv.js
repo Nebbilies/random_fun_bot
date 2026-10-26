@@ -1,3 +1,4 @@
+import { isCatalogDraining } from '../lib/catalogMaintenance.js';
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -90,7 +91,7 @@ export function renderInventoryComponents(db, guildId, userId) {
   const buttons = usableItems.slice(0, 5).map((item) => {
     const def = getItemDefinition(item.item_id);
     return new ButtonBuilder()
-      .setCustomId(`inv:use:${userId}:${item.id}`)
+      .setCustomId(`inv:use:${userId}:${item.id}${db.prepare('PRAGMA user_version').get().user_version === 12 ? ':v12' : ''}`)
       .setLabel(`Use ${def?.name.slice(0, 20) || item.item_id}`)
       .setStyle(ButtonStyle.Success);
   });
@@ -244,7 +245,12 @@ export async function run(ctx) {
 export async function onInventoryButton(db, interaction) {
   if (!interaction.isButton() || !interaction.customId.startsWith('inv:use:')) return false;
 
-  const [, , expectedUserId, invIdStr] = interaction.customId.split(':');
+  const parts = interaction.customId.split(':');
+  if (db.prepare('PRAGMA user_version').get().user_version === 12 && (parts.length !== 5 || parts[4] !== 'v12')) {
+    await interaction.reply({ content: 'This inventory control expired during the catalog upgrade. Run the inventory command again.', flags: MessageFlags.Ephemeral });
+    return true;
+  }
+  const [, , expectedUserId, invIdStr] = parts;
   if (interaction.user.id !== expectedUserId) {
     await interaction.reply({
       content: 'You can only use items from your own inventory!',
@@ -253,6 +259,10 @@ export async function onInventoryButton(db, interaction) {
     return true;
   }
 
+  if (isCatalogDraining(db)) {
+    await interaction.reply({ content: 'Character game is draining for maintenance. No item was consumed.', flags: MessageFlags.Ephemeral });
+    return true;
+  }
   const invId = Number(invIdStr);
   const result = executeItemUseById(db, interaction.guildId, interaction.user.id, invId);
 

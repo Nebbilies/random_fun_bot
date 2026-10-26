@@ -7,7 +7,10 @@ import { formatNumber } from '../lib/formatNumber.js';
 
 export function removeSavedAliasSources(db, log = console.log) {
   const removed = db.prepare(`DELETE FROM tag_candidates
-    WHERE post_count = 0 AND EXISTS (
+    WHERE post_count = 0
+      AND NOT EXISTS (SELECT 1 FROM tag_decisions d
+        WHERE d.character_id = tag_candidates.character_id AND d.source != 'automatic')
+      AND EXISTS (
       SELECT 1 FROM tag_candidates canonical
       WHERE canonical.character_id = tag_candidates.character_id
         AND canonical.reason = 'Active alias from ' || tag_candidates.tag_name
@@ -35,7 +38,12 @@ export function approveSearchedByCount(db, log = console.log) {
     }));
     const verdict = chooseTagByCount(character, tags);
     if (!verdict) continue;
-    saveDecision(db, row.id, 'approve', verdict.tag, 'automatic');
+    const saved = transaction(db, () => {
+      if (db.prepare('SELECT 1 FROM tag_decisions WHERE character_id = ?').get(row.id)) return false;
+      saveDecision(db, row.id, 'approve', verdict.tag, 'automatic');
+      return true;
+    });
+    if (!saved) continue;
     log(`Character #${formatNumber(row.rank)}: ${row.name_full} - auto approved ${verdict.tag} (saved match).`);
     approved++;
   }
@@ -47,7 +55,9 @@ export async function refreshAliasCounts(db, api, log = console.log) {
   const aliases = db.prepare(`SELECT DISTINCT tag_name FROM tag_candidates
     WHERE reason LIKE 'Active alias from %' AND post_count = 0`).all();
   const update = db.prepare(`UPDATE tag_candidates SET post_count = ?
-    WHERE tag_name = ? AND reason LIKE 'Active alias from %' AND post_count = 0`);
+    WHERE tag_name = ? AND reason LIKE 'Active alias from %' AND post_count = 0
+      AND NOT EXISTS (SELECT 1 FROM tag_decisions d
+        WHERE d.character_id = tag_candidates.character_id AND d.source != 'automatic')`);
   let refreshed = 0;
   for (const { tag_name } of aliases) {
     const tag = await api.exactTag(tag_name);
@@ -60,7 +70,9 @@ export async function refreshAliasCounts(db, api, log = console.log) {
 }
 
 export async function matchTags({ db, api, limit = Infinity, log = console.log }) {
-  if (getMeta(db, 'import_phase') !== 'complete') throw new Error('Publish the AniList catalog before matching tags');
+  if (limit === 0) { log('Processed 0 characters.'); return; }
+  if (db.prepare('PRAGMA user_version').get().user_version !== 12
+    && getMeta(db, 'import_phase') !== 'complete') throw new Error('Publish the AniList catalog before matching tags');
   await refreshAliasCounts(db, api, log);
   removeSavedAliasSources(db, log);
   approveSearchedByCount(db, log);
@@ -79,7 +91,10 @@ export async function matchTags({ db, api, limit = Infinity, log = console.log }
     };
     const tags = await api.candidates(character);
     const verdict = chooseTag(character, tags);
-    transaction(db, () => {
+    const saved = transaction(db, () => {
+      const decision = db.prepare('SELECT source FROM tag_decisions WHERE character_id = ?').get(row.id);
+      if (decision && decision.source !== 'automatic') return false;
+      if (db.prepare('SELECT 1 FROM tag_match_progress WHERE character_id = ?').get(row.id)) return false;
       const insert = db.prepare(`INSERT OR REPLACE INTO tag_candidates
         (character_id, tag_name, post_count, reason) VALUES (?, ?, ?, ?)`);
       for (const tag of tags) insert.run(row.id, tag.name, tag.post_count,
@@ -87,7 +102,13 @@ export async function matchTags({ db, api, limit = Infinity, log = console.log }
       if (verdict.status === 'automatic') saveDecision(db, row.id, 'approve', verdict.tag, 'automatic');
       db.prepare('INSERT INTO tag_match_progress (character_id, matched_at) VALUES (?, ?)')
         .run(row.id, new Date().toISOString());
+      return true;
     });
+    processed++;
+    if (!saved) {
+      log(`Character #${formatNumber(row.rank)}: ${row.name_full} - already decided or matched; skipped.`);
+      continue;
+    }
     if (verdict.status === 'automatic') {
       log(`Character #${formatNumber(row.rank)}: ${row.name_full} - auto approved ${verdict.tag}.`);
     } else {
@@ -95,7 +116,6 @@ export async function matchTags({ db, api, limit = Infinity, log = console.log }
       const more = tags.length > 3 ? `, +${tags.length - 3} more` : '';
       log(`Character #${formatNumber(row.rank)}: ${row.name_full} - left for manual approval - tags: ${candidates}${more}.`);
     }
-    processed++;
     if (processed % 100 === 0) log(`Matched ${processed} characters this run; latest rank ${formatNumber(row.rank)}.`);
   }
   log(`Processed ${processed} characters. Remaining: ${db.prepare(`SELECT COUNT(*) AS n FROM characters c
@@ -109,7 +129,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     const arg = process.argv.find((item) => item.startsWith('--limit='));
     const limit = arg ? Number(arg.slice('--limit='.length)) : Infinity;
-    if (!(limit > 0)) throw new Error('--limit must be a positive number');
+    if (!(limit >= 0)) throw new Error('--limit must be a non-negative number');
     await matchTags({ db, api: new DanbooruApi({ db }), limit });
   } catch (error) {
     console.error(error);

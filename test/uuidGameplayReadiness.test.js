@@ -85,7 +85,12 @@ function interaction(value, customId = 'wish:choose') {
 }
 
 test('ID bridge accepts canonical UUID and legacy integers without treating source strings as catalog IDs', () => {
-  for (const id of [A, B, 1, Number.MAX_SAFE_INTEGER]) assert.equal(isValidCharacterId(id), true);
+  for (const id of [A, B]) assert.equal(isValidCharacterId(id), true);
+  const legacy = { prepare: () => ({ get: () => ({ user_version: 10 }) }) };
+  for (const id of [1, Number.MAX_SAFE_INTEGER]) {
+    assert.equal(isValidCharacterId(id), false);
+    assert.equal(isValidCharacterId(id, legacy), true);
+  }
   for (const id of [A.toUpperCase(), null, undefined, {}, [], 0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1,
     '11', 'anilist:11', ` ${A}`, A.replaceAll('-', ''), `${A}x`]) assert.equal(isValidCharacterId(id), false);
   const rows = [{ id: A, rank: 1, name_full: 'Shared' }];
@@ -223,9 +228,9 @@ test('portal decision/report routes accept opaque UUIDs and reject source-ID-lik
   assert.equal(db.prepare('SELECT character_id,outcome FROM character_tag_reports').get().outcome, 'corrected');
 });
 
-test('owned source paths document the temporary bridge and do not number-coerce select values', () => {
+test('owned source paths document the legacy-only bridge and do not number-coerce select values', () => {
   const lookup = readFileSync(new URL('../lib/gameCharacterLookup.js', import.meta.url), 'utf8');
-  assert.match(lookup, /Temporary pre-cutover bridge/);
+  assert.match(lookup, /explicit legacy database connection/);
   assert.match(lookup, /Source IDs are never resolved automatically/);
   for (const path of ['../commands/wish.js', '../lib/tradeRuntime.js']) {
     const source = readFileSync(new URL(path, import.meta.url), 'utf8');
