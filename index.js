@@ -14,10 +14,11 @@ import {createCatalogCache} from "./lib/catalogCache.js";
 import {isCatalogDraining, isNewGameActionCommand} from './lib/catalogMaintenance.js';
 import {assertCatalogRuntimeRestartReady} from './lib/catalogRuntimeRecovery.js';
 import {createCharacterImagePicker} from "./lib/characterImages.js";
-import {onRollReaction, onRollReport, recoverRollRuntime, recoverForcedEscapes} from "./lib/characterRollRuntime.js";
-import {onMysteryAnswer, onMysteryButton, cancelMysteryRuntime} from "./lib/mysteryRuntime.js";
+import {onRollReaction, onRollReport, recoverRollRuntime, recoverForcedEscapes, recoverOpenEscapes} from "./lib/characterRollRuntime.js";
+import {recoverPendingRollDeliveries} from './lib/rollDelivery.js';
+import {onMysteryAnswer, onMysteryButton, cancelMysteryRuntime, recoverMysteryRuntime} from "./lib/mysteryRuntime.js";
 import {onTradeAnswer} from "./lib/tradeRuntime.js";
-import {onVaultInteraction, recoverVaultRewards} from "./lib/vaultRuntime.js";
+import {onVaultInteraction, recoverVaultRewards, recoverVaultSessions} from "./lib/vaultRuntime.js";
 import {onItemActionInteraction, recoverItemActionRuntime} from "./lib/itemActionRuntime.js";
 import {onInventoryButton} from "./commands/inv.js";
 import {parseFranchiseCommand} from "./lib/franchiseModifiers.js";
@@ -49,8 +50,10 @@ export const yoshiko = {
 };
 cancelMysteryRuntime(client.catalogDb);
 recoverRollRuntime(client.catalogDb);
+let gameRuntimeReady = false;
 
 client.on(Events.MessageReactionAdd, (reaction, user) => {
+    if (!gameRuntimeReady) return;
     onRollReaction(yoshiko, reaction, user).catch((error) => console.error('Roll reaction failed:', error));
 });
 
@@ -64,15 +67,24 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
     yoshiko.client.user.setActivity("Se hoat dong khi thay 727");
     console.log("dmLam");
     await recoverItemActionRuntime(yoshiko.catalogDb, yoshiko.client);
+    await recoverPendingRollDeliveries(yoshiko.catalogDb, yoshiko.client);
     await recoverForcedEscapes(yoshiko.catalogDb, yoshiko.client);
+    await recoverOpenEscapes(yoshiko.catalogDb, yoshiko.client);
+    await recoverMysteryRuntime({ db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker });
+    await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
     await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
+    gameRuntimeReady = true;
     let vaultRecoveryRunning = false;
     const vaultRecovery = setInterval(async () => {
         if (vaultRecoveryRunning) return;
         vaultRecoveryRunning = true;
         try {
-            await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
+            await recoverPendingRollDeliveries(yoshiko.catalogDb, yoshiko.client);
             await recoverForcedEscapes(yoshiko.catalogDb, yoshiko.client);
+            await recoverOpenEscapes(yoshiko.catalogDb, yoshiko.client);
+            await recoverMysteryRuntime({ db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker });
+            await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
+            await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
         }
         catch (error) { console.error('Vault recovery failed:', error); }
         finally { vaultRecoveryRunning = false; }
@@ -159,6 +171,7 @@ const LANDMINE_CHANNELS = ["1058299699460833301"];
 let currentMessageCount = 0;
 
 yoshiko.client.on(Events.MessageCreate, async (message) => {
+    if (!gameRuntimeReady) return;
         if (message.author.bot) {
             return;
         }
@@ -275,6 +288,7 @@ for (const file of commandFiles) {
 }
 
 yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
+    if (!gameRuntimeReady) return;
     // Collector-only dialogs are process-local. The collector handles live ones;
     // after restart/cutover provide an explicit expired response, never replay.
     if (/^(?:char|wish|divorce|xfer):/.test(interaction.customId ?? '')) {

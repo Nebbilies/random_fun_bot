@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { openCatalog } from '../lib/catalogDb.js';
-import { reserveRoll, getMysterySession, publishMysteryIntro, openMysteryClaim, claimRoll } from '../lib/characterRolls.js';
+import { reserveRoll, getMysterySession, publishMysteryIntro, advanceMysterySession, openMysteryClaim, claimRoll } from '../lib/characterRolls.js';
 import { beginMysteryEvent, advanceMysteryEvent } from '../lib/mysteryCoordinator.js';
 import { adaptCharacterSnapshot } from '../lib/characterIdentitySnapshots.js';
 
@@ -18,7 +18,12 @@ for (const corruption of ['null','version','identity','rank','scalar']) {
     const {db,roll}=fixture(t);
     if(phase !== 'intro') publishMysteryIntro(db,roll.sessionId,'500',1100);
     if(['advance','claim','award'].includes(phase)) beginMysteryEvent(db,roll.sessionId,6100,()=>0);
-    if(['claim','award'].includes(phase)) db.prepare("UPDATE mystery_sessions SET state='countdown',winner_id='101',next_at=6200 WHERE id=?").run(roll.sessionId);
+    if(['claim','award'].includes(phase)) {
+      const running = getMysterySession(db, roll.sessionId);
+      assert.equal(advanceMysterySession(db, { sessionId: roll.sessionId,
+        expectedState: 'running', expectedStateJson: running.stateJson,
+        state: 'countdown', winnerId: '101', nextAt: 6200, now: 6101 }).status, 'advanced');
+    }
     if(phase==='award') assert.equal(openMysteryClaim(db,{sessionId:roll.sessionId,messageId:'501',now:6200}).status,'open');
     const session=getMysterySession(db,roll.sessionId); const state=JSON.parse(session.stateJson);
     if(corruption==='null') state.characterSnapshot=null;

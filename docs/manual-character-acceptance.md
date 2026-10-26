@@ -8,7 +8,9 @@ The implementation now has authoritative final-v12 create/open/offline-conversio
 
 ## Latest development verification
 
-- Full integrated suite: **845 passed, 0 failed**; `npm run typecheck:catalog` passed.
+- Latest full integrated suite including guarded conversion and durable runtime recovery: **916 passed, 0 failed**; `npm run typecheck:catalog` passed (`.restart-full-tests-final.log`, `.restart-typecheck-final.log`).
+- Independent recovery-safety re-review closed all four prior findings; 12 added tests cover corruption/unknown-state refusal, atomic Whistle recovery, duplicate Golden Hour costs and heart retry. Focused recovery suites passed 52/52.
+- Real Chrome replay passed again after runtime schema integration on both portal entrypoints (desktop admin/mobile-width moderator, `.restart-browser-tests.log`); width emulation is not physical-device acceptance.
 - Real Chrome replay on both portal entrypoints passed after browser generation fixes; uncaught browser exceptions are monitored and fail the harness.
 - Independent source-generation re-review found no blockers for the reported stale-response race; its focused 19 tests passed. Its asynchronous overlap tests use one connection; separate-process catalog-write coverage does not certify every importer interleaving.
 
@@ -56,14 +58,14 @@ Semantic ranks/names/memberships/ownership and query result counts matched; iden
 
 ## Runtime restart limitation
 
-Before enabling bot recovery writes, handlers, timers or Discord login, final-v12 startup invokes `assertCatalogRuntimeRestartReady`. It refuses unresolved pending deliveries, active mysteries/escapes, item/vault reconciliation or missing/corrupt active terms instead of silently cancelling spent costs. Published ordinary claims with durable valid terms can settle once after restart. Trades/gifts remain memory-only and disappear without ownership mutation. Discord delivery interrupted between send and database acknowledgement is not proven exactly-once.
+Before Discord login, final-v12 startup invokes the read-only `assertCatalogRuntimeRestartReady`. Valid supported paid states are recovery work rather than blockers: ordinary pending deliveries, bound escape timers, versioned mystery phases, durable unopened vault sessions, and existing item/reward reconciliation. Recovery runs after ready and before game ingress; periodic sweeps retry transient delivery failures. Missing/corrupt terms, unknown states and ambiguous historical outcomes remain named blockers instead of being silently cancelled. Published ordinary claims retain their canonical bindings and original deadlines. Trades/gifts remain memory-only and disappear without ownership mutation. Discord delivery interrupted between send and database acknowledgement is not proven exactly-once.
 
-This is tested **safe refusal/degradation**, not a complete durable timer/replay engine. It can require operator intervention following an unexpected crash; never bypass it to start with active blockers. New exact consumption/refund journaling and durable recovery would be needed for automatic resumption of unsupported states. No test or raw SQLite reopen claims otherwise.
+Recovery regressions use explicit file-backed final-schema creation and normal authoritative reopen, fake Discord/clocks, and interrupted paid workflows. They verify original terms/deadlines, exactly-once database costs and awards, repeated recovery, transport retry and conservative handling of unsupported state. This does not prove exactly-once external Discord delivery or recover memory-only trade/gift conversations. Ambiguous historical or corrupt rows can still require reviewed intervention; never bypass the guard.
 
 ## Remaining release gates
 
 - Complete broader real-browser adverse-flow and physical mobile acceptance as appropriate to deployment requirements.
-- Resolve or explicitly accept the fail-closed runtime availability limitation; do not claim complete automatic recovery.
+- Review the supported recovery matrix and remaining ambiguous-state/external-delivery limitations; do not claim universal automatic recovery.
 - Measure representative synthetic/hosting performance against an operator-approved latency budget; these local samples alone do not supply one.
 - Separate authorization to use a consistent production-derived backup, retaining an untouched recovery backup; rehearse conversion, normal restart, gameplay and actual restore.
 - Record supported historical variants, measured downtime/recovery window, independent final objections and explicit go/no-go.

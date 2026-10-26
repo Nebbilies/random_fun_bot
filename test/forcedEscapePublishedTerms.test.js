@@ -76,7 +76,7 @@ test('init12 manual generated Siren terms survive offline raw reopen, catalog ed
   assert.equal(snapshot.id, id);
   assert.equal(snapshot.likes_source, 'generated');
   assert.equal(snapshot.tag_name, 'original_tag');
-  const windows = JSON.stringify({ claimMs: 120000, escapeProtectionMs: 30000, escapePublicMs: 90000 });
+  const windows = JSON.stringify({ claimMs: 120000, escapeProtectionMs: 30000, escapeClaimMs: 90000 });
   db.prepare('UPDATE character_rolls SET rules_json=? WHERE id=?').run(windows, directive.pendingRollId);
   edit(db);
   db.close();

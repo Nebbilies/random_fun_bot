@@ -9,7 +9,7 @@ import { migrateCharacterIdentities } from '../lib/characterIdentityMigration.js
 import { initializeCatalogReleaseSchema } from '../lib/catalogReleaseSchema.js';
 import { captureCharacterSnapshot } from '../lib/characterSnapshot.js';
 import { reserveRoll, publishRoll, claimRoll, getRoll, loadRollCharacterSnapshot,
-  getMysterySession, openMysteryClaim } from '../lib/characterRolls.js';
+  getMysterySession, publishMysteryIntro, advanceMysterySession, openMysteryClaim } from '../lib/characterRolls.js';
 
 function fixture(version = 12, path = ':memory:') {
   const db = openCatalog(path);
@@ -151,8 +151,14 @@ test('mystery reserve captures once before event mutation and stores matching or
     assert.equal(roll.character.favourites, 1234);
     assert.deepEqual(loadRollCharacterSnapshot(db, roll.rollId), roll.character);
     assert.deepEqual(JSON.parse(getMysterySession(db, roll.sessionId).stateJson).characterSnapshot, roll.character);
-    db.prepare("UPDATE mystery_sessions SET state='countdown', winner_id='102', next_at=1100 WHERE id=?")
-      .run(roll.sessionId);
+    assert.equal(publishMysteryIntro(db, roll.sessionId, '499', 1000), true);
+    const intro = getMysterySession(db, roll.sessionId);
+    const running = advanceMysterySession(db, { sessionId: roll.sessionId,
+      expectedState: 'reserved', expectedStateJson: intro.stateJson, state: 'running', now: 6000 });
+    assert.equal(running.status, 'advanced');
+    assert.equal(advanceMysterySession(db, { sessionId: roll.sessionId,
+      expectedState: 'running', expectedStateJson: running.session.stateJson,
+      state: 'countdown', winnerId: '102', nextAt: 6100, now: 6001 }).status, 'advanced');
     const session = getMysterySession(db, roll.sessionId);
     for (const change of [{ rank: 2 }, { favourites: 1 }, { likes_source: 'generated' },
       { name_full: 'Forged name' }]) {
@@ -161,18 +167,18 @@ test('mystery reserve captures once before event mutation and stores matching or
       db.prepare('UPDATE mystery_sessions SET state_json=? WHERE id=?').run(JSON.stringify(state), roll.sessionId);
       const before = writes(db);
       assert.throws(() => loadRollCharacterSnapshot(db, roll.rollId), /snapshot/);
-      assert.throws(() => openMysteryClaim(db, { sessionId: roll.sessionId, messageId: '500', now: 1100 }), /snapshot/);
+      assert.throws(() => openMysteryClaim(db, { sessionId: roll.sessionId, messageId: '500', now: 6100 }), /snapshot/);
       assert.deepEqual(writes(db), before);
     }
     db.prepare('UPDATE mystery_sessions SET state_json=? WHERE id=?').run(session.stateJson, roll.sessionId);
-    assert.equal(openMysteryClaim(db, { sessionId: roll.sessionId, messageId: '500', now: 1100 }).status, 'open');
+    assert.equal(openMysteryClaim(db, { sessionId: roll.sessionId, messageId: '500', now: 6100 }).status, 'open');
     const state = JSON.parse(session.stateJson);
     state.characterSnapshot.favourites = 2;
     db.prepare('UPDATE mystery_sessions SET state_json=? WHERE id=?').run(JSON.stringify(state), roll.sessionId);
     const before = writes(db);
-    assert.throws(() => claim(db), /snapshot/);
+    assert.throws(() => claim(db, 6200), /snapshot/);
     assert.deepEqual(writes(db), before);
     db.prepare('UPDATE mystery_sessions SET state_json=? WHERE id=?').run(session.stateJson, roll.sessionId);
-    assert.equal(claim(db).status, 'married');
+    assert.equal(claim(db, 6200).status, 'married');
   } finally { db.close(); }
 });

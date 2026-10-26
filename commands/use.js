@@ -8,6 +8,7 @@ import { ACTION_ITEMS } from '../lib/itemActions.js';
 import { startItemAction } from '../lib/itemActionRuntime.js';
 import { startForcedEscape } from '../lib/characterRollRuntime.js';
 import { startVaultRoll } from '../lib/vaultRuntime.js';
+import { hasVaultSessions, reservePaidVaultSession, getVaultSessionByCommand } from '../lib/vaultSessions.js';
 import { getRollStatus } from '../lib/characterRolls.js';
 
 export function executeItemUseById(db, guildId, userId, invId, args = [], options = {}) {
@@ -49,13 +50,30 @@ function dispatchItemUse(db, guildId, userId, inventoryItem, args, options = {})
   }
 
   const execute = () => {
+    if (def.id === 'golden_hour' && options.commandMessageId && hasVaultSessions(db)) {
+      const existing = getVaultSessionByCommand(db, options.commandMessageId);
+      if (existing) {
+        if (existing.guildId !== guildId || existing.rollerId !== userId || existing.channelId !== options.channelId)
+          throw new Error('Vault command scope mismatch');
+        return { success: true, startVault: true, vaultCommandMessageId: existing.commandMessageId,
+          message: 'This Golden Hour invocation has already committed. Its original vault is preserved.' };
+      }
+    }
     const result = def.execute({ db, guildId, userId, args,
       channelId: options.channelId, now: options.now ?? Date.now(), random: options.random ?? Math.random });
     // The legacy dispatcher owns costs; transactional item actions own theirs.
     if (result.blocked || result.success) decrementItemCharge(db, inventoryItem.id);
+    if (result.success && result.startVault && hasVaultSessions(db)) {
+      if (!options.channelId) throw new Error('Durable vault use requires its original channel');
+      const session = reservePaidVaultSession(db, { guildId, userId, channelId: options.channelId,
+        commandMessageId: options.commandMessageId ?? `golden-hour:${inventoryItem.id}:${inventoryItem.charges}`,
+        remaining: getRollStatus(db, guildId, userId, options.now ?? Date.now()).remaining,
+        now: options.now ?? Date.now() });
+      result.vaultCommandMessageId = session.commandMessageId;
+    }
     return result;
   };
-  return ['master_key', 'pickpockets_hook', 'sirens_call'].includes(def.id) ? transaction(db, execute) : execute();
+  return ['master_key', 'pickpockets_hook', 'sirens_call', 'golden_hour'].includes(def.id) ? transaction(db, execute) : execute();
 }
 
 export async function run(ctx) {
@@ -72,7 +90,7 @@ export async function run(ctx) {
   const itemQuery = args[1];
   const itemArgs = args.slice(2);
 
-  const result = executeItemUse(db, guildId, userId, itemQuery, itemArgs, { ...ctx.options, channelId: message.channelId });
+  const result = executeItemUse(db, guildId, userId, itemQuery, itemArgs, { ...ctx.options, channelId: message.channelId, commandMessageId: message.id });
 
   if (result.pendingAction) {
     await startItemAction({ db, message, inventoryId: result.inventoryId, options: ctx.options ?? {} });
@@ -91,7 +109,7 @@ export async function run(ctx) {
   }
   if (result.success && result.startVault) {
     await startVaultRoll({ db, channel: message.channel, guildId, rollerId: userId,
-      remaining: getRollStatus(db, guildId, userId).remaining, commandMessageId: message.id });
+      remaining: getRollStatus(db, guildId, userId).remaining, commandMessageId: result.vaultCommandMessageId ?? message.id });
   }
 
   await message.reply(result.message);
