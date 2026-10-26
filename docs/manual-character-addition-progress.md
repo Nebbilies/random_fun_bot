@@ -12,11 +12,19 @@ This is a partial implementation, not rollout approval. The confirmed design and
 - Manual metadata validation (HTTPS portrait/reference URLs, explicit gender, nonempty franchise selection, normalized aliases). No manual editor/publication endpoint yet.
 - Offline UUID migration foundation and rollback-only rehearsal CLI. Explicit database path is mandatory; CLI rejects default `bot.sqlite`. It neither invokes network imports nor commits a migration.
 
+## Ordinary and forced-escape published terms follow-up
+
+- The explicitly gated v12 initializer adds nullable `character_rolls.character_snapshot_json` with JSON-object validation. No ordinary startup conversion or version-gate relaxation occurs. Rows predating capture remain NULL/legacy; their original terms cannot be reconstructed.
+- Ordinary reservations persist immutable identity/name/rank/likes/provenance/display terms; publication and awards validate present snapshots. Mystery roll and session snapshots must agree. Runtime revalidates after asynchronous image lookup before sending a public card.
+- Siren captures its effective target at item execution, before delayed delivery; forced delivery retains those terms across catalog edits and raw database reopen while checking current ownership/marriage and locks. Legacy NULL terms are captured at delivery where supported, not represented as recovered historical terms.
+- Escape updates validate durable terms before settlement/card edits. Synthetic tests cover generated labels, catalog edits during async delivery, malformed snapshots, identity/name mismatches, claim rollback, pending retries, raw reopen, and legacy no-column behavior. Runtime restart/resume remains unimplemented.
+- Independent review found pre-send validation and escape refresh gaps; both received focused regression coverage. Full regression: **702 passed, 0 failed**; catalog type check passed. Production access/rehearsal was not performed.
+
 ## Durable mystery terms and membership publication follow-up
 
 - Mystery reservation stores bounded, versioned published character terms (identity, rank, likes/provenance, name, portrait, anime text and relevant display fields). Event transitions preserve the original snapshot rather than replacing it with current catalog values. Legacy sessions without a snapshot retain explicit live-read fallback; a present invalid snapshot fails closed.
 - Intro publication, begin/advance, claim opening and final ownership award validate captured identity/rank consistency before mutation. Historical migration maps only the captured identity and preserves historical terms, with row/path diagnostics for malformed or inconsistent data.
-- Synthetic raw SQLite close/reopen tests establish persistence, **not runtime restart/resume**. Runtime timers remain in memory and restart cancellation is unchanged. Full ordinary-roll/forced-escape published-term persistence remains unfinished.
+- Synthetic raw SQLite close/reopen tests establish persistence, **not runtime restart/resume**. Runtime timers remain in memory and restart cancellation is unchanged. Ordinary and forced-escape persistence was subsequently added in the follow-up below.
 - Franchise publication retains direct-only automatic franchises. Merge transfers/deduplicates direct memberships and preserves destination curated metadata; source curated fields are discarded with the merged source, without automatic metadata merging. All franchise publication mutations advance typed revision; effective-membership changes also advance appearance revision, atomically with rollback/overflow checks.
 - Independent review uncovered scalar rank mismatch, mutable selector identity and missing lifecycle validation; corrective coverage adds 26 integrity cases. Latest full suite: **683 passed, 0 failed**, catalog type check passed. Synthetic databases only; no production conversion.
 
