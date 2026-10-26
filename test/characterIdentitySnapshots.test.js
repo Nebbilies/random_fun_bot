@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { adaptCharacterSnapshot } from '../lib/characterIdentitySnapshots.js';
+import { captureCharacterSnapshot } from '../lib/characterSnapshot.js';
 const mapping = new Map([[12, '00000000-0000-4000-8000-000000000012']]);
 const own = { characterId: 12, marriageId: 12, ownerId: '12', rank: 12, name: 'Historical 12' };
 function adapt(table, column, value, context = {}) {
@@ -106,6 +107,20 @@ for (const [table, column, value, context] of [
   ['item_action_costs', 'snapshot_json', { id: 12, item_id: 'hostage_note', characterId: 12 }, {}],
 ]) test(`unknown shape fails closed: ${table}.${column} ${JSON.stringify(value)}`, () => {
   assert.throws(() => adapt(table, column, value, context), new RegExp(`${table}\\[fixture\\]\\.${column}`));
+});
+
+test('published mystery terms migrate only their identity and preserve historical provenance', () => {
+  const characterSnapshot = captureCharacterSnapshot({ id: 12, name_full: 'Historical', rank: 7,
+    favourites: 123, likes_source: 'generated', anime_titles: '["Old show"]' });
+  const value = { gameConfig: {}, characterSnapshot };
+  const result = adapt('mystery_sessions', 'state_json', value, { event_id: 'doors', character_id: 12 });
+  assert.deepEqual(result.value.characterSnapshot, { ...characterSnapshot, id: mapping.get(12) });
+  assert.equal(result.references[0].id, 12);
+  assert.throws(() => adapt('mystery_sessions', 'state_json', value, { event_id: 'doors', character_id: 99 }), /snapshot\/session identity mismatch/);
+  for (const invalid of [null, { ...characterSnapshot, version: 2 }, { ...characterSnapshot, future: 12 },
+    { ...characterSnapshot, favourites: -1 }, { ...characterSnapshot, likes_source: 'unknown' }]) {
+    assert.throws(() => adapt('mystery_sessions', 'state_json', { characterSnapshot: invalid }, { event_id: 'doors' }), /invalid published character snapshot/);
+  }
 });
 
 test('malformed, invalid and unmapped references include row/path diagnostics', () => {

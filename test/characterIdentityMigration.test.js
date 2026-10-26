@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { openCatalog } from '../lib/catalogDb.js';
+import { captureCharacterSnapshot } from '../lib/characterSnapshot.js';
 import { CHARACTER_REFERENCES, inventoryCharacterIdentities, migrateCharacterIdentities,
   createIdentityMapping, STAGING_TABLES, RESET_META_KEYS } from '../lib/characterIdentityMigration.js';
 
@@ -55,6 +56,18 @@ function snapshot(db) {
     data: names.map(name => [name, db.prepare(`SELECT * FROM "${name}"`).all()]),
     version: db.prepare('PRAGMA user_version').get() };
 }
+
+test('migration retains published mystery terms while converting snapshot and session identities together', t => {
+  const { db } = fixture(t);
+  const captured = captureCharacterSnapshot({ id: 12, rank: 99, favourites: 999, likes_source: 'anilist', name_full: 'Published name' });
+  db.prepare("UPDATE mystery_sessions SET event_id='doors',rank_snapshot=99,state_json=? WHERE id=701")
+    .run(JSON.stringify({ characterSnapshot: captured }));
+  assert.deepEqual(inventoryCharacterIdentities(db).blockers, []);
+  migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 });
+  const session = db.prepare('SELECT character_id,state_json FROM mystery_sessions WHERE id=701').get();
+  assert.deepEqual(JSON.parse(session.state_json).characterSnapshot, { ...captured, id: session.character_id });
+  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+});
 
 test('preflight inventories all current legacy reference tables and retained identities', t => {
   const { db } = fixture(t);

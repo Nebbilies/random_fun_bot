@@ -12,6 +12,14 @@ This is a partial implementation, not rollout approval. The confirmed design and
 - Manual metadata validation (HTTPS portrait/reference URLs, explicit gender, nonempty franchise selection, normalized aliases). No manual editor/publication endpoint yet.
 - Offline UUID migration foundation and rollback-only rehearsal CLI. Explicit database path is mandatory; CLI rejects default `bot.sqlite`. It neither invokes network imports nor commits a migration.
 
+## Durable mystery terms and membership publication follow-up
+
+- Mystery reservation stores bounded, versioned published character terms (identity, rank, likes/provenance, name, portrait, anime text and relevant display fields). Event transitions preserve the original snapshot rather than replacing it with current catalog values. Legacy sessions without a snapshot retain explicit live-read fallback; a present invalid snapshot fails closed.
+- Intro publication, begin/advance, claim opening and final ownership award validate captured identity/rank consistency before mutation. Historical migration maps only the captured identity and preserves historical terms, with row/path diagnostics for malformed or inconsistent data.
+- Synthetic raw SQLite close/reopen tests establish persistence, **not runtime restart/resume**. Runtime timers remain in memory and restart cancellation is unchanged. Full ordinary-roll/forced-escape published-term persistence remains unfinished.
+- Franchise publication retains direct-only automatic franchises. Merge transfers/deduplicates direct memberships and preserves destination curated metadata; source curated fields are discarded with the merged source, without automatic metadata merging. All franchise publication mutations advance typed revision; effective-membership changes also advance appearance revision, atomically with rollback/overflow checks.
+- Independent review uncovered scalar rank mismatch, mutable selector identity and missing lifecycle validation; corrective coverage adds 26 integrity cases. Latest full suite: **683 passed, 0 failed**, catalog type check passed. Synthetic databases only; no production conversion.
+
 ## Additional partial release integration
 
 - Explicit synthetic v11→v12 extension initializer adds independent curated aliases, direct franchise memberships, a deduplicated read view, typed revisions, previews, audit and confirmation results. It validates existing data but does not replace inherited DDL or enable normal startup.
