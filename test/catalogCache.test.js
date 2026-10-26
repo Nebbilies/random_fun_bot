@@ -4,9 +4,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openCatalog } from '../lib/catalogDb.js';
-import { migrateCharacterIdentities } from '../lib/characterIdentityMigration.js';
-import { initializeCatalogReleaseSchema } from '../lib/catalogReleaseSchema.js';
+import { openCatalog, saveDecision } from '../lib/catalogDb.js';
+import { convertLegacyCatalogToFinal } from '../lib/characterIdentityMigration.js';
 import { createCatalogCache } from '../lib/catalogCache.js';
 
 test('search cache observes another connection revision and reloads both models coherently',t=>{
@@ -14,7 +13,7 @@ test('search cache observes another connection revision and reloads both models 
   const db=openCatalog(file); let writer;
   t.after(()=>{writer?.close();db.close();rmSync(dir,{recursive:true,force:true});});
   db.exec("INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,1,10,'Old'); INSERT INTO character_identities SELECT id,name_full,image_url FROM characters;");
-  migrateCharacterIdentities(db,{dryRun:false,targetVersion:11});initializeCatalogReleaseSchema(db);
+  convertLegacyCatalogToFinal(db,{dryRun:false});
   writer=new DatabaseSync(file); writer.exec('PRAGMA foreign_keys=ON');
   const cache=createCatalogCache(db),initial=cache.get();assert.equal(initial.characterIndex[0].name_full,'Old');
   assert.equal(cache.get(),initial);
@@ -22,6 +21,13 @@ test('search cache observes another connection revision and reloads both models 
   const next=cache.get();assert.notEqual(next,initial);assert.equal(next.characterIndex[0].name_full,'New');assert.equal(next.franchiseIndex[0].name,'New franchise');
   writer.exec("BEGIN IMMEDIATE; UPDATE characters SET name_full='Rolled back'; UPDATE catalog_state SET revision=revision+1; ROLLBACK;");
   assert.equal(cache.get(),next);
+  const id=writer.prepare('SELECT id FROM characters').get().id;
+  saveDecision(writer,id,'approve','new_tag','automatic');
+  assert.notEqual(cache.get(),next);
+  assert.equal(db.prepare('SELECT revision FROM catalog_state').get().revision,2);
+  writer.prepare('UPDATE catalog_state SET revision=?').run(Number.MAX_SAFE_INTEGER);
+  assert.throws(()=>saveDecision(writer,id,'no_match',null,'automatic'),/overflow/);
+  assert.equal(writer.prepare('SELECT tag_name FROM tag_decisions').get().tag_name,'new_tag');
 });
 
 test('empty legacy cache supports initial bootstrap and durable publication revision',t=>{

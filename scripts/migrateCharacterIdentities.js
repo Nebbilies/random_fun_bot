@@ -2,11 +2,11 @@ import { realpathSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { inventoryCharacterIdentities, migrateCharacterIdentities } from '../lib/characterIdentityMigration.js';
+import { inventoryCharacterIdentities, convertLegacyCatalogToFinal } from '../lib/characterIdentityMigration.js';
 
 const HELP = `Offline UUID migration foundation (rehearsal only; no production migration).
 Usage: node scripts/migrateCharacterIdentities.js --database /absolute/path/to/rehearsal.sqlite [--rehearse]
-Without --rehearse: read-only inventory/preflight. With --rehearse: conversion in a transaction, always ROLLBACK.
+Without --rehearse: read-only inventory/preflight. With --rehearse: authoritative v12 conversion and validation in a transaction, always ROLLBACK.
 No default database, no network calls, no commit option. Never point this tool at production.
 
 Before rehearsal:
@@ -45,7 +45,7 @@ export function main(args = process.argv.slice(2)) {
   }
   const db = new DatabaseSync(path, { readOnly: !rehearse });
   try {
-    const report = rehearse ? migrateCharacterIdentities(db) : inventoryCharacterIdentities(db);
+    const report = rehearse ? convertLegacyCatalogToFinal(db) : inventoryCharacterIdentities(db);
     console.log(JSON.stringify(report, null, 2));
     if (report.blockers?.length) process.exitCode = 1;
   } finally { db.close(); }
