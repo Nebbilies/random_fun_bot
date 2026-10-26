@@ -21,6 +21,7 @@ function fixture(version = 12) {
   if (version === 12) initializeCatalogReleaseSchema(db);
   setMeta(db, 'published_at', 'synthetic-source');
   setMeta(db, 'franchise_import_source_published_at', 'synthetic-source');
+  if (version === 12) setMeta(db, 'franchise_import_source_token', 'source:0');
   return db;
 }
 const state = db => ({ ...db.prepare('SELECT * FROM catalog_state').get() });
@@ -55,7 +56,7 @@ test('publication retains automatic direct-only franchises and characters but pr
     assert.deepEqual(db.prepare('SELECT * FROM characters ORDER BY rank').all(), before);
     assert.deepEqual(db.prepare('SELECT franchise_id FROM effective_character_franchises WHERE character_id=?')
       .all(created.characterId).map(row => row.franchise_id), [2]);
-    assert.deepEqual(state(db), { singleton: 1, revision: 2, source_revision: 0, appearance_revision: 1 });
+    assert.deepEqual(state(db), { singleton: 1, revision: 2, source_revision: 0, appearance_revision: 2 });
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
   } finally { db.close(); }
 });

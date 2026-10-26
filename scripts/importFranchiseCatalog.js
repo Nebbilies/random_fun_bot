@@ -4,6 +4,8 @@ import { AniListCatalogApi } from '../lib/anilistCatalogApi.js';
 import { getMeta, openCatalog, setMeta, transaction } from '../lib/catalogDb.js';
 import { isFranchiseRelation, publishFranchiseCatalog, stageFranchiseBatch } from '../lib/franchiseCatalog.js';
 
+import { characterAppearanceSourceToken } from '../lib/catalogFreshness.js';
+
 const PAGE_LIMIT = 200;
 const BATCH_SIZE = 25;
 function stageAnimeIds(db) {
@@ -68,18 +70,20 @@ export async function runFranchiseImport({ db, api, refresh = false, batchSize =
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100) throw new Error('Invalid franchise batch size');
   if (getMeta(db, 'import_phase') !== 'complete') throw new Error('Publish the character catalog before importing anime franchises');
   const publishedAt = getMeta(db, 'published_at');
+  const sourceToken = characterAppearanceSourceToken(db);
   const phase = getMeta(db, 'franchise_import_phase');
-  if (phase === 'complete' && getMeta(db, 'franchise_source_published_at') === publishedAt && !refresh) {
+  if (phase === 'complete' && (getMeta(db, 'franchise_source_token') ?? getMeta(db, 'franchise_source_published_at')) === sourceToken && !refresh) {
     log('Franchise catalog already complete. Use --refresh after a character catalog refresh.');
     return;
   }
-  if (phase === 'running' && getMeta(db, 'franchise_import_source_published_at') !== publishedAt)
+  if (phase === 'running' && (getMeta(db, 'franchise_import_source_token') ?? getMeta(db, 'franchise_import_source_published_at')) !== sourceToken)
     throw new Error('Character catalog changed during franchise import; restart with --refresh');
   if (phase !== 'running' || refresh) {
     transaction(db, () => {
       db.exec('DELETE FROM stage_anime; DELETE FROM stage_character_anime; DELETE FROM stage_anime_relations;');
       setMeta(db, 'franchise_character_cursor', 0);
       setMeta(db, 'franchise_import_source_published_at', publishedAt);
+      setMeta(db, 'franchise_import_source_token', sourceToken);
       setMeta(db, 'franchise_import_phase', 'running');
     });
   }

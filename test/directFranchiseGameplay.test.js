@@ -91,7 +91,7 @@ for (const mode of ['legacy', 'migrated', 'release']) {
   });
 }
 
-test('release covers skip unsafe anime URLs, prefer valid anime, then curated; freshness gate stays unchanged', (t) => {
+test('release covers skip unsafe URLs; relevant source coverage ignores metadata timestamps', (t) => {
   const { db } = fixture(t, 'release');
   db.exec(`UPDATE franchises SET curated_cover_url = 'https://example.com/curated.jpg' WHERE id = 10`);
   assert.equal(loadFranchiseCover(db, 10), 'https://example.com/anime.jpg');
@@ -108,7 +108,11 @@ test('release covers skip unsafe anime URLs, prefer valid anime, then curated; f
   setMeta(db, 'published_at', 'new');
   setMeta(db, 'franchise_source_published_at', 'old');
   assert.equal(isFranchiseCatalogCurrent(db), false);
-  setMeta(db, 'franchise_source_published_at', 'new');
+  setMeta(db, 'franchise_source_token', 'source:0');
+  assert.equal(isFranchiseCatalogCurrent(db), true);
+  db.exec('UPDATE catalog_state SET source_revision=1');
+  assert.equal(isFranchiseCatalogCurrent(db), false);
+  db.exec('DELETE FROM character_sources');
   assert.equal(isFranchiseCatalogCurrent(db), true);
 });
 

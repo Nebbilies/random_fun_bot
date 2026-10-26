@@ -10,7 +10,8 @@ import {BirthdayStore} from "./lib/birthdays.js";
 import {startBirthdayScheduler} from "./lib/birthdayScheduler.js";
 import {openCatalog} from "./lib/catalogDb.js";
 import {getGuildPrefix} from "./lib/guildPrefix.js";
-import {loadCharacterIndex} from "./lib/gameCharacterLookup.js";
+import {createCatalogCache} from "./lib/catalogCache.js";
+import {isCatalogDraining, isNewGameActionCommand} from './lib/catalogMaintenance.js';
 import {createCharacterImagePicker} from "./lib/characterImages.js";
 import {onRollReaction, onRollReport, recoverRollRuntime, recoverForcedEscapes} from "./lib/characterRollRuntime.js";
 import {onMysteryAnswer, onMysteryButton, cancelMysteryRuntime} from "./lib/mysteryRuntime.js";
@@ -28,13 +29,15 @@ const intents = [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, Gat
 const client = new Client({ intents, partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
 client.cooldowns = new Collection();
 client.catalogDb = openCatalog();
+const catalogCache = createCatalogCache(client.catalogDb);
 
 export const yoshiko = {
     client: client,
     config,
     cooldowns: client.cooldowns,
     catalogDb: client.catalogDb,
-    characterIndex: loadCharacterIndex(client.catalogDb),
+    get characterIndex() { return catalogCache.get().characterIndex; },
+    get franchiseIndex() { return catalogCache.get().franchiseIndex; },
     imagePicker: createCharacterImagePicker(),
     vaultEnabled: process.env.VAULT_ROLLS_DISABLED !== '1',
 };
@@ -164,6 +167,10 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const franchiseModifiers = parseFranchiseCommand(gameCommand);
         if (isMarriage || franchiseModifiers || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
             args[0] = gameCommand;
+            if (isCatalogDraining(client.catalogDb) && isNewGameActionCommand(gameCommand)) {
+                await message.reply('Character game is draining for maintenance. Existing actions may finish; new actions are paused.').catch(console.error);
+                return;
+            }
             try {
                 const commandModule = isMarriage ? './commands/mm.js'
                     : franchiseModifiers ? './commands/ima.js' : `./commands/${gameCommand}.js`;

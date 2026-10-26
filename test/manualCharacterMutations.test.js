@@ -112,7 +112,7 @@ test('manual create stores full metadata, independent aliases/direct memberships
     assert.deepEqual(after.sources, []);
     assert.equal(after.duplicateOverrideReason, null);
     assert.deepEqual({ ...db.prepare('SELECT * FROM catalog_state').get() },
-      { singleton: 1, revision: 1, source_revision: 0, appearance_revision: 0 });
+      { singleton: 1, revision: 1, source_revision: 0, appearance_revision: 1 });
     assert.equal(db.prepare("SELECT value FROM catalog_meta WHERE key='catalog_revision'").get().value, '1');
     assert.equal(db.prepare("SELECT value FROM catalog_meta WHERE key='published_at'").get().value, new Date(1001).toISOString());
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
