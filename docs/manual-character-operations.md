@@ -24,6 +24,12 @@ The drain CLI uses an explicit existing path; it does not select the default pro
 - Independently restore another disposable environment from the untouched backup using the pre-conversion application version. Verify ownership, history, claims and portal permissions. A successful conversion is not a successful recovery test.
 - Establish a maintenance window from measured conversion/restart/recovery times and deployment requirements, with an explicit buffer. Record a go/no-go decision; never use a guessed downtime promise.
 
+## Final-v12 restart preflight
+
+The bot invokes `assertCatalogRuntimeRestartReady` before enabling recovery writes, timers, handlers or Discord login. Pending/ambiguous deliveries, active mysteries or escapes, and unreconciled item/vault states produce named table/row blockers. This protects ownership and spent costs; it is not an automatic replay/refund implementation. Do not delete rows, disable this guard, or mark actions complete to make startup pass. Preserve the database and obtain a reviewed reconciliation/recovery procedure for the listed states. A clean drain before a planned restart avoids these blockers. A crash can still require intervention.
+
+Published ordinary claims with valid durable terms can be handled after restart. Memory-only trade/gift dialogs are abandoned without ownership transfer; old inventory controls expire at cutover, and collector-only dialogs receive an expired response. No exactly-once guarantee is claimed for a crash between Discord send and message-id persistence.
+
 ## Failure and recovery
 
 If conversion fails, preserve the error and row/path diagnostics; verify transaction rollback and stop. Do not manually patch unidentified historical references or silently drop rows. Keep the working copy for diagnosis and the untouched backup unchanged.

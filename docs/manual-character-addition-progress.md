@@ -2,7 +2,13 @@
 
 This is a partial implementation, not rollout approval. The confirmed design and plan remain authoritative. No production database has been opened or migrated.
 
-## Implemented foundations
+## Integrated completion follow-up
+
+The earlier sections below describe historical checkpoints and are superseded where noted by `manual-character-acceptance.md`. Final-v12 authoritative creation, normal writable/read-only opening and explicit offline conversion are now implemented without silent legacy conversion. Shared audited edit/reposition/source/tag/franchise services, both authenticated portal workflows, revision-coherent caches, source-bound staging, manual-only tag tools and persisted maintenance gating are implemented. Final runtime APIs restrict numeric character IDs to legacy connections. Real Chrome basic desktop/mobile-width flows pass on both portal entrypoints.
+
+Final bot startup now refuses unsupported active recovery states before existing cancellation/retry code can lose spent costs. This is safe degradation, **not complete timer/replay recovery**. The remaining acceptance/authorization gates and measured synthetic performance are recorded in `manual-character-acceptance.md`; operational procedure is in `manual-character-operations.md`. Production approval is still withheld.
+
+## Implemented foundations (historical checkpoint)
 
 - Full reference inventory: `manual-character-reference-inventory.md`.
 - Shared portal authentication for both server entry points, explicit environment accounts, role enforcement, sessions, CSRF, throttling, login/logout UI, password hash utility. See `portal-authentication.md` before restarting the portal: credentials are now mandatory.
