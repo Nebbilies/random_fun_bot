@@ -67,12 +67,14 @@ function actionFixture(db, kind) {
     inventoryId: item.id, selections: { own: choices[0], targets: kind === 'grand_masquerade' ? choices.slice(1) : [choices[1]] }, now });
   return { action, choices, item, request: { actionId: action.id, guildId: '1', actorId: '101', now: now + 1, random: () => 0 } };
 }
-for (const kind of ['heart_for_a_heart', 'grand_masquerade']) test(`${kind} live rank refusal cancels durably without cost or revival`, t => {
+for (const kind of ['heart_for_a_heart', 'grand_masquerade']) test(`${kind} live eligibility refusal cancels durably without cost or revival`, t => {
   const db = fixture(t);
   const { action, choices, item, request } = actionFixture(db, kind);
   const inventory = getInventory(db, '1', '101');
-  // Simulate a catalog re-ranking after the confirmation prompt was published.
-  db.prepare('UPDATE characters SET rank=10000 WHERE id=?').run(kind === 'heart_for_a_heart' ? ids[0] : ids[1]);
+  // Heart retains rank bounds; upstream Masquerade intentionally removed them.
+  // A live ownership change must still refuse the stale Masquerade selection.
+  if (kind === 'heart_for_a_heart') db.prepare('UPDATE characters SET rank=10000 WHERE id=?').run(ids[0]);
+  else db.prepare('UPDATE marriages SET owner_id=? WHERE id=?').run('999', choices[1].marriageId);
   const result = activateItemAction(db, request);
   assert.equal(result.status, 'invalid');
   const stored = getItemAction(db, action.id);
@@ -81,6 +83,7 @@ for (const kind of ['heart_for_a_heart', 'grand_masquerade']) test(`${kind} live
   assert.equal(stored.result.noCost, true);
   assert.deepEqual(getInventory(db, '1', '101'), inventory);
   ids.forEach((id, i) => db.prepare('UPDATE characters SET rank=? WHERE id=?').run(i + 1, id));
+  if (kind === 'grand_masquerade') db.prepare('UPDATE marriages SET owner_id=? WHERE id=?').run(choices[1].ownerId, choices[1].marriageId);
   assert.equal(activateItemAction(db, request).status, 'canceled');
   choices.forEach(row => assert.equal(getMarriage(db, '1', row.characterId).ownerId, row.ownerId));
   assert.ok(getInventory(db, '1', '101').some(row => row.id === item.id));

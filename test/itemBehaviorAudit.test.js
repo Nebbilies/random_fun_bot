@@ -13,7 +13,7 @@ import {
 } from '../lib/characterRolls.js';
 import { getMarriage, marryCharacter } from '../lib/characterMarriage.js';
 import { beginMysteryEvent, reserveMysteryAwareRoll } from '../lib/mysteryCoordinator.js';
-import { startMysteryRoll } from '../lib/mysteryRuntime.js';
+import { onMysteryButton, startMysteryRoll } from '../lib/mysteryRuntime.js';
 import { runRoll } from '../lib/characterRollRuntime.js';
 
 const start = Date.parse('2026-10-18T01:00:00Z');
@@ -115,6 +115,20 @@ async function startMysteryRuntime(db, runtime, { id = '800' } = {}) {
   runtime.clockTime.value = start + 5_001;
   await runtime.timers[0]();
   return reservation;
+}
+
+async function clickBinoculars(db, runtime, reservation, overrides = {}) {
+  const replies = [];
+  const promptIndex = runtime.sent.findIndex((payload) => payload.components?.some((row) =>
+    JSON.stringify(row).includes(':binoculars')));
+  assert.ok(promptIndex >= 0, 'eligible roller is offered a Binoculars button');
+  await onMysteryButton(db, {
+    isButton: () => true, customId: `mystery:${reservation.sessionId}:binoculars`,
+    guildId: '1', channelId: '10', user: { id: '101' },
+    message: { id: String(701 + promptIndex) },
+    deferReply: async () => {}, editReply: async (text) => replies.push(text), ...overrides,
+  });
+  return replies.join('\n');
 }
 
 function chatFixture(db, authorId = '202') {
@@ -372,17 +386,45 @@ test('Hourglass of Haste and Crown of the Sovereign keep working', (t) => {
     now: start }).status, 'married');
 });
 
-test('Binoculars is consumed by the mystery runtime that starts the minigame', async (t) => {
-  // The full production path: the runtime owns the timer that starts the minigame,
-  // so a charge spent only by the coordinator would still look unspent to the user.
+test('Binoculars is optional and consumed only once after the roller clicks', async (t) => {
   const db = fixture(t);
   grant(db, 'binoculars');
   const runtime = mysteryRuntimeFixture();
-  await startMysteryRuntime(db, runtime);
+  const reservation = await startMysteryRuntime(db, runtime);
+  assert.equal(runtime.dms.length, 0, 'starting an event must not reveal the answer');
+  assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 1,
+    'ignoring the button preserves the item');
+  assert.match(await clickBinoculars(db, runtime, reservation, { user: { id: '202' } }), /Only the roller/);
+  assert.match(await clickBinoculars(db, runtime, reservation, { channelId: '11' }), /no longer available/);
+  assert.match(await clickBinoculars(db, runtime, reservation, { message: { id: '999' } }), /no longer available/);
+  assert.equal(runtime.dms.length, 0);
+  await Promise.all([clickBinoculars(db, runtime, reservation), clickBinoculars(db, runtime, reservation)]);
+  assert.equal(runtime.dms.length, 1, 'duplicate clicks must not reveal or spend twice');
   assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 0,
     'the Binoculars must leave the inventory once the answer is delivered');
   assert.ok(runtime.dms.some((payload) => JSON.stringify(payload).includes('Binoculars')),
     'the Binoculars must reveal the answer to the roller');
+});
+
+test('Binoculars rejects expired events without revealing or spending', async (t) => {
+  const db = fixture(t);
+  grant(db, 'binoculars');
+  const runtime = mysteryRuntimeFixture();
+  const reservation = await startMysteryRuntime(db, runtime);
+  runtime.clockTime.value += 180_000;
+  assert.match(await clickBinoculars(db, runtime, reservation), /no longer available/);
+  assert.equal(runtime.dms.length, 0);
+  assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 1);
+});
+
+test('Binoculars rechecks inventory when the button is clicked', async (t) => {
+  const db = fixture(t);
+  grant(db, 'binoculars');
+  const runtime = mysteryRuntimeFixture();
+  const reservation = await startMysteryRuntime(db, runtime);
+  db.prepare("DELETE FROM user_inventory WHERE item_id = 'binoculars'").run();
+  assert.match(await clickBinoculars(db, runtime, reservation), /no Binoculars available/);
+  assert.equal(runtime.dms.length, 0);
 });
 
 test('the Binoculars answer for clue_reveal only ever reaches the roller in DMs', async (t) => {
@@ -391,6 +433,7 @@ test('the Binoculars answer for clue_reveal only ever reaches the roller in DMs'
   const runtime = mysteryRuntimeFixture();
   const reservation = await startMysteryRuntime(db, runtime);
   assert.equal(reservation.eventId, 'clue_reveal');
+  await clickBinoculars(db, runtime, reservation);
 
   const channelText = runtime.sent.map((payload) => JSON.stringify(payload)).join('\n');
   assert.ok(!channelText.includes('Star Chronicle'),
@@ -405,6 +448,7 @@ test('a Binoculars answer that cannot be delivered privately stays out of the ch
   const runtime = mysteryRuntimeFixture({ dmFails: true });
   const reservation = await startMysteryRuntime(db, runtime);
   assert.equal(reservation.eventId, 'clue_reveal');
+  assert.match(await clickBinoculars(db, runtime, reservation), /no charge was spent/);
 
   const channelText = runtime.sent.map((payload) => JSON.stringify(payload)).join('\n');
   assert.ok(!channelText.includes('Star Chronicle'),
@@ -413,4 +457,11 @@ test('a Binoculars answer that cannot be delivered privately stays out of the ch
     'a failed delivery must not publish the reveal at all');
   assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 1,
     'the charge must not be spent when the answer could not be delivered privately');
+  runtime.client.users.fetch = async (id) => ({ id, send: async (payload) => {
+    runtime.dms.push(payload);
+    return {};
+  } });
+  assert.match(await clickBinoculars(db, runtime, reservation), /One charge was spent/);
+  assert.equal(runtime.dms.length, 1, 'failed delivery can be retried after enabling DMs');
+  assert.equal(getInventory(db, '1', '101').filter((row) => row.item_id === 'binoculars').length, 0);
 });

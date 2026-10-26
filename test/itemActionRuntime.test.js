@@ -56,6 +56,20 @@ async function nominate(f, action, own, target) {
   assert.equal(updateItemSelection(f.db, action.id, '1', '101', selections), true);
 }
 
+test('Grand Masquerade use prompt explains rank constraint and lasts 180 seconds', async (t) => {
+  const f = fixture(t);
+  const action = await launch(f, 'grand_masquerade');
+  assert.equal(action.expires_at - action.created_at, 180_000);
+  const text = JSON.stringify(components(f.sent[0]));
+  assert.match(text, /Rank constraint/);
+  assert.match(text, /0\.4×/);
+  assert.match(text, /rounded up/);
+  assert.match(text, /no upper limit/);
+  assert.match(text, /top 100, any top-100 target/);
+  const other = await launch(f, 'severed_fate');
+  assert.equal(other.expires_at - other.created_at, 60_000);
+});
+
 test('Kaimetsu warns about all harems and confirms without character selection', async (t) => {
   const f = fixture(t);
   marry(f, 1, '101'); marry(f, 2, '101');
