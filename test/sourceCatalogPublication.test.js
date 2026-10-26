@@ -7,6 +7,7 @@ import { openCatalog, publishCatalog } from '../lib/catalogDb.js';
 import { migrateCharacterIdentities } from '../lib/characterIdentityMigration.js';
 import { createCharacterId } from '../lib/characterIdentity.js';
 import { initializeCatalogReleaseSchema } from '../lib/catalogReleaseSchema.js';
+import { bindSourceCatalogStaging } from '../lib/sourceCatalogPublication.js';
 import { hydrateOneBatch } from '../scripts/importCharacterCatalog.js';
 import { runFranchiseImport } from '../scripts/importFranchiseCatalog.js';
 
@@ -38,7 +39,15 @@ test('UUID publication reuses source identities, preserves ties and cascaded his
 test('release publication advances typed revision atomically with legacy revision metadata', (t) => {
   const db = fixture(t);
   initializeCatalogReleaseSchema(db);
-  db.exec("INSERT INTO stage_characters(id,favourites,name_full) VALUES(20,101,'Refresh')");
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    bindSourceCatalogStaging(db);
+    db.exec("INSERT INTO stage_characters(id,favourites,name_full) VALUES(20,101,'Refresh')");
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
   publishCatalog(db);
   assert.equal(db.prepare('SELECT revision FROM catalog_state').get().revision, 1);
   assert.equal(db.prepare("SELECT value FROM catalog_meta WHERE key='catalog_revision'").get().value, '1');

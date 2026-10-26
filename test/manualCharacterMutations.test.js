@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openCatalog } from '../lib/catalogDb.js';
 import { migrateCharacterIdentities } from '../lib/characterIdentityMigration.js';
 import { initializeCatalogReleaseSchema } from '../lib/catalogReleaseSchema.js';
-import { publishSourceCatalog } from '../lib/sourceCatalogPublication.js';
+import { bindSourceCatalogStaging, publishSourceCatalog } from '../lib/sourceCatalogPublication.js';
 import { findCharacters, loadCharacterIndex } from '../lib/gameCharacterLookup.js';
 import { isCharacterId } from '../lib/characterIdentity.js';
 import { previewManualCharacterCreation as preview, confirmManualCharacterCreation as confirm,
@@ -221,8 +221,16 @@ test('each revision dimension, an actual source publication and a second manual 
       const p = makePreview(db);
       if (revision === 'import') {
         db.exec('BEGIN IMMEDIATE');
-        publishSourceCatalog(db);
-        db.exec('COMMIT');
+        try {
+          bindSourceCatalogStaging(db);
+          // A bound scan refreshes an existing source, rather than publishing empty staging.
+          db.exec("INSERT INTO stage_characters(id,favourites,name_full) VALUES(1,101,'Refreshed imported 1')");
+          publishSourceCatalog(db);
+          db.exec('COMMIT');
+        } catch (error) {
+          db.exec('ROLLBACK');
+          throw error;
+        }
       } else if (revision === 'manual') {
         commit(db, makePreview(db, { input: input({ name: 'Another' }) }), { idempotencyKey: 'another' });
       } else db.exec(`UPDATE catalog_state SET ${revision}=${revision}+1`);
