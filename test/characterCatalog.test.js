@@ -205,7 +205,7 @@ test('localhost review exposes candidates and saves a validated manual choice', 
     const response = await fetch(`${base}/api/decision`, { method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ characterId: 1, status: 'approve', tag: 'Example (Anime)' }) });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, await response.text());
     assert.equal(db.prepare('SELECT source FROM tag_decisions WHERE character_id = 1').get().source, 'manual');
     assert.equal(db.prepare('SELECT tag_name FROM tag_decisions WHERE character_id = 1').get().tag_name, 'example_(anime)');
   } finally {
@@ -238,7 +238,8 @@ test('reported tags deduplicate viewers, resolve through review, and retain hist
     assert.equal(first.decision.tag_name, 'old_tag');
     assert.equal(first.reportCount, 2);
     assert.equal((await post({ characterId: 1, outcome: 'corrected', tag: 'invalid' })).status, 400);
-    assert.equal((await post({ characterId: 1, outcome: 'corrected', tag: 'correct_tag' })).status, 200);
+    const correction = await post({ characterId: 1, outcome: 'corrected', tag: 'correct_tag' });
+    assert.equal(correction.status, 200, await correction.text());
     assert.deepEqual({ ...db.prepare('SELECT tag_name, source FROM tag_decisions WHERE character_id = 1').get() },
       { tag_name: 'correct_tag', source: 'manual' });
     assert.equal((await (await fetch(`${base}/api/reports/next`)).json()).name, 'Missing Tag');

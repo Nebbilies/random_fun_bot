@@ -1,4 +1,6 @@
 import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
+import { previewCatalogMutation, confirmCatalogMutation } from '../lib/catalogMutations.js';
 import { isValidCharacterId } from '../lib/gameCharacterLookup.js';
 import { createPortalAuth, loadPortalEnvironment } from './portalAuth.js';
 import { readFileSync } from 'node:fs';
@@ -12,6 +14,7 @@ import { addGlobalRolls, resetGlobalClaims } from '../lib/characterRolls.js';
 import { getGuildRates, setGuildRates, isValidRate } from '../lib/guildRates.js';
 import { serveAssets } from './serveAssets.js';
 import { handleConfigRequest } from './reviewConfig.js';
+import { handleCatalogRequest } from './reviewCatalog.js';
 import { getResolvedItemDefinitions, getResolvedItemDefinition } from '../lib/itemRoster.js';
 import { addItemToInventory } from '../lib/itemStorage.js';
 
@@ -76,9 +79,44 @@ function safePreviewUrl(value) {
   } catch { return null; }
 }
 
-export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImpl = fetch, host = '127.0.0.1', publicHost = host, port = 8787, authConfig }) {
+export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImpl = fetch, host = '127.0.0.1', publicHost = host, port = 8787, authConfig, sourcePermissionConfirmed = false, verifySource }) {
   const auth = createPortalAuth(authConfig);
-  if (getMeta(db, 'import_phase') !== 'complete') throw new Error('Publish the catalog before reviewing tags');
+  const isV12 = db.prepare('PRAGMA user_version').get().user_version === 12;
+  // Only trusted exact-tag verification supplies evidence to the shared service.
+  async function verifiedTag(tag) {
+    const canonical = await api.exactTag(tag);
+    if (!canonical || canonical.category !== 4 || canonical.is_deprecated
+      || typeof canonical.name !== 'string' || !/^[a-z0-9_():.!-]{2,120}$/.test(canonical.name)) return null;
+    const params = new URLSearchParams({ 'search[name]': canonical.name, 'search[category]': '4', limit: '5' });
+    db.prepare('INSERT OR REPLACE INTO tag_search_cache (query, response, fetched_at) VALUES (?, ?, ?)')
+      .run(`/tags.json?${params}`, JSON.stringify([canonical]), new Date().toISOString());
+    return canonical;
+  }
+  function publishTag(request, characterId, status, tagName, outcome) {
+    const account = request.portalAccount;
+    if (!account || !['admin', 'moderator'].includes(account.role)) throw new Error('Catalog access required');
+    // Savepoints compose the services' transactions with atomic report resolution.
+    const nested = new Proxy(db, { get(target, key) {
+      if (key === 'exec') return sql => target.exec(sql === 'BEGIN IMMEDIATE' ? 'SAVEPOINT queue_mutation'
+        : sql === 'COMMIT' ? 'RELEASE queue_mutation'
+          : sql === 'ROLLBACK' ? 'ROLLBACK TO queue_mutation; RELEASE queue_mutation' : sql);
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    return transaction(db, () => {
+      if (outcome && !db.prepare('SELECT 1 FROM character_tag_reports WHERE character_id=? AND resolved_at IS NULL').get(characterId))
+        throw new Error('No open reports for this character');
+      const attribution = { account: account.username, role: account.role };
+      const preview = previewCatalogMutation(nested, { ...attribution, operation: 'tag',
+        input: { characterId, status, ...(status === 'approve' ? { tagName } : {}) } });
+      const result = confirmCatalogMutation(nested, { ...attribution, previewId: preview.previewId,
+        payloadHash: preview.payloadHash, idempotencyKey: randomUUID() });
+      if (outcome) resolveCharacterTagReports(db, characterId, outcome);
+      return result;
+    });
+  }
+  if (db.prepare('PRAGMA user_version').get().user_version !== 12 && getMeta(db, 'import_phase') !== 'complete')
+    throw new Error('Publish the catalog before reviewing tags');
   if (!publicHost || publicHost === '0.0.0.0') throw new Error('Set a public host when listening on all interfaces');
   const server = createServer(async (request, response) => {
     try {
@@ -97,6 +135,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
       requestOrigin = auth.origin(requestOrigin);
       const url = new URL(request.url, requestOrigin);
       if (await auth.handle(request, response, url, requestOrigin)) return;
+      if (await handleCatalogRequest({ db, request, response, url, origin: requestOrigin, sourcePermissionConfirmed, verifySource, verifyTag: tag => verifiedTag(tag) })) return;
       if (serveAssets(request, response, url)) return;
       if (await handleConfigRequest({ db, request, response, url, origin: requestOrigin })) return;
       if (await handleFranchiseReviewRequest({ db, request, response, url, origin: requestOrigin })) return;
@@ -247,19 +286,20 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
         if (!request.headers['content-type']?.startsWith('application/json'))
           return json(response, 415, { error: 'JSON required' });
         const { characterId, status, tag } = await readJsonBody(request);
-        // Temporary UUID/legacy bridge. Query only the exact catalog ID, never a source ID.
-        if (!isValidCharacterId(characterId) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
+        // Schema-bound UUID/legacy validation; never resolve a source ID.
+        if (!isValidCharacterId(characterId, db) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
           return json(response, 400, { error: 'Unknown character' });
         if (!['approve', 'no_match'].includes(status)) return json(response, 400, { error: 'Invalid decision' });
         let canonicalTag = null;
         if (status === 'approve') {
           if (typeof tag !== 'string' || tag.length > 120)
             return json(response, 400, { error: 'Tag must be an active Danbooru character tag' });
-          canonicalTag = await api.exactTag(tag);
+          canonicalTag = await (isV12 ? verifiedTag(tag) : api.exactTag(tag));
           if (!canonicalTag)
             return json(response, 400, { error: 'Tag must be an active Danbooru character tag' });
         }
-        saveDecision(db, characterId, status, canonicalTag?.name ?? null, 'manual');
+        if (isV12) publishTag(request, characterId, status, canonicalTag?.name ?? null);
+        else saveDecision(db, characterId, status, canonicalTag?.name ?? null, 'manual');
         json(response, 200, { saved: true });
       } else if (request.method === 'POST' && url.pathname === '/api/reports/resolve') {
         if (request.headers.origin && request.headers.origin !== requestOrigin)
@@ -267,7 +307,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
         if (!request.headers['content-type']?.startsWith('application/json'))
           return json(response, 415, { error: 'JSON required' });
         const { characterId, outcome, tag } = await readJsonBody(request);
-        if (!isValidCharacterId(characterId) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
+        if (!isValidCharacterId(characterId, db) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
           return json(response, 400, { error: 'Unknown character' });
         if (!['corrected', 'dismissed'].includes(outcome)) return json(response, 400, { error: 'Invalid resolution' });
         if (!db.prepare(`SELECT 1 FROM character_tag_reports WHERE character_id = ? AND resolved_at IS NULL`).get(characterId))
@@ -276,11 +316,12 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
         if (outcome === 'corrected') {
           if (typeof tag !== 'string' || tag.length > 120)
             return json(response, 400, { error: 'Tag must be an active Danbooru character tag' });
-          canonicalTag = await api.exactTag(tag);
+          canonicalTag = await (isV12 ? verifiedTag(tag) : api.exactTag(tag));
           if (!canonicalTag)
             return json(response, 400, { error: 'Tag must be an active Danbooru character tag' });
         }
-        transaction(db, () => {
+        if (isV12 && outcome === 'corrected') publishTag(request, characterId, 'approve', canonicalTag.name, outcome);
+        else transaction(db, () => {
           if (outcome === 'corrected') saveDecision(db, characterId, 'approve', canonicalTag.name, 'manual');
           resolveCharacterTagReports(db, characterId, outcome);
         });
@@ -303,6 +344,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       host: { type: 'string', default: '127.0.0.1' },
       port: { type: 'string', default: '8787' },
       'public-host': { type: 'string' },
+      'catalog-source-permission': { type: 'boolean', default: false },
     } });
     const port = Number(values.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('--port must be between 1 and 65535');
@@ -310,7 +352,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const authConfig = loadPortalEnvironment();
     db = openCatalog();
     const publicHost = values['public-host'] ?? values.host;
-    const server = createReviewServer({ db, host: values.host, publicHost, port, authConfig });
+    const server = createReviewServer({ db, host: values.host, publicHost, port, authConfig,
+      sourcePermissionConfirmed: values['catalog-source-permission'],
+      verifySource: values['catalog-source-permission'] ? fetch : undefined });
     server.on('listening', () => console.log(`Review UI: http://${publicHost}:${port} (listening on ${values.host})`));
     server.on('close', () => db.close());
   } catch (error) {
