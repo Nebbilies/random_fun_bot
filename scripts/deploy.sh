@@ -45,7 +45,7 @@ cd "$app_dir"
 # Also serializes manual invocations on the VPS.
 exec 9>/home/ubuntu/.random-fun-bot-deploy.lock
 flock -n 9 || { echo 'Another deployment is running.' >&2; exit 1; }
-[[ "$(node --version)" == v22.14.0 ]] || { echo 'Expected Node v22.14.0.' >&2; exit 1; }
+[[ "$(node --version)" == v22.23.2 ]] || { echo 'Expected Node v22.23.2 (required SQLite APIs); upgrade runtime before deployment.' >&2; exit 1; }
 [[ "$(git branch --show-current)" == main ]] || { echo 'Checkout must be on main.' >&2; exit 1; }
 sudo -n -l "$systemctl" stop "$service" >/dev/null
 sudo -n -l "$systemctl" restart "$service" >/dev/null

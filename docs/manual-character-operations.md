@@ -4,6 +4,10 @@
 
 Development acceptance and operator authorization are separate. Never infer release approval from a green suite. The final requirement-to-test evidence must contain no unresolved identity/data-loss/security/concurrency blockers before authorizing a production-derived backup rehearsal. Production conversion is a separately recorded action; the rehearsal CLI is not a production commit tool.
 
+## Runtime and deployment prerequisite
+
+CI and the deployment script pin **Node v22.23.2**. Earlier Node 22 versions (including v22.14.0) lack the SQLite backup/transaction-state APIs exercised by this release and are not supported for cutover. Upgrade and verify the service's actual Node executable, not only the interactive shell. Preserve the previous runtime for rollback. Main pushes automatically deploy; disable that workflow before merging for a manual database cutover, and re-enable only after code/database/runtime/configuration acceptance.
+
 ## Drain before stopping
 
 1. Deploy the reviewed drain-capable application version **before** requesting cutover. On a disposable staging database first, exercise `node scripts/catalogMaintenance.js --database /explicit/catalog.sqlite --mode drain`.

@@ -13,7 +13,7 @@ echo ubuntu
 EOF
 cat > "$mocks/node" <<'EOF'
 #!/usr/bin/env bash
-echo v22.14.0
+echo v22.23.2
 EOF
 cat > "$mocks/sudo" <<'EOF'
 #!/usr/bin/env bash
