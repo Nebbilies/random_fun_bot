@@ -210,7 +210,7 @@ test('confirmation rejects wrong owner/role/hash, missing preview, expiry, futur
       unchanged(db, () => commit(db, p, options), pattern);
     }
     db.prepare("UPDATE catalog_previews SET payload_json='{}' WHERE id=?").run(p.previewId);
-    unchanged(db, () => commit(db, p), /Stored preview payload mismatch/);
+    unchanged(db, () => commit(db, p), /Stored preview.*mismatch/);
   } finally { db.close(); }
 });
 
@@ -266,7 +266,7 @@ test('validation/authentication/unknown franchises fail without any writes', () 
     for (const duplicateOverrideReason of ['', '  ', 'x'.repeat(2001), 1]) {
       unchanged(db, () => makePreview(db, { duplicateOverrideReason }), /reason/);
     }
-    for (const now of [-1, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER]) {
+    for (const now of [-1, 1.5, Infinity, NaN, 8.64e15 + 1, Number.MAX_SAFE_INTEGER]) {
       unchanged(db, () => makePreview(db, { now }), /timestamp|overflow/);
     }
   } finally { db.close(); }

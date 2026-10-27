@@ -1,6 +1,6 @@
 # Manual character addition — implementation checkpoint
 
-This is a partial implementation, not rollout approval. The confirmed design and plan remain authoritative. No production database has been opened or migrated.
+The sections below are historical implementation checkpoints, not rollout approval. The confirmed design and plan remain authoritative. See [replacement readiness](./manual-character-replacement-readiness.md) for completed local/browser/Linux verification and the authorized current-data migration/restore rehearsal. No live conversion or service cutover has occurred.
 
 ## Integrated completion follow-up
 

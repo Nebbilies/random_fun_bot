@@ -2,11 +2,15 @@
 
 ## Scope and verdict
 
-This records synthetic/disposable development evidence, not permission to handle a production-derived backup or deploy. No production/default database has been opened for this work. The approved design remains authoritative.
+This records development evidence, not deployment approval. The approved design remains authoritative. Later user-authorized replacement checks now include production-derived backups; see [replacement readiness](./manual-character-replacement-readiness.md) for current evidence. The live database was read only to create a consistent backup including WAL; no live conversion or service cutover has occurred.
 
 The implementation now has authoritative final-v12 create/open/offline-conversion contracts, audited creation/edit/reposition/source/tag/franchise services, authenticated portal workflows, revision-coherent reads, and published character terms. **Not production-approved:** active-runtime recovery remains conservative and production-derived rehearsal/recovery and deployment go/no-go remain separately authorized gates.
 
 ## Latest development verification
+
+- Replacement completion: **1,093 passed, one platform-dependent test skipped**; catalog type check passed. Expanded Chrome acceptance passed all four entry-point/role scenarios, including duplicates, stale input, retry, source conflicts/failures, likes adoption and rendered login/logout. See `.replacement-final-tests.log` and `.replacement-browser-tests.log`.
+- Authorized current-data VPS rehearsal passed: 15,000 identities, 499 ownership records, 27 wishes and 13,166 tag decisions preserved; conversion rollback, independent restore under old code/runtime, final reopen, runtime guard and manual-character gameplay smoke passed. See [replacement readiness](./manual-character-replacement-readiness.md) for paths, measured times, exact reconciliation decisions and the separate live-cutover boundary.
+- Independent standards and spec reviews found no actionable regression in shared confirmation or startup verification changes. Runtime recovery remains a [separate acceptance scope](./runtime-recovery-acceptance.md).
 
 - Latest full integrated suite including guarded conversion and durable runtime recovery: **916 passed, 0 failed**; `npm run typecheck:catalog` passed (`.restart-full-tests-final.log`, `.restart-typecheck-final.log`).
 - Independent recovery-safety re-review closed all four prior findings; 12 added tests cover corruption/unknown-state refusal, atomic Whistle recovery, duplicate Golden Hour costs and heart retry. Focused recovery suites passed 52/52.
@@ -36,13 +40,15 @@ The implementation now has authoritative final-v12 create/open/offline-conversio
 | Browser stale-response generations, confirmation/editor races, franchise selections, paging and permitted curation | `test/catalogBrowserState.test.js` |
 | Real Chrome basic create/search/edit/generated-label flows; both entrypoints; desktop admin/mobile-width moderator | `node scripts/checkCatalogBrowser.js --browser <explicit-chrome-or-edge-executable>` |
 
-The browser script starts only loopback test servers with synthetic temporary final catalogs and test credentials. It does not access an existing database, AniList or image content. It uses Chrome DevTools Protocol directly, without installing a browser package. Mobile-width emulation is not physical-phone testing. Source conflicts, duplicates, stale/double-confirm scenarios have API/synthetic-DOM evidence rather than complete real-browser coverage.
+The browser script starts only loopback test servers with synthetic temporary final catalogs and test credentials. It does not access an existing database or AniList; source verification uses deterministic responses and external image URLs are blocked. It uses Chrome DevTools Protocol directly, without installing a browser package. Mobile-width emulation is not physical-phone testing. Source conflicts, duplicates, stale/double-confirm, source failure, likes adoption and login/logout now have real-browser coverage on both entry points and both roles.
 
 ## Independent review corrections
 
 Review found and regression tests now cover: schema-name wildcard bypass; unrecognized legacy DDL normalization; derived-only manual franchise loss during source correction; unknown source-service options; unaudited legacy portal tag writes; multiple asynchronous browser preview/editor races; buff loss when no mystery is eligible; nonterminal rank-invalid item refusal; global numeric-ID bridge; old inventory controls; human-tag overwrite during matching; Google table mismatch; stale character staging after source changes; overlapping restarted scans admitting older in-flight pages. Scan generations now distinguish restarts even at the same source revision.
 
 ## Measured synthetic performance
+
+The following table records the historical implementation before replacement completion. Current writable startup uses native verification without a full constraint copy; read-only startup retains independent replay after a corruption regression demonstrated it remains necessary. Updated timings and production-derived rehearsal results are recorded in [replacement readiness](./manual-character-replacement-readiness.md).
 
 Reproduce with `node scripts/benchmarkCatalogRelease.js --synthetic`. Local Windows x64 / Node 22.23.2 sample; fresh OS temporary databases, no network; 20 query-batch iterations. Full final-schema validation rechecks inherited constraints and is intentionally more expensive than legacy open. Preparing validation inserts once per table reduced repeated statement preparation.
 
@@ -64,11 +70,13 @@ Recovery regressions use explicit file-backed final-schema creation and normal a
 
 ## Remaining release gates
 
+The original checklist below is historical. Its production-derived rehearsal, broader browser acceptance and measured-hosting items are now evidenced in [replacement readiness](./manual-character-replacement-readiness.md). The remaining live action is an explicit controlled cutover with source-currentness verification, Node v22.23.2 selection and post-start smoke checks before resuming traffic. Physical-device testing and exactly-once external delivery are not claimed.
+
 - Complete broader real-browser adverse-flow and physical mobile acceptance as appropriate to deployment requirements.
 - Review the supported recovery matrix and remaining ambiguous-state/external-delivery limitations; do not claim universal automatic recovery.
 - Measure representative synthetic/hosting performance against an operator-approved latency budget; these local samples alone do not supply one.
 - Separate authorization to use a consistent production-derived backup, retaining an untouched recovery backup; rehearse conversion, normal restart, gameplay and actual restore.
 - Record supported historical variants, measured downtime/recovery window, independent final objections and explicit go/no-go.
-- Production rollout is a separate recorded authorization. The CLI deliberately remains rollback-only.
+- Production rollout is a separate recorded authorization. The CLI defaults to inventory or rollback rehearsal; explicit commit is restricted to separately named offline working copies with the documented acknowledgements and evidence.
 
 See `manual-character-operations.md` for maintenance and recovery procedure. A complete approved feature/deployment certification must not be inferred while these gates remain open.

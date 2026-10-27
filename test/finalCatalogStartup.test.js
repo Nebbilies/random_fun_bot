@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { openCatalog, openCatalogReadOnly, createFinalCatalog, openFinalCatalog,
   openFinalCatalogReadOnly } from '../lib/catalogDb.js';
 import { convertLegacyCatalogToFinal } from '../lib/characterIdentityMigration.js';
+import { validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
 
 const uuid = '12345678-1234-4123-8123-123456789abc';
 function file(t) {
@@ -150,6 +151,33 @@ test('unsupported, spoofed partial v12, corrupt final fail before persistent mut
   assert.throws(() => openFinalCatalog(path), /integrity/);
   assert.throws(() => openFinalCatalogReadOnly(path), /integrity/);
 });
+
+test('integrity verification refuses a connection with CHECK enforcement disabled', t => {
+  const db = createFinalCatalog(file(t));
+  try {
+    db.exec('PRAGMA ignore_check_constraints=ON');
+    assert.throws(() => validateFinalCatalogSchema(db), /CHECK enforcement/);
+    assert.equal(db.prepare('PRAGMA ignore_check_constraints').get().ignore_check_constraints, 1);
+    db.exec('PRAGMA ignore_check_constraints=OFF');
+    assert.equal(validateFinalCatalogSchema(db), true);
+  } finally { db.close(); }
+});
+
+for (const sql of ["UPDATE franchises SET curated_cover_url='http://example.test/cover'",
+  'UPDATE catalog_state SET source_revision=-1']) {
+  test(`normal open detects stored CHECK violations outside character ranks: ${sql}`, t => {
+    const path = file(t);
+    const db = createFinalCatalog(path);
+    manual(db);
+    db.exec(`PRAGMA ignore_check_constraints=ON; ${sql}`);
+    db.close();
+    const before = readFileSync(path);
+    for (const open of [openCatalog, openCatalogReadOnly, openFinalCatalog, openFinalCatalogReadOnly]) {
+      assert.throws(() => open(path), /integrity/, open.name);
+      assert.deepEqual(readFileSync(path), before);
+    }
+  });
+}
 
 test('offline final conversion refuses v1-v9 and unknown inputs without mutation', t => {
   const db = openCatalog(file(t));

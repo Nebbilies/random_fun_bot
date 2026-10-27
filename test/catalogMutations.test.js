@@ -314,7 +314,7 @@ test('permission, schema, timestamp, overflow and caller transaction boundaries'
       unchanged(db, () => confirmCatalogMutation(db, { ...auth, role }), /Unauthorized/);
     }
     for (const account of ['', ' ', null, 1, 'a\nb', 'x'.repeat(121)]) unchanged(db, () => preview(db, 'edit', input, { account }), /account/);
-    for (const now of [-1, 1.5, Infinity, Number.MAX_SAFE_INTEGER]) unchanged(db, () => preview(db, 'edit', input, { now }), /timestamp|overflow/);
+    for (const now of [-1, 1.5, Infinity, 8.64e15 + 1, Number.MAX_SAFE_INTEGER]) unchanged(db, () => preview(db, 'edit', input, { now }), /timestamp|overflow/);
     for (const version of [10, 11, 13]) {
       db.exec(`PRAGMA user_version=${version}`);
       unchanged(db, () => preview(db, 'edit', input), /version 12/);

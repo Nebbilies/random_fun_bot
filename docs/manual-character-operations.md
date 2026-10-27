@@ -2,6 +2,8 @@
 
 ## Safety status
 
+See [replacement readiness](./manual-character-replacement-readiness.md) for the current authorized rehearsal and [runtime recovery acceptance](./runtime-recovery-acceptance.md) for its separate scope. The originally supplied 2026-10-26 backup is older than the stopped VPS data; it must not replace newer state. Use a fresh consistent SQLite backup including WAL and preserve both backups. No live conversion or service restart is implied by rehearsal evidence.
+
 Development acceptance and operator authorization are separate. Never infer release approval from a green suite. The final requirement-to-test evidence must contain no unresolved identity/data-loss/security/concurrency blockers before authorizing a production-derived backup rehearsal. Production conversion is a separately recorded action; the rehearsal CLI is not a production commit tool.
 
 ## Runtime and deployment prerequisite

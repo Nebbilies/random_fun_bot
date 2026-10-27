@@ -49,7 +49,7 @@ Login attempts, successful or unsuccessful, are limited to five per socket addre
 | --- | --- | --- |
 | Character/tag review and report resolution | Yes | Yes |
 | Franchise pages, searches, corrections (integrated and standalone) | Yes | Yes |
-| Future character/source/likes management | Authenticated account available; mutation service must retain scope checks | Allowed by approved design |
+| Catalog character/source/likes management | Yes, through attributed preview/confirmation services | Yes, through the same services |
 | Configuration page and all `/api/config` routes | Yes | No, including reads |
 | Game administration page and all `/api/game` routes | Yes | No, including item roster/rates reads |
 | Item grants, added rolls, claim resets | Yes | No |

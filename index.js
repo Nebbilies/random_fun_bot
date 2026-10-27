@@ -74,6 +74,7 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
     await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
     await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
     gameRuntimeReady = true;
+    console.log('Character game ready.');
     let vaultRecoveryRunning = false;
     const vaultRecovery = setInterval(async () => {
         if (vaultRecoveryRunning) return;

@@ -18,6 +18,9 @@
   "license": "ISC",
   "description": "nhu tieu de",
   "type": "module",
+  "volta": {
+    "node": "22.23.2"
+  },
   "dependencies": {
     "@google-cloud/translate": "^9.3.0",
     "axios": "^1.7.7",
