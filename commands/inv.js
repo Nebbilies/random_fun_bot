@@ -8,6 +8,7 @@ import {
 } from 'discord.js';
 import {
   getInventory,
+  isInventoryEscrowed,
   getInventoryCapacity,
   getUsableInventory,
   getActiveBuffs,
@@ -38,7 +39,7 @@ export function renderInventoryEmbed(db, guildId, userId, username, now = Date.n
       const chargeText = item.charges > 1 ? ` (${item.charges} charges)` : '';
       embed.addFields({
         name: `${tier?.emoji ?? '⚪'} ${def?.name || item.item_id}${chargeText}`,
-        value: def?.description || 'No description available.',
+        value: `${isInventoryEscrowed(db, item.id) ? '🔒 Reserved / temporarily held — unavailable for use or replacement.\n' : ''}${def?.description || 'No description available.'}`,
         inline: false,
       });
     }

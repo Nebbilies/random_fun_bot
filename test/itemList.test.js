@@ -47,6 +47,24 @@ test('pagination bounds row count and text length and supports empty filters', (
   assert.equal(card.components[2].content, 'No items in this category.');
 });
 
+test('catalog and release announcement share Discord message-wide text budget', () => {
+  const changelog = 'Release '.repeat(300);
+  const pages = itemListPages([...Array(20).fill('x'.repeat(349)), 'long description '.repeat(400)], 3800 - changelog.length);
+  for (let page = 0; page < pages.length; page++) {
+    const card = itemListComponents(pages, page, 'all', false, changelog)[0].toJSON();
+    const total = card.components.reduce((sum, component) => sum + (component.content?.length ?? 0), 0);
+    assert.ok(total <= 4000, `combined text ${total}`);
+  }
+});
+
+test('release announcement remains visible on filtered and disabled catalog pages', () => {
+  const changelog = '**Changelog 28/10/2026**: Added **two** new *Rare* items: **???** and **???**.';
+  for (const disabled of [false, true]) {
+    const card = itemListComponents(itemListPages([]), 0, 'common', disabled, changelog)[0].toJSON();
+    assert.ok(card.components.some(component => component.content === changelog));
+  }
+});
+
 test('alias, shared select, page reset, refreshed discovery, and expiration', async t => {
   assert.equal(alias, run);
   const db = fixture(t);
@@ -61,6 +79,7 @@ test('alias, shared select, page reset, refreshed discovery, and expiration', as
   assert.deepEqual(payload.allowedMentions.parse, []);
   assert.equal(typeof options.time, 'number');
   const card = () => payload.components[0].toJSON();
+  assert.ok(card().components.some(component => component.content?.includes('**Changelog 28/10/2026**')));
   const collect = async (customId, values) => collector.listeners('collect')[0]({
     customId, values, user: { id: 'someone-else' }, deferUpdate: async () => {},
   });
@@ -79,7 +98,7 @@ test('alias, shared select, page reset, refreshed discovery, and expiration', as
   collector.emit('end');
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(card().components[1].components[0].disabled, true);
-  assert.ok(card().components[4].components.every(button => button.disabled));
+  assert.ok(card().components.find(component => component.type === ComponentType.ActionRow && component.components[0]?.custom_id === 'itemlist:prev').components.every(button => button.disabled));
   await collect('itemlist:next');
   assert.match(card().components[3].content, /Page 1/);
 });

@@ -28,7 +28,8 @@ function fixture(t) {
   setGuildRates(db, '1', { vaultRate: 1, prankRate: 0 }, NOW);
   const messages = new Map();
   let sent = 0;
-  const channel = { id: '10', messages: { async fetch(id) {
+  const channel = { id: '10', messages: { async fetch(request) {
+    const id = typeof request === 'string' ? request : request.message;
     if (!messages.has(id)) throw Object.assign(Error('deleted'), { code: 10008 });
     return messages.get(id);
   } }, async send(payload) {

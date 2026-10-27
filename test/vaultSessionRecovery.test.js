@@ -29,7 +29,8 @@ function fixture(t) {
 function discord() {
   const messages = new Map();
   let failure = false;
-  const channel = { id: 'channel', sent: 0, messages: { fetch: async id => {
+  const channel = { id: 'channel', sent: 0, messages: { fetch: async request => {
+    const id = typeof request === 'string' ? request : request.message;
     if (failure) throw new Error('temporary fetch failure');
     if (!messages.has(id)) throw Object.assign(new Error('deleted'), { code: 10008 });
     return messages.get(id);

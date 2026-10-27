@@ -18,6 +18,12 @@ function mockChannel(id = '2001') {
   return {
     id,
     sent,
+    messages: { async fetch(request) {
+      const messageId = typeof request === 'string' ? request : request.message;
+      const message = sent.find(item => item.id === messageId);
+      if (!message) throw Object.assign(new Error('deleted'), { code: 10008 });
+      return message;
+    } },
     async send(payload) {
       const messageId = String(1000 + sent.length);
       const item = {
@@ -177,7 +183,11 @@ test('revealed Keep/Gamble prompt is owner/message scoped and timeout keeps thro
   assert.equal(getVaultReward(db, vault.vaultId).state, 'decision');
   clock += ITEM_ACTION_CONFIG.doubleDecisionMs;
   const { recoverVaultRewards } = await import('../lib/vaultRuntime.js');
-  await recoverVaultRewards(db, { channels: { fetch: async () => ({ messages: { fetch: async () => prompt } }) } }, { now: () => clock });
+  await recoverVaultRewards(db, { channels: { fetch: async () => ({ messages: { fetch: async request => {
+    const messageId = typeof request === 'string' ? request : request.message;
+    if (messageId !== prompt.id) throw Object.assign(new Error('deleted'), { code: 10008 });
+    return prompt;
+  } } }) } }, { now: () => clock });
   assert.equal(getVaultReward(db, vault.vaultId).state, 'delivered');
   assert.equal(getInventory(db, '10001', 'roller').length, 2);
   db.close();

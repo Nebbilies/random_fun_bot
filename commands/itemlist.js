@@ -1,5 +1,6 @@
 import { MessageFlags } from 'discord.js';
 import { getGameConfig } from '../lib/gameConfig.js';
+import { guildItemChangelog } from '../lib/itemReleases.js';
 import { guildItemList, ITEM_LIST_FILTERS, itemListComponents, itemListPages } from '../lib/itemList.js';
 
 export async function run(ctx) {
@@ -8,9 +9,11 @@ export async function run(ctx) {
   let filter = 'all';
   let page = 0;
   const render = (disabled = false) => {
-    const pages = itemListPages(guildItemList(db, guildId, filter));
+    const changelog = guildItemChangelog(db, guildId);
+    // Components V2 shares a 4,000-character budget across all TextDisplays.
+    const pages = itemListPages(guildItemList(db, guildId, filter), Math.min(3500, 3800 - (changelog?.length ?? 0)));
     page = Math.min(page, pages.length - 1);
-    return itemListComponents(pages, page, filter, disabled);
+    return itemListComponents(pages, page, filter, disabled, changelog);
   };
   const reply = await ctx.message.reply({
     flags: MessageFlags.IsComponentsV2, components: render(),
