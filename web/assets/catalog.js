@@ -32,7 +32,7 @@ const lines = id => $(id).value.split('\n').map(value => value.trim()).filter(Bo
 const selectedFranchises = () => [...$('franchiseIds').selectedOptions].map(option => Number(option.value));
 function invalidate() {
   generation++;
-  pending = null; $('previewPanel').hidden = true; $('confirmExplicit').checked = false;
+  pending = null; $('previewPanel').hidden = true;
   $('confirm').disabled = false;
 }
 function image(url, alt) {
@@ -48,21 +48,31 @@ async function showPreview(operation, body) {
   const token = generation;
   let data;
   try { data = await api(`/${operation}/preview`, body); }
-  catch (error) { if (token !== generation) return; throw error; }
+  catch (error) {
+    if (token !== generation) return;
+    if (operation === 'create' && body.input?.tagName && /tag/i.test(error.message)) {
+      $('createTag').setCustomValidity(error.message);
+      $('createTag').reportValidity();
+    }
+    throw error;
+  }
   if (token !== generation) return;
   // A key belongs to this exact preview; failed confirmation retries never rotate it.
   pending = { operation, previewId: data.previewId, payloadHash: data.payloadHash, idempotencyKey: crypto.randomUUID() };
+  $('previewDetails').open = false;
   $('previewData').textContent = JSON.stringify(data, null, 2);
-  $('previewSummary').textContent = `Operation: ${operation}. ${data.rank != null ? `Final rank #${data.rank}. ` : ''}${data.favourites != null ? `${data.favourites} likes${data.likesSource === 'anilist' ? '' : ' [generated]'}. ` : ''}Review neighbors and all changes below.`;
+  $('previewSummary').textContent = `Operation: ${operation}. ${data.rank != null ? `Final rank #${data.rank}. ` : ''}${data.favourites != null ? `${data.favourites} likes${data.likesSource === 'anilist' ? '' : ' [generated]'}. ` : ''}${operation === 'create' ? (data.tagName ? `Danbooru tag: ${data.tagName} (verified). ` : 'No Danbooru tag selected. ') : ''}Review neighbors and all changes below.`;
   $('duplicates').replaceChildren();
   for (const warning of data.duplicateWarnings || []) {
     const row = document.createElement('article');
     const heading = document.createElement('p'); heading.textContent = `Possible duplicate: ${warning.name} (${warning.id})`;
     const portrait = image(warning.portraitUrl, warning.name);
     const sources = document.createElement('p'); sources.textContent = `Sources: ${JSON.stringify(warning.sources || [])}`;
+    const memberships = document.createElement('p');
+    memberships.textContent = `Franchises: ${(warning.franchiseIds || []).map(id => franchises.find(row => row.id === id)?.display_name || `#${id}`).join(', ') || 'None'}`;
     const reuse = document.createElement('button'); reuse.type = 'button'; reuse.textContent = 'Reuse / edit this identity';
     reuse.addEventListener('click', () => loadCharacter(warning.id).catch(fail));
-    row.append(heading); if (portrait) row.append(portrait); row.append(sources, reuse); $('duplicates').append(row);
+    row.append(heading); if (portrait) row.append(portrait); row.append(sources, memberships, reuse); $('duplicates').append(row);
   }
   $('sourceComparison').replaceChildren();
   if (operation === 'source') {
@@ -78,9 +88,10 @@ async function showPreview(operation, body) {
       if (img) $('sourceComparison').append(img);
     }
   }
-  $('confirm').disabled = Boolean(data.duplicateWarnings?.length && (!(body.duplicateOverrideReason || body.input?.duplicateOverrideReason) || !$('duplicateOverride').checked));
-  if ($('confirm').disabled) feedback($('message'), 'Review duplicate matches, explicitly check the override box, add an explanation, and preview again.', 'error');
-  else feedback($('message'), 'Preview ready. Nothing has been published.');
+  $('confirm').disabled = false;
+  feedback($('message'), data.duplicateWarnings?.length
+    ? 'Preview ready. Possible duplicates are shown below; you can still confirm to create or update this distinct identity. Nothing has been published.'
+    : 'Preview ready. Nothing has been published.');
   $('previewPanel').hidden = false; $('previewPanel').focus();
 }
 async function loadFranchises(isActive = () => true) {
@@ -127,11 +138,12 @@ function editor(row = null) {
   franchiseSelection = [...(row?.franchiseIds || [])];
   $('editorTitle').textContent = row ? 'Edit character metadata' : 'New manual character';
   $('identity').textContent = row ? `${row.id} · ${row.creationMethod} · rank #${row.rank} · ${row.favourites} likes${row.likes_source === 'generated' ? ' [generated]' : ''}` : 'Identity and likes are generated server-side.';
-  $('characterForm').reset(); $('portrait').hidden = true;
+  $('characterForm').reset(); $('createTag').setCustomValidity(''); $('portrait').hidden = true;
   const imported = row && row.creationMethod !== 'manual';
   for (const id of ['name', 'gender', 'portraitUrl', 'description']) $(id).disabled = Boolean(imported);
   $('franchiseIds').required = !imported;
   $('createRank').hidden = Boolean(row); $('rank').required = !row;
+  $('createTagField').hidden = Boolean(row);
   $('existingActions').hidden = !row;
   $('sourceForm').reset(); $('tagForm').reset(); $('repositionForm').reset();
   if (!row) return;
@@ -175,21 +187,19 @@ for (const form of document.querySelectorAll('form:not(#searchForm)')) {
 for (const event of ['input', 'change']) {
   $('franchiseIds').addEventListener(event, () => { franchiseSelection = selectedFranchises(); });
 }
+$('createTag').addEventListener('input', () => $('createTag').setCustomValidity(''));
 onForm('characterForm', () => {
   const input = { aliases: lines('aliases'), franchiseIds: selectedFranchises(), referenceUrl: $('referenceUrl').value || null };
   if (!current || current.creationMethod === 'manual') Object.assign(input, {
     name: $('name').value, gender: $('gender').value, portraitUrl: $('portraitUrl').value,
     description: $('description').value || null, referenceUrl: $('referenceUrl').value || null,
   });
-  if (current) {
-    input.characterId = current.id;
-    input.duplicateOverrideReason = $('duplicateOverride').checked ? $('duplicateReason').value.trim() || null : null;
-  }
-  return showPreview(current ? 'edit' : 'create', current ? { input } : { input, rank: Number($('rank').value),
-    duplicateOverrideReason: $('duplicateOverride').checked ? $('duplicateReason').value.trim() || null : null });
+  if (current) input.characterId = current.id;
+  else if ($('createTag').value.trim()) input.tagName = $('createTag').value.trim();
+  return showPreview(current ? 'edit' : 'create', current ? { input } : { input, rank: Number($('rank').value) });
 });
 onForm('repositionForm', () => showPreview('reposition', { input: { characterId: current.id,
-  rank: Number($('targetRank').value), switchToGenerated: $('switchGenerated').checked } }));
+  rank: Number($('targetRank').value), switchToGenerated: $('switchGenerated').value === 'true' } }));
 onForm('sourceForm', () => {
   const action = $('sourceOperation').value;
   const linked = current.sources.some(source => source.source === 'anilist');
@@ -209,7 +219,7 @@ $('franchiseEditId').addEventListener('change', () => {
   $('coverUrl').value = row?.curated_cover_url || ''; $('franchiseReference').value = row?.reference_url || '';
 });
 $('confirm').addEventListener('click', async () => {
-  if (!pending || !$('confirmExplicit').checked) return fail(new Error('Explicitly confirm that you reviewed this preview.'));
+  if (!pending) return fail(new Error('Request a preview before confirming publication.'));
   $('confirm').disabled = true;
   const preview = pending;
   const { operation, ...body } = preview;

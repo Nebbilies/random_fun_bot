@@ -67,7 +67,11 @@ for (const [name, factory] of [['combined', createReviewServer], ['standalone', 
     assert.equal(detail.likes_source, 'generated');
     const duplicate = await post('/create/preview', { input: metadata, rank: 1 });
     assert.equal(duplicate.duplicateWarnings.length, 1);
-    assert.equal((await request('/api/catalog/create/confirm', commit(duplicate))).status, 400);
+    const duplicateCreated = await post('/create/confirm', commit(duplicate));
+    assert.notEqual(duplicateCreated.characterId, created.characterId);
+    const duplicateEdit = await post('/edit/preview', { input: { characterId: created.characterId, aliases: ['Chell'] } });
+    assert.equal(duplicateEdit.duplicateWarnings.length, 1);
+    await post('/edit/confirm', commit(duplicateEdit));
     const edit = await post('/edit/preview', { input: { characterId: created.characterId, aliases: ['Portal protagonist'] } });
     await post('/edit/confirm', commit(edit));
     const found = await (await request('/api/catalog/search?query=Portal%20protagonist')).json();
@@ -119,6 +123,60 @@ for (const [name, factory] of [['combined', createReviewServer], ['standalone', 
     assert.equal((await request('/api/catalog/source/confirm', { ...commit(p), verifySource: 'https://evil.test' })).status, 400);
   });
 }
+
+for (const [name, factory] of [['combined', createReviewServer], ['standalone', createFranchiseReviewServer]]) {
+  test(`${name}: creation previews verify optional tag, confirm uses cache only and audit/detail expose decision`, async t => {
+    let calls = 0;
+    const { db, post, request } = await setup(t, factory, { api: { exactTag: async tag => {
+      calls++; return { name: tag, category: 4, is_deprecated: false };
+    } } });
+    await seedCharacter(post);
+    const tagName = 'chell_(portal)';
+    const params = new URLSearchParams({ 'search[name]': tagName, 'search[category]': '4', limit: '5' });
+    const cache = value => db.prepare('INSERT OR REPLACE INTO tag_search_cache (query,response,fetched_at) VALUES (?,?,?)')
+      .run(`/tags.json?${params}`, JSON.stringify([value]), 'test');
+    cache({ name: tagName, category: 4, is_deprecated: false });
+    const p = await post('/create/preview', { input: { ...metadata, tagName }, rank: 1 });
+    assert.equal(p.duplicateWarnings.length, 1);
+    const verifiedCalls = calls;
+    cache({ name: tagName, category: 4, is_deprecated: true });
+    const rejected = await request('/api/catalog/create/confirm', commitPreview(p));
+    assert.equal(rejected.status, 400);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM characters').get().n, 1);
+    cache({ name: tagName, category: 4, is_deprecated: false });
+    const created = await post('/create/confirm', commitPreview(p));
+    assert.deepEqual(await post('/create/confirm', commitPreview(p)), created);
+    assert.equal(calls, verifiedCalls, 'confirm and retry never verify remotely');
+    const detail = await (await request(`/api/catalog/detail?id=${created.characterId}`)).json();
+    assert.deepEqual(detail.tag, { status: 'approve', tag_name: tagName, source: 'manual' });
+    const audits = await (await request(`/api/catalog/audit?characterId=${created.characterId}`)).json();
+    assert.equal(audits[0].after.tag.tag_name, tagName);
+    assert.equal(audits[0].duplicate_override_reason, null);
+    const blank = await post('/create/preview', { input: { ...metadata, tagName: '  ' }, rank: 1 });
+    const noTag = await post('/create/confirm', commitPreview(blank));
+    assert.equal(db.prepare('SELECT * FROM tag_decisions WHERE character_id=?').get(noTag.characterId), undefined);
+    assert.equal(calls, verifiedCalls, 'blank tag skips verifier');
+    for (const tagName of [[], ['chell'], 1, 'bad tag', 'UPPER']) {
+      assert.equal((await request('/api/catalog/create/preview', { input: { ...metadata, tagName }, rank: 1 })).status, 400);
+    }
+  });
+}
+
+test('creation preview rejects invalid remote tag evidence without writing a preview or character', async t => {
+  let calls = 0;
+  const { db, post, request } = await setup(t, createReviewServer, { api: { exactTag: async name => {
+    calls++;
+    return name === 'missing_tag' ? null : { name, category: name === 'general_tag' ? 0 : 4, is_deprecated: name === 'deprecated_tag' };
+  } } });
+  await seedCharacter(post);
+  const count = db.prepare('SELECT count(*) AS n FROM catalog_previews').get().n;
+  for (const tagName of ['missing_tag', 'general_tag', 'deprecated_tag']) {
+    assert.equal((await request('/api/catalog/create/preview', { input: { ...metadata, tagName }, rank: 1 })).status, 400);
+  }
+  assert.equal(calls, 3);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM catalog_previews').get().n, count);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM characters').get().n, 1);
+});
 
 test('legacy unpublished combined catalog retains import gate', () => {
   const db = openCatalog(':memory:');

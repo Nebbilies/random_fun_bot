@@ -6,7 +6,7 @@ import vm from 'node:vm';
 // Run the actual browser module with controllable fetch completion and a small DOM.
 function browser() {
   class Element {
-    constructor(value = '') { this.value = String(value); this.children = []; this.listeners = {}; this.hidden = false; this.checked = false; this.disabled = false; this.dataset = {}; }
+    constructor(value = '') { this.value = String(value); this.children = []; this.listeners = {}; this.hidden = false; this.open = false; this.disabled = false; this.dataset = {}; }
     addEventListener(name, fn) { (this.listeners[name] ??= []).push(fn); }
     async fire(name, extra = {}) { for (const fn of this.listeners[name] || []) await fn({ preventDefault() {}, ...extra }); }
     append(...nodes) { this.children.push(...nodes); }
@@ -14,6 +14,8 @@ function browser() {
     get options() { return this.children; }
     get selectedOptions() { return this.children.filter(node => node.selected); }
     reset() {}
+    setCustomValidity(message) { this.validationMessage = message; }
+    reportValidity() { return !this.validationMessage; }
     focus() {}
   }
   const html = readFileSync(new URL('../web/reviewCatalog.html', import.meta.url), 'utf8');
@@ -31,6 +33,104 @@ function browser() {
   return { elements, requests, run: code => vm.runInContext(code, context) };
 }
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+
+test('catalog controls use no checkboxes and preview JSON is collapsed by default', () => {
+  const html = readFileSync(new URL('../web/reviewCatalog.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(html, /type\s*=\s*["']?checkbox/i);
+  for (const id of ['duplicateReason', 'duplicateOverride', 'confirmExplicit', 'sourceExplicit']) {
+    assert.doesNotMatch(html, new RegExp(`id=["']${id}["']`));
+  }
+  const details = html.match(/<details\b[^>]*\bid="previewDetails"[^>]*>/)?.[0];
+  assert.ok(details, 'full JSON preview has a stable details id');
+  assert.doesNotMatch(details, /\bopen(?:\s|=|>)/);
+  const select = html.match(/<select\b[^>]*\bid="switchGenerated"[^>]*>([\s\S]*?)<\/select>/)?.[1];
+  assert.ok(select);
+  assert.deepEqual([...select.matchAll(/value="([^"]*)"/g)].map(match => match[1]), ['false', 'true']);
+  assert.match(html, /<input\b[^>]*\bid="createTag"[^>]*>/);
+  assert.doesNotMatch(html.match(/<input\b[^>]*\bid="createTag"[^>]*>/)[0], /\brequired\b/);
+});
+
+test('optional creation tag is trimmed and omitted entirely when blank, and never sent on edit', async () => {
+  for (const value of ['', '   \n  ', '  approved_character  ']) {
+    const b = browser();
+    b.elements.createTag.value = value;
+    const loading = b.elements.characterForm.fire('submit');
+    const request = b.requests.at(-1);
+    assert.equal(request.path, '/api/catalog/create/preview');
+    if (value.trim()) assert.equal(request.body.input.tagName, 'approved_character');
+    else assert.equal(Object.hasOwn(request.body.input, 'tagName'), false);
+    assert.equal(Object.hasOwn(request.body, 'duplicateOverrideReason'), false);
+    assert.equal(Object.hasOwn(request.body.input, 'duplicateOverrideReason'), false);
+    request.resolve({ previewId: 'create', payloadHash: 'hash' }); await loading;
+    b.run("editor({id: 'manual', creationMethod: 'manual', aliases: [], sources: [], franchiseIds: []})");
+    b.elements.createTag.value = 'not_an_edit_tag';
+    const editing = b.elements.characterForm.fire('submit');
+    const edit = b.requests.at(-1);
+    assert.equal(edit.path, '/api/catalog/edit/preview');
+    assert.equal(Object.hasOwn(edit.body.input, 'tagName'), false);
+    assert.equal(Object.hasOwn(edit.body.input, 'duplicateOverrideReason'), false);
+    edit.resolve({ previewId: 'edit', payloadHash: 'hash' }); await editing;
+  }
+});
+
+test('duplicate warnings are advisory for create and edit; Confirm publishes immediately', async () => {
+  for (const operation of ['create', 'edit']) {
+    const b = browser();
+    const loading = b.run(`showPreview('${operation}', {input: {}})`);
+    b.requests.at(-1).resolve({ previewId: operation, payloadHash: 'hash', duplicateWarnings: [
+      { id: 'match', name: 'Same name', sources: [] },
+    ] });
+    await loading;
+    assert.equal(b.elements.duplicates.children.length, 1);
+    assert.equal(b.elements.duplicates.children[0].children[0].textContent, 'Possible duplicate: Same name (match)');
+    assert.equal(b.elements.confirm.disabled, false);
+    const confirmation = b.elements.confirm.fire('click');
+    const request = b.requests.at(-1);
+    assert.equal(request.path, `/api/catalog/${operation}/confirm`);
+    assert.deepEqual(request.body, { previewId: operation, payloadHash: 'hash', idempotencyKey: 'request-key-1' });
+    request.resolve({ error: 'Unknown outcome' }, 500); await confirmation;
+  }
+});
+
+test('every new preview collapses previously opened JSON details', async () => {
+  const b = browser();
+  for (const id of ['first', 'second']) {
+    b.elements.previewDetails.open = true;
+    const loading = b.run("showPreview('edit', {input: {}})");
+    b.requests.at(-1).resolve({ previewId: id, payloadHash: 'hash' }); await loading;
+    assert.equal(b.elements.previewDetails.open, false);
+    assert.equal(JSON.parse(b.elements.previewData.textContent).previewId, id);
+  }
+});
+
+test('creation tag errors attach to the field and verified canonical tag is readable without JSON', async () => {
+  const b = browser();
+  b.elements.createTag.value = 'bad_tag';
+  const invalid = b.elements.characterForm.fire('submit');
+  b.requests.at(-1).resolve({ error: 'Tag must be an active Danbooru character tag' }, 400);
+  await invalid;
+  assert.match(b.elements.createTag.validationMessage, /active Danbooru/);
+  await b.elements.createTag.fire('input');
+  assert.equal(b.elements.createTag.validationMessage, '');
+  b.elements.createTag.value = 'valid_tag';
+  const valid = b.elements.characterForm.fire('submit');
+  b.requests.at(-1).resolve({ previewId: 'tagged', payloadHash: 'hash', tagName: 'canonical_tag' });
+  await valid;
+  assert.match(b.elements.previewSummary.textContent, /Danbooru tag: canonical_tag \(verified\)/);
+  assert.equal(b.elements.previewDetails.open, false);
+});
+
+test('reposition reads the generated-likes select as a boolean, not a checkbox', async () => {
+  const b = browser();
+  b.run("editor({id: 'imported', creationMethod: 'imported', aliases: [], sources: [], franchiseIds: []})");
+  for (const value of ['false', 'true']) {
+    b.elements.switchGenerated.value = value;
+    const loading = b.elements.repositionForm.fire('submit');
+    const request = b.requests.at(-1);
+    assert.equal(request.body.input.switchToGenerated, value === 'true');
+    request.resolve({ previewId: value, payloadHash: 'hash' }); await loading;
+  }
+});
 
 test('newest preview wins even when the previous response arrives last', async () => {
   const b = browser();
@@ -118,7 +218,6 @@ async function preview(b, id) {
 }
 async function confirming(b) {
   await preview(b, 'A');
-  b.elements.confirmExplicit.checked = true;
   const done = b.elements.confirm.fire('click');
   return { done, request: b.requests.at(-1) };
 }
@@ -127,7 +226,6 @@ function assertDraft(b) {
   assert.equal(b.elements.aliases.value, 'Unsaved B');
   assert.equal(b.run('pending.previewId'), 'B');
   assert.equal(b.elements.previewPanel.hidden, false);
-  assert.equal(b.elements.confirmExplicit.checked, true);
   assert.equal(b.elements.confirm.disabled, false);
 }
 async function newerDraft(b) {
@@ -135,7 +233,6 @@ async function newerDraft(b) {
   b.elements.aliases.value = 'Unsaved B';
   await b.elements.characterForm.fire('input');
   await preview(b, 'B');
-  b.elements.confirmExplicit.checked = true;
 }
 
 test('late confirmation success, stale and unknown errors leave a newer preview untouched', async () => {

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { DanbooruApi } from '../lib/danbooruApi.js';
+import { normalizeOptionalCatalogTagName } from '../lib/catalogMutations.js';
 import { previewManualCharacterCreation, confirmManualCharacterCreation } from '../lib/manualCharacterMutations.js';
 
 const html = readFileSync(new URL('./reviewCatalog.html', import.meta.url));
@@ -105,7 +106,19 @@ export async function handleCatalogRequest({ db, request, response, url, origin,
       : operation === 'create' ? ['input', 'rank', 'duplicateOverrideReason'] : ['operation', 'input']);
     const attribution = { account: account.username, role: account.role };
     let value;
+    async function verifiedTagName(tagName) {
+      const canonical = await verifyTag(tagName);
+      if (!canonical || canonical.category !== 4 || canonical.is_deprecated
+        || typeof canonical.name !== 'string' || !/^[a-z0-9_():.!-]{2,120}$/.test(canonical.name)) {
+        throw new Error('Tag must be an active Danbooru character tag');
+      }
+      return canonical.name;
+    }
     if (operation === 'create') {
+      if (action === 'preview' && body.input && typeof body.input === 'object') {
+        const tagName = normalizeOptionalCatalogTagName(body.input.tagName);
+        body.input.tagName = tagName === null ? null : await verifiedTagName(tagName);
+      }
       value = action === 'preview' ? previewManualCharacterCreation(db, { ...body, ...attribution })
         : confirmManualCharacterCreation(db, { ...body, ...attribution });
     } else {
@@ -128,9 +141,7 @@ export async function handleCatalogRequest({ db, request, response, url, origin,
         if (operation === 'tag' && body.input?.status === 'approve') {
           fields(body.input, ['characterId', 'status', 'tagName']);
           if (typeof body.input.tagName !== 'string' || !/^[a-z0-9_():.!-]{2,120}$/.test(body.input.tagName)) throw new Error('Invalid character tag');
-          const canonical = await verifyTag(body.input.tagName);
-          if (!canonical?.name) throw new Error('Tag must be an active Danbooru character tag');
-          body.input.tagName = canonical.name;
+          body.input.tagName = await verifiedTagName(body.input.tagName);
         }
         value = operation === 'source' ? await service.previewSourceMutation(db, { ...body, ...attribution,
           permissionConfirmed: sourcePermissionConfirmed === true, verifySource })

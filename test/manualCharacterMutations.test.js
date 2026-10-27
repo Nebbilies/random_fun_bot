@@ -26,13 +26,18 @@ function fixture(likes = [100, 50, 50, 0]) {
   initializeCatalogReleaseSchema(db);
   return db;
 }
+function cacheTag(db, name, response = [{ name, category: 4, is_deprecated: false }]) {
+  const params = new URLSearchParams({ 'search[name]': name, 'search[category]': '4', limit: '5' });
+  db.prepare('INSERT OR REPLACE INTO tag_search_cache (query, response, fetched_at) VALUES (?, ?, ?)')
+    .run(`/tags.json?${params}`, typeof response === 'string' ? response : JSON.stringify(response), 'test');
+}
 const makePreview = (db, options = {}) => preview(db, { ...auth, input: input(), rank: 2, now: 1000, ...options });
 const commit = (db, p, options = {}) => confirm(db, { ...auth, previewId: p.previewId,
   payloadHash: p.payloadHash, idempotencyKey: 'request-1', now: 1001, ...options });
 const rows = db => db.prepare('SELECT * FROM characters ORDER BY rank').all();
 function snapshot(db) {
   const tables = ['characters', 'character_identities', 'character_sources', 'character_curated_aliases',
-    'character_curation', 'character_franchise_memberships', 'catalog_state', 'catalog_meta',
+    'character_curation', 'character_franchise_memberships', 'tag_decisions', 'catalog_state', 'catalog_meta',
     'catalog_previews', 'catalog_mutations', 'catalog_confirmation_results'];
   return Object.fromEntries(tables.map(table => [table, db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
 }
@@ -110,12 +115,67 @@ test('manual create stores full metadata, independent aliases/direct memberships
     assert.equal(after.identity.creation_method, 'manual');
     assert.equal(after.curation.reference_url, 'https://example.test/reference');
     assert.deepEqual(after.sources, []);
+    assert.equal(after.tag, null);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM tag_decisions').get().n, 0);
     assert.equal(after.duplicateOverrideReason, null);
     assert.deepEqual({ ...db.prepare('SELECT * FROM catalog_state').get() },
       { singleton: 1, revision: 1, source_revision: 0, appearance_revision: 1 });
     assert.equal(db.prepare("SELECT value FROM catalog_meta WHERE key='catalog_revision'").get().value, '1');
     assert.equal(db.prepare("SELECT value FROM catalog_meta WHERE key='published_at'").get().value, new Date(1001).toISOString());
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally { db.close(); }
+});
+
+test('optional single tag is hash-bound and committed atomically with manual provenance and audit', () => {
+  const db = fixture();
+  try {
+    cacheTag(db, 'chell_(portal)');
+    const blank = makePreview(db);
+    assert.equal(blank.tagName, null);
+    for (const tagName of [undefined, null, '', '   ']) {
+      assert.equal(makePreview(db, { input: input({ tagName }) }).payloadHash, blank.payloadHash);
+    }
+    const p = makePreview(db, { input: input({ tagName: ' chell_(portal) ' }) });
+    assert.equal(p.tagName, 'chell_(portal)');
+    assert.notEqual(p.payloadHash, blank.payloadHash);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM tag_decisions').get().n, 0);
+    const payload = JSON.parse(db.prepare('SELECT payload_json FROM catalog_previews WHERE id=?').get(p.previewId).payload_json);
+    assert.equal(payload.input.tagName, 'chell_(portal)');
+    const result = commit(db, p);
+    const tag = { ...db.prepare('SELECT * FROM tag_decisions WHERE character_id=?').get(result.characterId) };
+    assert.deepEqual(tag, { character_id: result.characterId, status: 'approve', tag_name: 'chell_(portal)',
+      source: 'manual', updated_at: new Date(1001).toISOString() });
+    assert.deepEqual(JSON.parse(db.prepare('SELECT after_json FROM catalog_mutations WHERE id=?').get(result.mutationId).after_json).tag, tag);
+    db.exec('DELETE FROM tag_search_cache');
+    assert.deepEqual(commit(db, p, { now: p.expiresAt + 1 }), result, 'committed retry needs no evidence or network');
+    assert.equal(db.prepare('SELECT count(*) AS n FROM tag_decisions').get().n, 1);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally { db.close(); }
+});
+
+test('creation rejects invalid/unverified tags and rechecks exact active category-4 cached evidence on confirm', () => {
+  const db = fixture();
+  try {
+    for (const tagName of [[], ['chell'], {}, 1, 'x', 'UPPER', 'foo bar', 'foo,bar', 'foo/bar', 'x'.repeat(121)]) {
+      unchanged(db, () => makePreview(db, { input: input({ tagName }) }), /Invalid character tag/);
+    }
+    const tagName = 'chell_(portal)';
+    unchanged(db, () => makePreview(db, { input: input({ tagName }) }), /verified/);
+    for (const evidence of ['{bad', {}, [], [{ name: 'other_tag', category: 4 }],
+      [{ name: tagName, category: 0 }], [{ name: tagName, category: 4, is_deprecated: true }]]) {
+      cacheTag(db, tagName, evidence);
+      unchanged(db, () => makePreview(db, { input: input({ tagName }) }), /verified/);
+    }
+    cacheTag(db, tagName);
+    const p = makePreview(db, { input: input({ tagName }) });
+    for (const evidence of ['null', [{ name: tagName, category: 0 }], [{ name: tagName, category: 4, is_deprecated: true }]]) {
+      cacheTag(db, tagName, evidence);
+      unchanged(db, () => commit(db, p), /verified/);
+    }
+    db.exec('DELETE FROM tag_search_cache');
+    unchanged(db, () => commit(db, p), /verified/);
+    cacheTag(db, tagName);
+    assert.equal(commit(db, p).revision, 1);
   } finally { db.close(); }
 });
 
@@ -163,7 +223,7 @@ test('all explicit gender mappings including unknown are persisted', () => {
   }
 });
 
-test('duplicate warnings cover normalized full/native/imported/curated aliases and require audited reason', () => {
+test('duplicate warnings cover normalized full/native/imported/curated aliases and are advisory only', () => {
   const db = fixture();
   try {
     const first = rows(db)[0];
@@ -173,12 +233,14 @@ test('duplicate warnings cover normalized full/native/imported/curated aliases a
       const p = makePreview(db, { input: input({ name }) });
       assert.equal(p.duplicateWarnings[0].id, first.id);
       assert.equal(p.duplicateWarnings[0].sources[0].source, 'anilist');
-      unchanged(db, () => commit(db, p), /override reason/);
+      const result = commit(db, p, { idempotencyKey: p.previewId });
+      assert.notEqual(result.characterId, first.id);
+      assert.equal(db.prepare('SELECT duplicate_override_reason FROM catalog_mutations WHERE id=?').get(result.mutationId).duplicate_override_reason, null);
     }
     const p = makePreview(db, { input: input({ aliases: ['Alias 1'] }), duplicateOverrideReason: ' Different adaptation ' });
     const result = commit(db, p);
     assert.notEqual(result.characterId, first.id);
-    const audit = db.prepare('SELECT * FROM catalog_mutations').get();
+    const audit = db.prepare('SELECT * FROM catalog_mutations WHERE id=?').get(result.mutationId);
     assert.equal(audit.duplicate_override_reason, 'Different adaptation');
     assert.equal(JSON.parse(audit.after_json).duplicateOverrideReason, 'Different adaptation');
   } finally { db.close(); }
@@ -302,7 +364,8 @@ test('overflow refuses likes, temporary rank/tie orders and revision without par
 test('late failure trigger rolls back identity, order, membership, revisions, metadata, audit and result; retry succeeds', () => {
   const db = fixture();
   try {
-    const p = makePreview(db);
+    cacheTag(db, 'chell_(portal)');
+    const p = makePreview(db, { input: input({ tagName: 'chell_(portal)' }) });
     db.exec(`CREATE TRIGGER fail_confirmation BEFORE INSERT ON catalog_confirmation_results
       BEGIN SELECT RAISE(ABORT, 'injected failure'); END`);
     unchanged(db, () => commit(db, p), /injected failure/);

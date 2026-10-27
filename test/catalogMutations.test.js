@@ -229,13 +229,15 @@ test('only changed effective membership increments appearance revision; duplicat
   } finally { db.close(); }
 });
 
-test('duplicate warnings require bound audited explanation, never merge identities', () => {
+test('duplicate edit warnings are advisory, retain optional audited explanation and never merge identities', () => {
   const db = fixture();
   try {
     const id = manual(db);
     const p = preview(db, 'edit', { characterId: id, name: 'Ｉｍｐｏｒｔｅｄ  1' });
     assert.equal(p.duplicateWarnings.length, 1);
-    unchanged(db, () => confirm(db, p), /override reason/);
+    const edited = confirm(db, p);
+    assert.equal(rows(db).find(row => row.id === id).name_full, 'Imported  1');
+    assert.equal(db.prepare('SELECT duplicate_override_reason FROM catalog_mutations WHERE id=?').get(edited.mutationId).duplicate_override_reason, null);
     const accepted = preview(db, 'edit', { characterId: id, aliases: ['Alias 1'], duplicateOverrideReason: 'Different adaptation' });
     const result = confirm(db, accepted);
     assert.equal(result.characterId, id); assert.equal(rows(db).length, 5);
