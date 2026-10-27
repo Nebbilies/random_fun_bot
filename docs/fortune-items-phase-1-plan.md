@@ -1,6 +1,6 @@
 # Fortune items — Phase 1 implementation plan
 
-Status: Awaiting user approval. No production changes or tests authorized by this plan until approval.
+Status: Approved and implementation in progress. User subsequently corrected the migration policy: routine additive Fortune tables must migrate automatically during normal writable startup/deploy; manual maintenance is only for substantial/risky changes.
 
 Design authority: `docs/fortune-items-phase-1-design.md`, approved in conversation. Sequence is Lens -> slot selection -> Double or Nothing -> Recast -> inventory/overflow. A lost gamble leaves Recast armed; a won gamble uses the upgraded tier.
 
@@ -26,9 +26,9 @@ There is no perfect atomic commit between Discord and SQLite. An uncertain send 
 
 ### Compatibility and rollout
 
-Coordinate authoritative DDL, schema versioning, conversion, and restart validation. Inspect `lib/catalogDb.js`, `lib/catalogReleaseSchema.js`, `lib/characterIdentityMigration.js`, and `scripts/migrateCharacterIdentities.js` before selecting the exact versioned upgrade hook. Add an explicit tested offline upgrade path for an existing final-schema database; never mutate a validated v12 database silently on normal startup. Empty creation and legacy conversion must produce the same target schema. Do not run migration against a real database during this task.
+Coordinate authoritative DDL, schema versioning, conversion, and restart validation. Apply the known additive Fortune extension transactionally on normal writable opening of the exact supported pre-Fortune v12 schema. Revalidate after installation and never guess/repair unknown or partial schemas. Repeated and concurrent starts must be safe; read-only tools do not migrate. An optional rollback-only diagnostic CLI may remain, but routine deployment requires no manual step. Empty creation and legacy conversion must produce the same target schema. Do not run migration against a real database during this task.
 
-If the repository's supported release workflow cannot safely provide this upgrade without a broader migration redesign, stop and report that blocker instead of expanding scope silently.
+Keep the migration bounded and additive rather than introducing a broad migration framework. Manual migration is reserved for substantial or risky changes, per the user's explicit correction.
 
 ## Files and ordered work
 
@@ -90,7 +90,7 @@ Use `node:test` and the installed SQLite facilities. Work vertically: one failin
 - Run `npm test` and `npm run typecheck:catalog` using background terminals if lengthy. Report unrelated baseline failures separately from regressions.
 - Review changed SQL/direct inventory paths, state transitions, snapshot compatibility, authorized routing, message limits, and failure-injection coverage.
 - Update design/plan status and add rollout/upgrade notes and future changelog instructions.
-- Report modified files, tests, remaining limitations, and deployment steps. No commits, bot startup, live Discord actions, or live DB migration without explicit authorization.
+- Report modified files, tests, remaining limitations, and deployment steps. User authorized focused commits and creating a PR. No bot startup, live Discord actions, or live DB migration during implementation.
 
 ## Self-review
 

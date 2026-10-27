@@ -49,7 +49,7 @@ Use the engineering framework, with approval gates after this proposal and the i
 - Preserve the existing reservation-time snapshot policy: capture reward pools, weights, and relevant rules when a vault is created, not on each interaction. Include same-tier Recast pools for every supported tier.
 - Old vault sessions continue under their old rules without Fortune behavior. Recast remains armed until an eligible new session resolves.
 - Do not alter normal vault tier odds, roll allowances, claim rules, or other item mechanics.
-- Durable changes must be coordinated with authoritative schema, upgrade tooling, restart validation, and recovery. Normal startup must not silently repair a final-schema database.
+- Durable changes must be coordinated with authoritative schema, upgrade tooling, restart validation, and recovery. User correction during implementation: this small additive Fortune extension must apply automatically on normal writable startup/deploy. Only the exact supported historical schema is eligible; unknown/incompatible schemas are never guessed or repaired. Reserve manual migration for substantial/risky changes.
 
 ## Recommended architecture and alternatives
 
