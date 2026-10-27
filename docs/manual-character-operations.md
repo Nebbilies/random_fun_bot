@@ -14,7 +14,7 @@ CI and the deployment script pin **Node v22.23.2**. Earlier Node 22 versions (in
 2. Each bot process must use the same persisted database gate. New roll/item/trade/gift/divorce/wish actions pause. Existing published claims, mystery answers, Hostage decisions and pending confirmations may finish under their captured rules. Read-only commands and cancellation remain available.
 3. Inspect `--mode status`. This enumerates persisted rolls, mysteries and item actions; `persistedActionsDrained` does **not** mean all writers are stopped or all in-memory conversations are drained. Confirm trade/gift/divorce dialogs have finished/expired in every process.
 4. Stop every bot, portal, tag tool, importer, scheduled task and other SQLite writer. Verify no process can reconnect. Source/enrichment publication must also stop. Do not introduce a new cost by force-resolving a blocked action with random outcomes.
-5. Supported offline settlement may cancel only reviewed no-cost/undelivered cases with exact escrow release. Delivered Hostages, active mysteries, live rolls/Siren and unknown payload variants require draining or reviewed reconciliation; never invent refunds.
+5. Supported offline settlement may cancel only reviewed no-cost/undelivered cases with exact escrow release. Proven ordinary published rolls whose captured claim deadline has passed may close without refunds or changes to ownership, costs or history. Pending/unexpired rolls, all escape/Siren/mystery-linked rolls, delivered Hostages and unknown payload variants require draining or reviewed reconciliation; never invent refunds.
 
 The drain CLI uses an explicit existing path; it does not select the default production database. `--mode resume` clears the gate only when the operator has decided normal operation is safe.
 
@@ -27,6 +27,20 @@ The drain CLI uses an explicit existing path; it does not select the default pro
 - Record measured conversion duration, restart through normal writable/read-only entrypoints, UUID/source uniqueness, foreign-key/integrity results, exact retained ownership/history, tied ordering and all critical gameplay/portal smoke results.
 - Independently restore another disposable environment from the untouched backup using the pre-conversion application version. Verify ownership, history, claims and portal permissions. A successful conversion is not a successful recovery test.
 - Establish a maintenance window from measured conversion/restart/recovery times and deployment requirements, with an explicit buffer. Record a go/no-go decision; never use a guessed downtime promise.
+
+## Disposable settlement rehearsal
+
+With explicit permission to read an offline working copy, run:
+
+```bash
+node scripts/rehearseCharacterSettlement.js --database /offline/working.sqlite
+```
+
+This opens the supplied file **read-only**, uses SQLite backup to create a new private temporary directory, and settles **only the generated clone**. It prints a compact report and the clone path and preserves that clone on success or failure. It does not convert, start Discord, normalize schemas, or modify the source. Its clone acknowledgements do not certify a production restore or stopped production writers. Protect the clone as sensitive data; retain it until diagnosis is complete and remove it explicitly when no longer needed.
+
+Only strictly classified expired ordinary published rolls close; their historical rows remain. Valid determined overflow rewards are retained byte-for-byte, even when inventory is full: no award, replacement, decline, extra capacity, reroll or acknowledgement clearing. Conversion carries these reviewed rewards forward as recoverable pending work, not terminal history. Other supported settlement behavior remains transactional. Any unsupported state rolls all settlement writes back. Unknown historical payloads remain blockers.
+
+Use the returned clone path for subsequent read-only inventory or rollback-only `--rehearse`. Settlement commits on the disposable clone; conversion rehearsal rolls back **conversion only**, not the preceding settlement. This is not production reconciliation authorization or a completed restore test.
 
 ## Offline working-copy conversion (not production authorization)
 

@@ -43,6 +43,123 @@ function vault(db, { id = 'v', state = 'decision', item = 'hostage_note', result
   return outcome;
 }
 
+function expiredRoll(db) {
+  db.exec(`INSERT OR IGNORE INTO character_identities(id,name_full) VALUES(50,'Retained character');
+    INSERT INTO character_rolls(guild_id,channel_id,command_message_id,message_id,character_id,character_name,state,published_at,expires_at)
+    VALUES('1','10','500','501',50,'Published name','open',100,10000)`);
+  return Number(db.prepare('SELECT last_insert_rowid() AS id').get().id);
+}
+
+test('ordinary expiry closes only state, preserving counts, history and spent costs; retry is inert', t => {
+  const db = fixture(t);
+  const id = expiredRoll(db);
+  db.exec(`INSERT INTO roll_allowances(guild_id,user_id,period,used) VALUES('1','101',7,4);
+    INSERT INTO claim_allowances(guild_id,user_id,period) VALUES('1','101',7);
+    INSERT INTO active_user_buffs(guild_id,user_id,buff_id,data_json,expires_at,remaining_rolls)
+      VALUES('1','101','synthetic','{"spent":true}',20000,2);
+    INSERT INTO roll_notices(roll_id,user_id) VALUES(${id},'101')`);
+  addItemToInventory(db, '1', '101', 'hostage_note');
+  const before = snapshot(db);
+  const original = rows(db, 'character_rolls')[0];
+  const report = settleCharacterMigration(db, options); // exact expires_at === now
+  assert.deepEqual(report.closedExpiredRolls, [id]);
+  assert.equal(report.refundedConsumedCosts, 0);
+  assert.deepEqual(rows(db, 'character_rolls'), [{ ...original, state: 'closed' }]);
+  assert.deepEqual(snapshot(db).filter(([name]) => name !== 'character_rolls'),
+    before.filter(([name]) => name !== 'character_rolls'));
+  const after = snapshot(db);
+  assert.deepEqual(settleCharacterMigration(db, options).closedExpiredRolls, []);
+  assert.deepEqual(snapshot(db), after);
+});
+
+test('legacy live catalog reference is sufficient without a retained snapshot', t => {
+  const db = fixture(t);
+  const id = expiredRoll(db);
+  db.exec(`DELETE FROM character_identities WHERE id=50;
+    INSERT INTO characters(id,rank,favourites,name_full) VALUES(50,1,1,'Current renamed character')`);
+  assert.deepEqual(settleCharacterMigration(db, options).closedExpiredRolls, [id]);
+});
+
+test('unsafe SQLite integer fails closed and rolls back without coercion', t => {
+  const db = fixture(t);
+  confirming(db);
+  expiredRoll(db);
+  db.exec('UPDATE character_rolls SET expires_at=9007199254740992');
+  const readExact = () => {
+    const statement = db.prepare('SELECT * FROM character_rolls');
+    statement.setReadBigInts(true);
+    return statement.all();
+  };
+  const before = readExact();
+  const actions = rows(db, 'item_actions');
+  assert.throws(() => settleCharacterMigration(db, options), /too large/);
+  assert.deepEqual(readExact(), before);
+  assert.deepEqual(rows(db, 'item_actions'), actions);
+  assert.equal(db.isTransaction, false);
+});
+
+test('captured ordinary rules validate without live defaults; retained identity needs no live catalog row', t => {
+  const db = fixture(t);
+  const id = expiredRoll(db);
+  db.prepare('UPDATE character_rolls SET rules_json=?,expires_at=9999 WHERE id=?')
+    .run(JSON.stringify({ claimMs: 9899, escapeProtectionMs: 1, escapeClaimMs: 2, reportMs: 3 }), id);
+  assert.deepEqual(settleCharacterMigration(db, options).closedExpiredRolls, [id]);
+});
+
+for (const change of [
+  "state='pending'", "state='unknown'", 'expires_at=10001', 'published_at=10001,expires_at=10002',
+  'published_at=NULL', 'published_at=0', 'published_at=-1', 'published_at=1.5',
+  'expires_at=NULL', 'expires_at=0', 'expires_at=100', 'expires_at=99', 'expires_at=9999.5',
+  'published_at=1e100', "guild_id=''", "channel_id='bad'", "command_message_id=''",
+  "command_message_id='siren:synthetic'", 'message_id=NULL', "message_id='bad'",
+  'character_id=0', 'character_id=999', "character_name=''", "character_name='   '",
+  'mystery_session_id=1', "exclusive_user_id='101'", 'escape_marriage_id=1', 'escape_marriage_id=0',
+  "escape_owner_id='101'", "escape_owner_id=''", 'protected_until=0', "escape_outcome='escaped'",
+  "escape_winner_id='101'", 'escape_resolved_at=0', "rules_json='not json'", "rules_json='null'",
+  `rules_json='{"claimMs":9900}'`,
+  `rules_json='{"claimMs":9901,"escapeProtectionMs":1,"escapeClaimMs":2,"reportMs":3}'`,
+]) test(`unproven expiry blocks all settlement and preserves rolls: ${change}`, t => {
+  const db = fixture(t);
+  confirming(db);
+  const id = expiredRoll(db);
+  db.exec(`UPDATE character_rolls SET ${change} WHERE id=${id}`);
+  // A second, independently verified expiry must not close either.
+  db.exec(`INSERT INTO character_rolls(guild_id,channel_id,command_message_id,message_id,character_id,character_name,state,published_at,expires_at)
+    VALUES('1','10','600','601',50,'Captured','open',100,9999)`);
+  const before = snapshot(db);
+  assert.throws(() => settleCharacterMigration(db, options), CharacterMigrationSettlementError);
+  assert.deepEqual(snapshot(db), before);
+});
+
+test('even terminal mystery reverse binding blocks ordinary expiry', t => {
+  const db = fixture(t);
+  const id = expiredRoll(db);
+  db.prepare(`INSERT INTO mystery_sessions(guild_id,origin_roll_id,event_id,character_id,rank_snapshot,state,roller_id,event_channel_id,started_at,deadline_at)
+    VALUES('1',?,'doors',50,50,'completed','101','10',100,200)`).run(id);
+  const before = snapshot(db);
+  assert.throws(() => settleCharacterMigration(db, options), CharacterMigrationSettlementError);
+  assert.deepEqual(snapshot(db), before);
+});
+
+test('non-authoritative optional snapshot schema rejects before settlement', t => {
+  const db = fixture(t);
+  const id = expiredRoll(db);
+  db.exec('ALTER TABLE character_rolls ADD COLUMN character_snapshot_json TEXT');
+  const captured = { version: 1, id: 50, rank: 1, favourites: 0, likes_source: 'anilist',
+    name_full: 'Published name', image_url: null, anime_titles: null, gender: null, tag_name: null };
+  for (const value of ['bad JSON', 'null', JSON.stringify({ ...captured, id: 51 }),
+    JSON.stringify({ ...captured, name_full: 'Mismatch' }), JSON.stringify({ ...captured, version: 2 })]) {
+    db.prepare('UPDATE character_rolls SET character_snapshot_json=? WHERE id=?').run(value, id);
+    const before = snapshot(db);
+    assert.throws(() => settleCharacterMigration(db, options), /Unsupported legacy v10 schema/);
+    assert.deepEqual(snapshot(db), before);
+  }
+  db.prepare('UPDATE character_rolls SET character_snapshot_json=? WHERE id=?').run(JSON.stringify(captured), id);
+  const original = rows(db, 'character_rolls')[0];
+  assert.throws(() => settleCharacterMigration(db, options), /Unsupported legacy v10 schema/);
+  assert.deepEqual(rows(db, 'character_rolls'), [original]);
+});
+
 test('settled maintenance history passes UUID preflight and converts without losing escrow evidence', t => {
   const db = fixture(t);
   const { action } = hostage(db);
@@ -187,12 +304,13 @@ test('vault Keep and determined overflow preserve outcomes without gambling or d
   assert.deepEqual(snapshot(db), before);
 });
 
-test('full vault inventory rolls back earlier cancellation, Crown restoration and reward delivery', t => {
+test('full vault inventory rolls back earlier cancellation, Crown restoration, roll expiry and reward delivery', t => {
   const db = fixture(t);
   hostage(db);
+  expiredRoll(db);
   for (let i = 0; i < 4; i++) addItemToInventory(db, '1', '404', 'hostage_note');
   vault(db, { id: 'first' });
-  vault(db, { id: 'second' });
+  vault(db, { id: 'second', state: 'overflow', result: 'won' });
   const before = snapshot(db);
   assert.throws(() => settleCharacterMigration(db, options), /inventory full/);
   assert.deepEqual(snapshot(db), before);
@@ -201,10 +319,11 @@ test('full vault inventory rolls back earlier cancellation, Crown restoration an
 test('late SQL failure rolls back all durable settlement; retry succeeds', t => {
   const db = fixture(t);
   hostage(db);
+  expiredRoll(db);
   vault(db);
   db.exec("CREATE TRIGGER reject_vault BEFORE UPDATE ON vault_rewards BEGIN SELECT RAISE(ABORT,'injected settlement failure'); END");
   const before = snapshot(db);
-  assert.throws(() => settleCharacterMigration(db, options), /injected settlement failure/);
+  assert.throws(() => settleCharacterMigration(db, options), /Unsupported legacy v10 schema/);
   assert.deepEqual(snapshot(db), before);
   db.exec('DROP TRIGGER reject_vault');
   assert.equal(settleCharacterMigration(db, options).canceledActions.length, 1);
@@ -220,5 +339,27 @@ test('terminal history and spent costs remain byte-for-byte unchanged', t => {
   vault(db, { state: 'lost' });
   const before = snapshot(db);
   settleCharacterMigration(db, options);
+  assert.deepEqual(snapshot(db), before);
+});
+
+
+test('unreviewed ownership-changing trigger is refused before ordinary expiry writes', t => {
+  const db = fixture(t);
+  expiredRoll(db);
+  db.exec("CREATE TRIGGER unexpected_owner AFTER UPDATE ON character_rolls BEGIN UPDATE marriages SET owner_id='202'; END");
+  const before = snapshot(db);
+  assert.throws(() => settleCharacterMigration(db, options), /Unsupported legacy v10 schema/);
+  assert.deepEqual(snapshot(db), before);
+});
+
+test('unknown captured rule variant cannot hide alternate expiry semantics', t => {
+  const db = fixture(t);
+  const id = expiredRoll(db);
+  db.prepare('UPDATE character_rolls SET rules_json=? WHERE id=?').run(JSON.stringify({
+    claimMs: 100, escapeProtectionMs: 1, escapeClaimMs: 1, reportMs: 1,
+    unknownVariant: { characterId: 999 }
+  }), id);
+  const before = snapshot(db);
+  assert.throws(() => settleCharacterMigration(db, options), CharacterMigrationSettlementError);
   assert.deepEqual(snapshot(db), before);
 });

@@ -168,6 +168,119 @@ for (const [label, sql, reason] of [
   assert.deepEqual(snapshot(db), before);
 });
 
+// Reviewed against cached origin/main (432f107): itemActionRuntime.js,
+// masqueradeReveal.js, itemActions.js and characterInteractionCancellation.js.
+function masqueradeHistory(db, step = 9) {
+  db.exec("INSERT INTO character_identities VALUES(888,'Snapshot-only contribution',NULL)");
+  const pool = [12, 3, 99, 888].map((characterId, i) => ({ characterId,
+    marriageId: characterId, ownerId: String(characterId), rank: characterId, name: `Historical ${i}` }));
+  const selections = { own: pool[0], targets: pool.slice(1),
+    _ui: { users: pool.slice(1).map(c => c.ownerId), slot: 'target2', page: 3, masqueradeRevealStep: step },
+    _rules: { masqueradeMinRankMultiplier: 1.2, masqueradeTopRank: 100, masqueradeConfirmationMs: 300000 },
+    _rewardPools: { rare: [{ id: 'item_12', maxCharges: 3 }] } };
+  // assignment[source contribution index] = recipient index, not a character ID.
+  const result = { status: 'resolved', originals: pool, targets: pool,
+    assignment: [3, 2, 0, 1], message: 'Historical Grand Masquerade 12' };
+  db.prepare("UPDATE item_actions SET kind='grand_masquerade',selections_json=?,result_json=?,message_id='12',delivery_pending=0 WHERE id='action'")
+    .run(JSON.stringify(selections), JSON.stringify(result));
+  return { pool, selections, result };
+}
+
+for (const step of [0, 1, 2, 8, 9]) test(`Masquerade cursor ${step} survives inventory, rehearsal and committed migration`, t => {
+  const { db } = fixture(t);
+  const { pool, selections, result } = masqueradeHistory(db, step);
+  assert.deepEqual(inventoryCharacterIdentities(db).blockers, []);
+  const before = snapshot(db);
+  assert.equal(migrateCharacterIdentities(db).committed, false);
+  assert.deepEqual(snapshot(db), before);
+  migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 });
+  const mapping = new Map(db.prepare('SELECT * FROM character_identity_migration').all().map(r => [r.legacy_id, r.character_id]));
+  assert.deepEqual([...mapping.keys()].sort((a, b) => a - b), [3, 12, 99, 888]);
+  const mappedPool = pool.map(c => ({ ...c, characterId: mapping.get(c.characterId) }));
+  const action = db.prepare("SELECT * FROM item_actions WHERE id='action'").get();
+  assert.deepEqual(JSON.parse(action.selections_json), { ...selections, own: mappedPool[0], targets: mappedPool.slice(1) });
+  assert.deepEqual(JSON.parse(action.result_json), { ...result, originals: mappedPool, targets: mappedPool });
+  assert.equal(action.message_id, '12');
+  assert.equal(action.delivery_pending, 0);
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+});
+
+for (const kind of ['alchemist', 'chaos_exchange', 'counterfeit_crown', 'heart_for_a_heart',
+  'hostage_note', 'severed_fate', 'grand_masquerade', 'kaimetsu']) {
+  test(`${kind} upstream no-cost refusal survives migration byte-for-byte`, t => {
+    const { db } = fixture(t);
+    const result = JSON.stringify({ status: 'canceled', noCost: true, message: 'Ownership changed. Nothing was consumed.' }, null, 2);
+    db.prepare("UPDATE item_actions SET kind=?,state='canceled',result_json=? WHERE id='action'").run(kind, result);
+    assert.deepEqual(inventoryCharacterIdentities(db).blockers, []);
+    migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 });
+    assert.equal(db.prepare("SELECT result_json FROM item_actions WHERE id='action'").get().result_json, result);
+  });
+}
+
+test('Kaimetsu-canceled Hostage history preserves cancellation and private UI metadata', t => {
+  const { db } = fixture(t);
+  const own = { characterId: 99, marriageId: 99, ownerId: '99', rank: 99, name: 'Historical' };
+  const selections = { own, targets: [own], originals: [own],
+    _ui: { users: ['99'], slot: 'target0', page: 99, messageId: '99', privateDelivered: true, privateMessageId: '99' } };
+  const result = JSON.stringify({ status: 'canceled', canceledBy: 'kaimetsu',
+    message: 'Hostage challenge canceled by Kaimetsu. No exchange or additional divorce.' }, null, 2);
+  db.prepare("UPDATE item_actions SET kind='hostage_note',state='canceled',selections_json=?,result_json=? WHERE id='action'")
+    .run(JSON.stringify(selections), result);
+  assert.deepEqual(inventoryCharacterIdentities(db).blockers, []);
+  migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 });
+  const mapped = db.prepare('SELECT character_id FROM character_identity_migration WHERE legacy_id=99').get().character_id;
+  const choice = { ...own, characterId: mapped };
+  const action = db.prepare("SELECT * FROM item_actions WHERE id='action'").get();
+  assert.deepEqual(JSON.parse(action.selections_json), { ...selections, own: choice, targets: [choice], originals: [choice] });
+  assert.equal(action.result_json, result);
+});
+
+for (const [label, mutate, reason] of [
+  ['unknown UI scalar', s => { s._ui.future = 12; }, /selections_json\._ui\.future: unknown/],
+  ['unknown UI character', s => { s._ui.characterId = 12; }, /selections_json\._ui\.characterId: unknown/],
+  ['nested cursor', s => { s._ui.masqueradeRevealStep = { id: 12 }; }, /selections_json\._ui\.masqueradeRevealStep:/],
+  ...[-1, 10, 1.5, '9', null, true].map(step => [`invalid cursor ${JSON.stringify(step)}`,
+    s => { s._ui.masqueradeRevealStep = step; }, /selections_json\._ui\.masqueradeRevealStep:/]),
+  ['unknown choice', s => { s.targets[0].future = 12; }, /selections_json\.targets\[0\]\.future: unknown/],
+  ['unresolved choice', s => { s.targets[0].characterId = 404; }, /Unresolved reference .*selections_json\.targets\[0\]\.characterId=404/],
+]) test(`Masquerade still rejects ${label} without writes`, t => {
+  const { db } = fixture(t);
+  const { selections } = masqueradeHistory(db);
+  mutate(selections);
+  db.prepare("UPDATE item_actions SET selections_json=? WHERE id='action'").run(JSON.stringify(selections));
+  const before = snapshot(db);
+  assert.match(inventoryCharacterIdentities(db).blockers.join('\n'), reason);
+  assert.throws(() => migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 }), reason);
+  assert.deepEqual(snapshot(db), before);
+});
+
+for (const [label, patch, result, reason] of [
+  ['pending reveal delivery', { delivery_pending: 1 }, null, /Live item_actions action/],
+  ['cursor on another kind', { kind: 'hostage_note' }, null, /selections_json\._ui\.masqueradeRevealStep:/],
+  ['unknown result', {}, { status: 'canceled', future: 12 }, /result_json\.future: unknown/],
+  ['nested noCost', {}, { status: 'canceled', noCost: { id: 12 } }, /result_json\.noCost:/],
+  ['nonboolean noCost', {}, { status: 'canceled', noCost: 1 }, /result_json\.noCost:/],
+  ['unknown cancellation', { kind: 'hostage_note', state: 'canceled' }, { status: 'canceled', canceledBy: 'future' }, /result_json\.canceledBy:/],
+  ['Kaimetsu cancellation on wrong kind', { state: 'canceled' }, { status: 'canceled', canceledBy: 'kaimetsu' }, /result_json\.canceledBy:/],
+  ['Kaimetsu cancellation on resolved Hostage', { kind: 'hostage_note' }, { status: 'resolved', canceledBy: 'kaimetsu' }, /result_json\.canceledBy:/],
+]) test(`upstream metadata support still refuses ${label} without writes`, t => {
+  const { db } = fixture(t);
+  masqueradeHistory(db);
+  if (result || patch.kind === 'hostage_note') {
+    db.prepare("UPDATE item_actions SET selections_json='{}',result_json=? WHERE id='action'")
+      .run(JSON.stringify(result ?? { status: 'canceled' }));
+  }
+  // Keep the cursor for the specific wrong-kind regression.
+  if (label === 'cursor on another kind') db.prepare("UPDATE item_actions SET selections_json=? WHERE id='action'")
+    .run(JSON.stringify({ _ui: { masqueradeRevealStep: 9 } }));
+  for (const [column, value] of Object.entries(patch)) db.prepare(`UPDATE item_actions SET ${column}=? WHERE id='action'`).run(value);
+  const before = snapshot(db);
+  assert.match(inventoryCharacterIdentities(db).blockers.join('\n'), reason);
+  assert.throws(() => migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 }), reason);
+  assert.deepEqual(snapshot(db), before);
+});
+
 function historicalSnapshots(db) {
   // Same number in unrelated namespaces deliberately must not be remapped.
   const own = { characterId: 99, marriageId: 99, ownerId: '99', rank: 99, name: 'Captured name 99' };
