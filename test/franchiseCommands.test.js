@@ -83,6 +83,36 @@ function setup(t) {
   return db;
 }
 
+test('identity migration preserves fresh legacy franchise lookups for !ima and !imar', async (t) => {
+  const db = setup(t);
+  migrateCharacterIdentities(db, { dryRun: false, targetVersion: 12 });
+  for (const name of ['ima', 'imar']) {
+    const result = await command(db, 'Sword Art Online', { command: name });
+    assert.match(text(result.payload), /Kirito/);
+    assert.doesNotMatch(text(result.payload), /out of date|refresh/i);
+    assert.equal(text(result.payload).includes('#1 - Kirito'), name === 'imar');
+  }
+});
+
+test('migrated legacy freshness fallback rejects stale, missing and changed-source coverage', async (t) => {
+  const db = setup(t);
+  migrateCharacterIdentities(db, { dryRun: false, targetVersion: 12 });
+  const reject = async () => {
+    assert.equal(isFranchiseCatalogCurrent(db), false);
+    assert.match(text((await command(db, 'Sword Art Online')).payload), /out of date.*no direct.*refresh/i);
+  };
+  setMeta(db, 'franchise_source_published_at', 'older');
+  await reject();
+  db.prepare("DELETE FROM catalog_meta WHERE key = 'franchise_source_published_at'").run();
+  await reject();
+  setMeta(db, 'franchise_source_published_at', 'snapshot-1');
+  setMeta(db, 'franchise_source_token', 'source:999');
+  await reject();
+  db.prepare("DELETE FROM catalog_meta WHERE key = 'franchise_source_token'").run();
+  db.exec('UPDATE catalog_state SET source_revision = 1 WHERE singleton = 1');
+  await reject();
+});
+
 test('stale source still exposes three confirmed manual ZZZ characters, ranks, owners and curated cover', async (t) => {
   const { db, ids } = staleManualCatalog(t);
   db.prepare(`INSERT INTO marriages (guild_id, character_id, owner_id, married_at)
