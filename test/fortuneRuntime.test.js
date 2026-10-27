@@ -158,11 +158,17 @@ for (const viaKeep of [false, true]) test(`automatic Recast followUp edits its o
   }
   const edits = [], sent = [];
   class Interaction {
-    constructor() { Object.assign(this, click(vaultId, message, viaKeep ? 'keep' : 'A')); }
+    constructor() {
+      Object.assign(this, click(vaultId, message, viaKeep ? 'keep' : 'A'));
+      this.webhook = { editMessage: async (id, payload) => {
+        assert.equal(id, 'private-followup');
+        edits.push(payload);
+      } };
+    }
     async followUp(payload) {
       assert.equal(this.message, message, 'prototype method must retain its receiver');
       sent.push(payload);
-      return { id: 'private-followup', edit: async payload => { edits.push(payload); } };
+      return { id: 'private-followup', edit: async () => { throw new Error('Ephemeral messages require webhook editing'); } };
     }
     async editReply() { assert.fail('must not edit the original public interaction reply'); }
   }
