@@ -17,7 +17,7 @@ The verified reconciliations were carried forward: ordinary expired escape 17379
 ## Services and access
 
 - `random-fun-bot.service` runs the installed bot. `/etc/systemd/system/random-fun-bot.service.d/50-catalog-runtime.conf` pins its executable to `/home/ubuntu/.volta/tools/image/node/22.23.2/bin/node`.
-- `random-fun-bot-portal.service` initially ran the authenticated portal privately. At the user's subsequent request it was stopped and disabled, leaving VPS port **25565** free for their manual portal launch. Do not restart it automatically during bot deployment.
+- `random-fun-bot-portal.service` initially ran the authenticated portal privately, then was stopped for manual portal operation. On the subsequent pipeline-repair inspection it was already active again and was the sole portal process listening on **127.0.0.1:25565**. The user has now authorized restarting this service alongside the bot during deployment. Screen session `1418464.web_run` is not the current portal process owner; deployment must not terminate unrelated screen sessions.
 - The VPS's global/default Node remains v22.14.0. Other applications were not moved to a new runtime.
 - The previous public HTTP portal process was stopped before database replacement. Password authentication is now reached through encrypted SSH forwarding rather than exposed public HTTP.
 - The local SSH tunnel created for initial verification was released. Current portal exposure is managed by the user. The tunnel command below remains an option only if a private VPS listener is running.
