@@ -10,6 +10,134 @@ import { revealVaultReward, decideVaultReward, getVaultReward, reconcileVaultRew
 import { inspectFortuneRuntime, getRecast, presentRecast, chooseRecast, activateLens, getLens, acknowledgeLens, refundUnpresentedLens, armRecast, getArmedRecast } from '../lib/vaultFortune.js';
 import { validateConfigValue } from '../lib/gameConfigSchema.js';
 
+function inspectReadOnly(db) {
+  const snapshot = () => db.prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name").all()
+    .map(({ name }) => [name, db.prepare(`SELECT * FROM "${name}"`).all()]);
+  const before = snapshot();
+  const changes = db.prepare('SELECT total_changes() AS count').get().count;
+  db.exec('PRAGMA query_only=ON');
+  try {
+    const inspection = inspectFortuneRuntime(db);
+    assert.deepEqual(snapshot(), before, 'inspection must not change persisted state');
+    assert.equal(db.prepare('SELECT total_changes() AS count').get().count, changes);
+    return inspection;
+  } finally { db.exec('PRAGMA query_only=OFF'); }
+}
+
+function recastFixture(db, { full = false, gamble = false } = {}) {
+  installEmptyFinalCatalog(db);
+  const source = addItemToInventory(db, 'guild', 'owner', 'fortunes_recast').item;
+  if (gamble) addItemToInventory(db, 'guild', 'owner', 'double_or_nothing');
+  if (full) for (let i = 0; i < 4; i++) addItemToInventory(db, 'guild', 'owner', 'hourglass_of_haste');
+  armRecast(db, { guildId: 'guild', userId: 'owner', inventoryId: source.id, now: 100 });
+  const session = reservePaidVaultSession(db, { guildId: 'guild', userId: 'owner', channelId: 'channel', now: 100 });
+  const scope = { vaultId: session.vaultId, guildId: 'guild', userId: 'owner', channelId: 'channel', messageId: 'message' };
+  revealVaultReward(db, { ...scope, outcome: drawVaultSessionOutcome(session, () => 0), now: 200 });
+  if (gamble) decideVaultReward(db, { ...scope, action: 'gamble', now: 250, random: () => 0 });
+  return { scope, source };
+}
+
+test('preflight rejects stranded chosen Recasts and payloads inconsistent with their persisted choice', () => {
+  const corruptions = [
+    ['chosen reward still recast', 'chosen', db => db.exec("UPDATE vault_rewards SET state='recast'")],
+    ['chosen reward still decision', 'chosen', db => db.exec("UPDATE vault_rewards SET state='decision'")],
+    ['alternative replaced with original', 'chosen', db => db.exec('UPDATE vault_rewards SET reward_json=(SELECT original_json FROM fortune_recasts)')],
+    ['Keep replaced with alternative', 'keep', db => {
+      const decision = db.prepare('SELECT alternatives_json FROM fortune_recasts').get();
+      const reward = getVaultReward(db, db.prepare('SELECT vault_id FROM fortune_recasts').get().vault_id).reward;
+      db.prepare('UPDATE vault_rewards SET reward_json=?').run(JSON.stringify({ ...reward, item: JSON.parse(decision.alternatives_json)[0] }));
+    }],
+    ['selected terms changed', 'chosen', db => {
+      const row = db.prepare('SELECT reward_json FROM vault_rewards').get();
+      const reward = JSON.parse(row.reward_json); reward._rules.doubleDecisionMs++;
+      db.prepare('UPDATE vault_rewards SET reward_json=?').run(JSON.stringify(reward));
+    }],
+    ['pending reward payload changed', 'pending', db => db.exec("UPDATE vault_rewards SET reward_json=json_set(reward_json,'$.item.name','corrupt')")],
+    ['presented reward payload changed', 'presented', db => db.exec("UPDATE vault_rewards SET reward_json=json_set(reward_json,'$.item.name','corrupt')")],
+  ];
+  for (const [label, state, corrupt] of corruptions) {
+    const db = new DatabaseSync(':memory:');
+    try {
+      const { scope } = recastFixture(db);
+      if (state === 'chosen' || state === 'keep') decideVaultReward(db, { ...scope, action: 'recast', choice: state === 'keep' ? -1 : 0, now: 300 });
+      if (state === 'presented') presentRecast(db, { ...scope, now: 300 });
+      assert.equal(inspectReadOnly(db).blockers.length, 0, `valid ${label} fixture`);
+      corrupt(db);
+      assert.ok(inspectReadOnly(db).blockers.some(issue => issue.table === 'fortune_recasts'), label);
+    } finally { db.close(); }
+  }
+});
+
+function lensFixture(db) {
+  installEmptyFinalCatalog(db);
+  const source = addItemToInventory(db, 'guild', 'owner', 'fortunes_lens').item;
+  const session = reservePaidVaultSession(db, { guildId: 'guild', userId: 'owner', channelId: 'channel', now: 100 });
+  bindVaultSessionMessage(db, session.vaultId, 'message');
+  activateLens(db, { vaultId: session.vaultId, guildId: 'guild', userId: 'owner', channelId: 'channel', messageId: 'message', now: 200, random: () => 0 });
+  return { source, session };
+}
+
+test('preflight validates held sources in both directions against the effect owner and Lens vault', () => {
+  const corruptions = [
+    ['armed Recast borrows another owner Lens hold', ({ db, source }) => {
+      db.prepare('INSERT INTO fortune_armed VALUES(?,?,?,?)').run('guild', 'intruder', source.id, 200);
+    }],
+    ['Lens and its source moved to another owner', ({ db, source }) => {
+      db.prepare("UPDATE fortune_holds SET user_id='intruder' WHERE inventory_id=?").run(source.id);
+      db.prepare("UPDATE user_inventory SET user_id='intruder' WHERE id=?").run(source.id);
+    }],
+    ['Lens and its source moved to another guild', ({ db, source }) => {
+      db.prepare("UPDATE fortune_holds SET guild_id='other' WHERE inventory_id=?").run(source.id);
+      db.prepare("UPDATE user_inventory SET guild_id='other' WHERE id=?").run(source.id);
+    }],
+    ['Lens hold references another vault', ({ db, source }) => {
+      db.prepare("UPDATE fortune_holds SET reference_id='other' WHERE inventory_id=?").run(source.id);
+    }],
+    ['Lens borrows another pending Lens inventory', ({ db, source }) => {
+      const second = reservePaidVaultSession(db, { guildId: 'guild', userId: 'owner', channelId: 'channel', now: 100 });
+      const lens = getLens(db, db.prepare('SELECT vault_id FROM fortune_lens').get().vault_id);
+      db.prepare("INSERT INTO fortune_lens VALUES(?,?,?,'pending',200,NULL)").run(second.vaultId, source.id, JSON.stringify(lens.candidates));
+    }],
+    ['Lens has no hold', ({ db }) => db.exec('DELETE FROM fortune_holds')],
+  ];
+  for (const [label, corrupt] of corruptions) {
+    const db = new DatabaseSync(':memory:');
+    try {
+      const fixture = lensFixture(db);
+      assert.equal(inspectReadOnly(db).blockers.length, 0);
+      corrupt({ db, ...fixture });
+      assert.ok(inspectReadOnly(db).blockers.length > 0, label);
+    } finally { db.close(); }
+  }
+});
+
+test('preflight permits terminal Lens and Recast history after exhausted sources are deleted', () => {
+  for (const state of ['delivered', 'overflow', 'declined', 'won']) {
+    for (const choice of [-1, 0]) {
+      const db = new DatabaseSync(':memory:');
+      try {
+        const { scope, source } = recastFixture(db, { full: ['overflow', 'declined'].includes(state), gamble: state === 'won' });
+        assert.equal(inspectReadOnly(db).blockers.length, 0);
+        presentRecast(db, { ...scope, now: 275 });
+        if (['overflow', 'declined'].includes(state)) addItemToInventory(db, 'guild', 'owner', 'hourglass_of_haste');
+        assert.equal(inspectReadOnly(db).blockers.length, 0);
+        decideVaultReward(db, { ...scope, action: 'recast', choice, now: 300 });
+        if (state === 'declined') decideVaultReward(db, { ...scope, action: 'decline', now: 400 });
+        assert.equal(getVaultReward(db, scope.vaultId).state, state === 'won' ? 'delivered' : state);
+        assert.equal(db.prepare('SELECT 1 FROM user_inventory WHERE id=?').get(source.id), undefined);
+        assert.equal(inspectReadOnly(db).blockers.length, 0, `${state}, choice ${choice}`);
+      } finally { db.close(); }
+    }
+  }
+  const db = new DatabaseSync(':memory:');
+  try {
+    const { source, session } = lensFixture(db);
+    acknowledgeLens(db, session.vaultId, 300);
+    assert.equal(db.prepare('SELECT 1 FROM user_inventory WHERE id=?').get(source.id), undefined);
+    assert.equal(inspectReadOnly(db).blockers.length, 0);
+  } finally { db.close(); }
+});
+
 test('arming reserves an entry without spending and repeated arming cannot reserve another copy', () => {
   const db = new DatabaseSync(':memory:');
   try {
