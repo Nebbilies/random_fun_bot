@@ -49,7 +49,7 @@ test('pagination bounds row count and text length and supports empty filters', (
 
 test('catalog and release announcement share Discord message-wide text budget', () => {
   const changelog = 'Release '.repeat(300);
-  const pages = itemListPages(Array(20).fill('x'.repeat(349)), 3800 - changelog.length);
+  const pages = itemListPages([...Array(20).fill('x'.repeat(349)), 'long description '.repeat(400)], 3800 - changelog.length);
   for (let page = 0; page < pages.length; page++) {
     const card = itemListComponents(pages, page, 'all', false, changelog)[0].toJSON();
     const total = card.components.reduce((sum, component) => sum + (component.content?.length ?? 0), 0);
