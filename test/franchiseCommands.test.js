@@ -9,6 +9,56 @@ import { openCatalog, setMeta } from '../lib/catalogDb.js';
 import { runFranchiseCommand } from '../commands/utils/franchiseCommand.js';
 import { run as runIma } from '../commands/ima.js';
 import { parseFranchiseCommand } from '../lib/franchiseModifiers.js';
+import { migrateCharacterIdentities } from '../lib/characterIdentityMigration.js';
+import { initializeCatalogReleaseSchema } from '../lib/catalogReleaseSchema.js';
+import { previewManualCharacterCreation, confirmManualCharacterCreation } from '../lib/manualCharacterMutations.js';
+import { isFranchiseCatalogCurrent } from '../lib/franchiseLookup.js';
+
+function staleManualCatalog(t) {
+  const db = setup(t);
+  migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 });
+  initializeCatalogReleaseSchema(db);
+  db.exec(`INSERT INTO franchises (id, display_name, name_source, created_at, curated_cover_url)
+    VALUES (30, 'Zenless Zone Zero', 'manual', 'now', 'https://example.com/zzz.jpg');
+    INSERT INTO franchise_aliases (franchise_id, alias, normalized_alias, source) VALUES
+    (30, 'ZZZ', 'zzz', 'manual'), (30, 'Stale Alias', 'stale alias', 'automatic');
+    INSERT INTO franchise_anime (franchise_id, anime_id) VALUES (30, 100);`);
+  const ids = [];
+  for (const name of ['Anby', 'Billy', 'Nicole']) {
+    const preview = previewManualCharacterCreation(db, {
+      account: 'editor', role: 'moderator', rank: ids.length + 1, now: 1000,
+      input: { name, aliases: [], gender: 'unknown', franchiseIds: [30],
+        portraitUrl: 'https://example.com/portrait.jpg' },
+    });
+    const result = confirmManualCharacterCreation(db, {
+      account: 'editor', role: 'moderator', previewId: preview.previewId,
+      payloadHash: preview.payloadHash, idempotencyKey: name, now: 1001,
+    });
+    ids.push(result.characterId);
+  }
+  setMeta(db, 'franchise_source_token', 'source:999');
+  assert.ok(db.prepare("SELECT 1 FROM character_sources WHERE source = 'anilist'").get());
+  assert.equal(isFranchiseCatalogCurrent(db), false);
+  return { db, ids };
+}
+
+async function command(db, query, options = {}) {
+  const collector = new EventEmitter();
+  let payload;
+  const sent = { edit: async value => { payload = value; }, createMessageComponentCollector: () => collector };
+  await runIma({
+    args: [options.command ?? 'imar', query], prefix: '!',
+    message: { guildId: '1', author: { id: 'viewer' }, reply: async value => { payload = value; return sent; } },
+    yoshiko: { catalogDb: db },
+  });
+  return { get payload() { return payload; }, collector };
+}
+
+function text(payload) {
+  if (typeof payload === 'string') return payload;
+  const component = payload.components[0].toJSON().components[0];
+  return component.content ?? component.components[0].content;
+}
 
 function setup(t) {
   const directory = mkdtempSync(join(tmpdir(), 'franchise-command-'));
@@ -32,6 +82,94 @@ function setup(t) {
     VALUES ('1', 2, 'owner', 'now')`).run();
   return db;
 }
+
+test('stale source still exposes three confirmed manual ZZZ characters, ranks, owners and curated cover', async (t) => {
+  const { db, ids } = staleManualCatalog(t);
+  db.prepare(`INSERT INTO marriages (guild_id, character_id, owner_id, married_at)
+    VALUES ('1', ?, 'zzz-owner', 'now')`).run(ids[0]);
+  const result = await command(db, 'ZZZ', { command: 'imaro' });
+  const content = text(result.payload);
+  assert.match(content, /3 characters/);
+  assert.match(content, /#1 - Anby 💞 => <@zzz-owner>/);
+  assert.match(content, /#2 - Billy/);
+  assert.match(content, /#3 - Nicole/);
+  assert.match(content, /Partial results.*direct.*out of date/i);
+  assert.doesNotMatch(content, /Kirito|Asuna/);
+  assert.equal(result.payload.components[0].toJSON().components[0].accessory.media.url, 'https://example.com/zzz.jpg');
+  assert.deepEqual(result.payload.allowedMentions, { parse: [] });
+  await result.collector.listeners('end')[0]();
+  assert.match(text(result.payload), /Partial results/);
+});
+
+test('stale lookup hides derived-only franchises, automatic aliases and member anime titles', async (t) => {
+  const { db } = staleManualCatalog(t);
+  for (const query of ['Sword Art Online', 'Stale Alias', 'Sword Art Online Special', 'missing']) {
+    const result = await command(db, query);
+    assert.match(text(result.payload), /out of date.*no direct.*refresh/i);
+  }
+  db.exec("UPDATE franchises SET name_source = 'automatic', display_name = 'Stale Generated Name' WHERE id = 30");
+  assert.match(text((await command(db, 'Stale Generated Name')).payload), /out of date.*no direct/i);
+  const result = await command(db, 'ZZZ');
+  assert.match(text(result.payload), /ZZZ/);
+  assert.doesNotMatch(text(result.payload), /Stale Generated Name/);
+  db.exec('UPDATE franchises SET curated_cover_url = NULL WHERE id = 30');
+  assert.equal((await command(db, 'ZZZ')).payload.components[0].toJSON().components[0].type, ComponentType.TextDisplay);
+});
+
+test('fresh mixed membership deduplicates and restores anime search, members and cover', async (t) => {
+  const { db, ids } = staleManualCatalog(t);
+  db.prepare('INSERT INTO character_anime (character_id, anime_id) VALUES (?, 100)').run(ids[0]);
+  assert.match(text((await command(db, 'ZZZ')).payload), /3 characters/);
+  setMeta(db, 'franchise_source_token', 'source:0');
+  assert.equal(isFranchiseCatalogCurrent(db), true);
+  const result = await command(db, 'Stale Alias');
+  assert.match(text(result.payload), /5 characters/);
+  assert.match(text(result.payload), /Kirito/);
+  assert.equal((text(result.payload).match(/Anby/g) ?? []).length, 1);
+  assert.doesNotMatch(text(result.payload), /Partial results/);
+  assert.equal(result.payload.components[0].toJSON().components[0].accessory.media.url, 'https://example.com/sao.jpg');
+});
+
+test('stale direct chooser keeps paging, requester controls and warning after selection', async (t) => {
+  const { db, ids } = staleManualCatalog(t);
+  for (let id = 40; id < 66; id++) {
+    db.prepare(`INSERT INTO franchises (id, display_name, name_source, created_at)
+      VALUES (?, ?, 'manual', 'now')`).run(id, `Direct Group ${id}`);
+    db.prepare('INSERT INTO character_franchise_memberships (character_id, franchise_id) VALUES (?, ?)').run(ids[0], id);
+  }
+  const result = await command(db, 'Direct Group');
+  assert.match(text(result.payload), /26 matches • Page 1 of 2/);
+  assert.match(text(result.payload), /Partial results/);
+  const collect = result.collector.listeners('collect')[0];
+  let rejection;
+  await collect({ customId: 'franchise:franchise:next', user: { id: 'other' }, reply: async value => { rejection = value; } });
+  assert.equal(rejection.flags, MessageFlags.Ephemeral);
+  assert.match(text(result.payload), /Page 1 of 2/);
+  await collect({ customId: 'franchise:franchise:next', user: { id: 'viewer' }, deferUpdate: async () => {} });
+  assert.match(text(result.payload), /Page 2 of 2/);
+  const menu = result.payload.components[0].toJSON().components[1].components[0];
+  assert.equal(menu.options.length, 1);
+  await collect({ customId: 'franchise:choose', values: ['65'], user: { id: 'viewer' }, deferUpdate: async () => {} });
+  assert.match(text(result.payload), /Direct Group 65/);
+  assert.match(text(result.payload), /1 characters/);
+  assert.match(text(result.payload), /#1 - Anby/);
+  assert.match(text(result.payload), /Partial results/);
+});
+
+test('stale release catalog without direct memberships retains refresh protection', async (t) => {
+  const db = setup(t);
+  migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 });
+  initializeCatalogReleaseSchema(db);
+  setMeta(db, 'franchise_source_token', 'source:999');
+  assert.equal(isFranchiseCatalogCurrent(db), false);
+  assert.match(text((await command(db, 'SAO')).payload), /out of date.*no direct.*refresh/i);
+});
+
+test('stale legacy catalog retains refresh guard', async (t) => {
+  const db = setup(t);
+  setMeta(db, 'franchise_source_published_at', 'older');
+  assert.match(text((await command(db, 'SAO')).payload), /out of date.*refresh/i);
+});
 
 test('!ima shows franchise characters by name without rank metadata', async (t) => {
   const db = setup(t);

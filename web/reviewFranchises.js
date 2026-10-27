@@ -10,6 +10,7 @@ import {
   removeAnimeFromFranchise, removeFranchiseAlias, renameFranchise,
 } from '../lib/franchiseCatalog.js';
 import { openCatalog } from '../lib/catalogDb.js';
+import { characterFranchiseRelation } from '../lib/characterFranchises.js';
 import { serveAssets } from './serveAssets.js';
 
 const html = readFileSync(new URL('./reviewFranchises.html', import.meta.url));
@@ -32,19 +33,21 @@ async function readJsonBody(request) {
 function listFranchises(db, query = '') {
   const text = query.trim().toLocaleLowerCase('en-US');
   return db.prepare(`SELECT f.id, f.display_name AS name,
-      COUNT(DISTINCT fa.anime_id) AS animeCount,
-      COUNT(DISTINCT ca.character_id) AS characterCount,
-      COALESCE(SUM(CASE WHEN fa.source = 'manual' THEN 1 ELSE 0 END), 0) AS manualMembers
+      (SELECT COUNT(*) FROM franchise_anime AS fa WHERE fa.franchise_id = f.id) AS animeCount,
+      COALESCE(characterTotals.characterCount, 0) AS characterCount,
+      (SELECT COUNT(*) FROM franchise_anime AS fa
+        WHERE fa.franchise_id = f.id AND fa.source = 'manual') AS manualMembers
     FROM franchises AS f
-    LEFT JOIN franchise_anime AS fa ON fa.franchise_id = f.id
-    LEFT JOIN character_anime AS ca ON ca.anime_id = fa.anime_id
+    LEFT JOIN (SELECT franchise_id, COUNT(DISTINCT character_id) AS characterCount
+      FROM ${characterFranchiseRelation(db)} GROUP BY franchise_id) AS characterTotals
+      ON characterTotals.franchise_id = f.id
     WHERE ? = '' OR LOWER(f.display_name) LIKE '%' || ? || '%'
       OR EXISTS (SELECT 1 FROM franchise_aliases AS x WHERE x.franchise_id = f.id
         AND x.source != 'excluded' AND LOWER(x.alias) LIKE '%' || ? || '%')
       OR EXISTS (SELECT 1 FROM franchise_anime AS m JOIN anime AS a ON a.id = m.anime_id
         WHERE m.franchise_id = f.id AND (LOWER(COALESCE(a.title_romaji, '')) LIKE '%' || ? || '%'
           OR LOWER(COALESCE(a.title_english, '')) LIKE '%' || ? || '%'))
-    GROUP BY f.id ORDER BY f.display_name COLLATE NOCASE, f.id`).all(text, text, text, text, text);
+    ORDER BY f.display_name COLLATE NOCASE, f.id`).all(text, text, text, text, text);
 }
 
 // The picker needs the whole catalog, not the sidebar search slice, so options come from their own query.
@@ -102,8 +105,16 @@ function franchiseDetails(db, id) {
       (SELECT COUNT(*) FROM franchises WHERE id = ? AND name_source = 'manual') +
       (SELECT COUNT(*) FROM franchise_membership_overrides WHERE franchise_id = ?) AS n`)
     .get(id, id, id).n;
-  return { ...franchise, aliases, members, characterCount: db.prepare(`SELECT COUNT(DISTINCT ca.character_id) AS n
-    FROM franchise_anime AS fa JOIN character_anime AS ca ON ca.anime_id = fa.anime_id WHERE fa.franchise_id = ?`).get(id).n,
+  // Legacy catalogs have only anime-derived memberships. Direct rows stay separate
+  // from anime members, including when a character also belongs through an anime.
+  const hasDirectMemberships = db.prepare(`SELECT 1 FROM sqlite_schema
+    WHERE type = 'table' AND name = 'character_franchise_memberships'`).get();
+  const directCharacters = hasDirectMemberships ? db.prepare(`SELECT c.id, c.name_full AS name, c.rank
+    FROM character_franchise_memberships AS m JOIN characters AS c ON c.id = m.character_id
+    WHERE m.franchise_id = ? ORDER BY c.rank, c.id`).all(id) : [];
+  return { ...franchise, aliases, members, directCharacters,
+    characterCount: db.prepare(`SELECT COUNT(DISTINCT cf.character_id) AS n
+      FROM ${characterFranchiseRelation(db)} AS cf WHERE cf.franchise_id = ?`).get(id).n,
     automaticMembers: members.filter((member) => member.membershipSource === 'automatic').length,
     manualMembers: members.filter((member) => member.membershipSource === 'manual').length,
     manual: { decisions: manualDecisions } };

@@ -32,14 +32,16 @@ export async function runFranchiseCommand(ctx) {
     await ctx.message.reply(`Usage: ${ctx.prefix}${ctx.args[0]} <franchise>`);
     return;
   }
-  if (!isFranchiseCatalogCurrent(db)) {
-    await ctx.message.reply('The franchise catalog is missing or out of date. Ask an administrator to refresh it.');
-    return;
-  }
-
-  const franchises = findFranchises(loadFranchiseIndex(db), query);
+  const directOnly = !isFranchiseCatalogCurrent(db);
+  const lookupOptions = { directOnly };
+  const warning = directOnly
+    ? '\n⚠️ Partial results: showing direct franchise memberships only. Anime-derived data is out of date; ask an administrator to refresh it.'
+    : '';
+  const franchises = findFranchises(loadFranchiseIndex(db, lookupOptions), query);
   if (!franchises.length) {
-    await ctx.message.reply('No franchise found. Try a fuller title or another alias.');
+    await ctx.message.reply(directOnly
+      ? 'The franchise catalog is missing or out of date, and no direct franchise matches were found. Ask an administrator to refresh it.'
+      : 'No franchise found. Try a fuller title or another alias.');
     return;
   }
 
@@ -48,8 +50,8 @@ export async function runFranchiseCommand(ctx) {
   let page = 0;
   let franchisePage = 0;
   let selected = franchises.length === 1 ? franchises[0] : null;
-  let characters = selected ? loadFranchiseCharacters(db, selected.id, guildId) : [];
-  let cover = selected ? loadFranchiseCover(db, selected.id) : null;
+  let characters = selected ? loadFranchiseCharacters(db, selected.id, guildId, lookupOptions) : [];
+  let cover = selected ? loadFranchiseCover(db, selected.id, lookupOptions) : null;
   if (selected && !characters.length) {
     await ctx.message.reply('No current catalog characters found in that franchise.');
     return;
@@ -61,7 +63,7 @@ export async function runFranchiseCommand(ctx) {
       const options = franchises.slice(franchisePage * FRANCHISE_PAGE_SIZE, (franchisePage + 1) * FRANCHISE_PAGE_SIZE).map((item) => ({
         label: short(item.name), value: String(item.id),
       }));
-      return [container(`## Choose a franchise\n${formatNumber(franchises.length)} matches • Page ${franchisePage + 1} of ${pages}`)
+      return [container(`## Choose a franchise\n${formatNumber(franchises.length)} matches • Page ${franchisePage + 1} of ${pages}${warning}`)
         .addActionRowComponents(new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder().setCustomId('franchise:choose')
             .setPlaceholder('Select a franchise').setDisabled(disabled).addOptions(options),
@@ -72,7 +74,7 @@ export async function runFranchiseCommand(ctx) {
         ))];
     }
 
-    if (!characters.length) return [container(`## ${escapeMarkdown(selected.name)}\nNo current catalog characters found in this franchise.`)];
+    if (!characters.length) return [container(`## ${escapeMarkdown(selected.name)}\nNo current catalog characters found in this franchise.${warning}`)];
     const pages = Math.max(1, Math.ceil(characters.length / CHARACTER_PAGE_SIZE));
     const visible = markCharacterOwnership(db, guildId,
       characters.slice(page * CHARACTER_PAGE_SIZE, (page + 1) * CHARACTER_PAGE_SIZE));
@@ -81,7 +83,7 @@ export async function runFranchiseCommand(ctx) {
       const name = characterListName(character.name_full, character.married) + owner;
       return showRank ? `#${formatNumber(character.rank)} - ${name}` : name;
     });
-    const content = `## ${escapeMarkdown(selected.name)}\n${formatNumber(characters.length)} characters • Page ${page + 1} of ${pages}\n\n${lines.join('\n')}`;
+    const content = `## ${escapeMarkdown(selected.name)}\n${formatNumber(characters.length)} characters • Page ${page + 1} of ${pages}\n\n${lines.join('\n')}${warning}`;
     const result = new ContainerBuilder().setAccentColor(0x5865f2);
     if (cover) result.addSectionComponents(new SectionBuilder()
       .addTextDisplayComponents(new TextDisplayBuilder().setContent(content))
@@ -113,8 +115,8 @@ export async function runFranchiseCommand(ctx) {
       if (interaction.customId === 'franchise:choose' && !selected) {
         selected = franchises.find((item) => String(item.id) === interaction.values?.[0]) ?? null;
         if (selected) {
-          characters = loadFranchiseCharacters(db, selected.id, guildId);
-          cover = loadFranchiseCover(db, selected.id);
+          characters = loadFranchiseCharacters(db, selected.id, guildId, lookupOptions);
+          cover = loadFranchiseCover(db, selected.id, lookupOptions);
           page = 0;
         }
       } else if (interaction.customId === 'franchise:franchise:prev' && franchisePage > 0) franchisePage--;
