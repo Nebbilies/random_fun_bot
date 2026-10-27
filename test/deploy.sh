@@ -13,23 +13,57 @@ echo ubuntu
 EOF
 cat > "$mocks/node" <<'EOF'
 #!/usr/bin/env bash
-echo v22.23.2
+if [[ "$1" == --version ]]; then echo v22.23.2; exit 0; fi
+echo 'runtime restart preflight' >> "$FAKE_LOG"
+exit "${FAKE_RUNTIME_BLOCKED:-0}"
 EOF
 cat > "$mocks/sudo" <<'EOF'
 #!/usr/bin/env bash
 [[ "$1" == -n ]] && shift
-[[ "$1" == -l ]] && exit 0
+if [[ "$1" == -l ]]; then
+  shift
+  echo "permission ${*:2}" >> "$FAKE_LOG"
+  [[ "${*:2}" != "${FAKE_DENY:-none}" ]]
+  exit $?
+fi
 exec "$@"
 EOF
 cat > "$mocks/systemctl" <<'EOF'
 #!/usr/bin/env bash
 echo "systemctl $*" >> "$FAKE_LOG"
-case "$*" in
-  'is-active --quiet random-fun-bot') [[ "${FAKE_SERVICE_STATE:-active}" != inactive || -f "${FAKE_LOG}.started" ]] || exit 3 ;;
-  'restart random-fun-bot') touch "${FAKE_LOG}.started" ;;
-  'show random-fun-bot -p ActiveState --value') echo "${FAKE_SERVICE_STATE:-active}" ;;
-  'show random-fun-bot -p MainPID --value') echo 123 ;;
-  'show random-fun-bot -p NRestarts --value') echo 0 ;;
+unit=$2
+case "$unit" in
+  random-fun-bot) state=$FAKE_SERVICE_STATE; pid=123 ;;
+  random-fun-bot-portal) state=$FAKE_PORTAL_STATE; pid=456 ;;
+  --quiet) unit=$3 ;;
+  *) exit 2 ;;
+esac
+case "$1" in
+  stop) touch "${FAKE_LOG}.stopped.$unit" ;;
+  restart)
+    [[ -f "${FAKE_LOG}.stopped.random-fun-bot" && -f "${FAKE_LOG}.stopped.random-fun-bot-portal" ]] || exit 2
+    [[ "$(cat "$FAKE_APP/node_modules/version")" == new ]] || exit 2
+    touch "${FAKE_LOG}.started.$unit" ;;
+  is-active)
+    [[ -f "${FAKE_LOG}.started.$unit" ]] || exit 3
+    [[ "${FAKE_CRASH:-}" != "$unit" ]] || exit 3 ;;
+  show)
+    case "$4" in
+      ActiveState) echo "$state" ;;
+      MainPID|NRestarts)
+        count_file="${FAKE_LOG}.$unit.$4"
+        count=0
+        [[ ! -f "$count_file" ]] || read -r count < "$count_file"
+        echo $((count + 1)) > "$count_file"
+        if [[ "$4" == MainPID ]]; then
+          [[ "${FAKE_PID_CHANGE:-}" != "$unit" || "$count" == 0 ]] || pid=999
+          echo "$pid"
+        else
+          if [[ "${FAKE_RESTART_CHANGE:-}" == "$unit" && "$count" != 0 ]]; then echo 1; else echo 0; fi
+        fi ;;
+      *) exit 2 ;;
+    esac ;;
+  *) exit 2 ;;
 esac
 EOF
 cat > "$mocks/journalctl" <<'EOF'
@@ -41,6 +75,8 @@ EOF
 cat > "$mocks/npm" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+echo install >> "$FAKE_LOG"
+! grep -Eq '^systemctl (stop|restart) ' "$FAKE_LOG" || exit 2
 [[ "${FAKE_NPM_FAIL:-0}" == 0 ]] || exit 17
 while [[ $# -gt 0 ]]; do
   if [[ "$1" == --prefix ]]; then
@@ -60,6 +96,44 @@ cat > "$mocks/sleep" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
+cat > "$mocks/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "curl $*" >> "$FAKE_LOG"
+[[ " $* " == *' --connect-timeout 2 '* && " $* " == *' --max-time 4 '* ]]
+[[ " $* " == *' --noproxy * '* && " $* " == *' --output /dev/null '* ]]
+# The deployed host guard is configured with --public-host=127.0.0.1.
+[[ " $* " != *' --header Host: nebby.satancraft.net '* ]]
+[[ " $* " != *' --location '* && " $* " != *' --cookie '* ]]
+[[ -f "${FAKE_LOG}.started.random-fun-bot-portal" ]]
+case "${*: -1}" in
+  http://127.0.0.1:25565/login) endpoint=login; reply=200 ;;
+  http://127.0.0.1:25565/catalog) endpoint=catalog; reply="${FAKE_REDIRECT:-303} http://127.0.0.1:25565/login" ;;
+  http://127.0.0.1:25565/api/status) endpoint=api; reply=401 ;;
+  *) exit 2 ;;
+esac
+[[ "${FAKE_HTTP_FAIL:-}" != timeout ]] || exit 28
+if [[ "${FAKE_HTTP_FAIL:-}" == "$endpoint" ]]; then reply=500; fi
+if [[ "${FAKE_HTTP_FAIL:-}" == wrong-redirect && "$endpoint" == catalog ]]; then reply='303 https://example.test/login'; fi
+if [[ "${FAKE_HTTP_CRASH:-0}" == 1 ]]; then export FAKE_CRASH=random-fun-bot-portal; rm -f "${FAKE_LOG}.started.random-fun-bot-portal"; fi
+printf '%s' "$reply"
+EOF
+# Observe the real Git/mv boundary while still using real fixture repositories.
+export REAL_GIT=$(command -v git) REAL_MV=$(command -v mv)
+cat > "$mocks/git" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == merge ]]; then
+  echo merge >> "$FAKE_LOG"
+  [[ -f "${FAKE_LOG}.stopped.random-fun-bot" && -f "${FAKE_LOG}.stopped.random-fun-bot-portal" ]] || exit 2
+fi
+exec "$REAL_GIT" "$@"
+EOF
+cat > "$mocks/mv" <<'EOF'
+#!/usr/bin/env bash
+echo swap >> "$FAKE_LOG"
+[[ -f "${FAKE_LOG}.stopped.random-fun-bot" && -f "${FAKE_LOG}.stopped.random-fun-bot-portal" ]] || exit 2
+exec "$REAL_MV" "$@"
+EOF
 chmod +x "$mocks/"*
 export PATH="$mocks:$PATH"
 export GIT_CONFIG_NOSYSTEM=1
@@ -76,6 +150,7 @@ setup_case() {
   printf '{}\n' > "$home/seed/package.json"
   printf '{}\n' > "$home/seed/package-lock.json"
   echo base > "$home/seed/app.js"
+  echo glossary > "$home/seed/GLOSSARY.md"
   echo seed > "$home/seed/data/birthdays.json"
   git -C "$home/seed" add .
   git -C "$home/seed" commit -qm base
@@ -97,7 +172,8 @@ setup_case() {
   sed -e "s|/home/ubuntu|$home|g" \
       -e "s|systemctl=/usr/bin/systemctl|systemctl=$mocks/systemctl|" \
       "$source_script" > "$home/deploy.sh"
-  export FAKE_LOG="$home/service.log" FAKE_NPM_FAIL=0 FAKE_LOCK_FAIL=0 FAKE_SERVICE_STATE=active FAKE_DISCORD_READY=1
+  export FAKE_LOG="$home/service.log" FAKE_APP="$app" FAKE_NPM_FAIL=0 FAKE_LOCK_FAIL=0 FAKE_SERVICE_STATE=active FAKE_DISCORD_READY=1
+  export FAKE_PORTAL_STATE=active FAKE_DENY=none FAKE_CRASH=none FAKE_PID_CHANGE=none FAKE_RESTART_CHANGE=none FAKE_HTTP_FAIL=none FAKE_HTTP_CRASH=0 FAKE_REDIRECT=303
   : > "$FAKE_LOG"
 }
 
@@ -120,8 +196,19 @@ bash "$home/deploy.sh" "$target" > "$home/output" 2>&1 || { cat "$home/output"; 
 [[ "$(git -C "$app" rev-parse HEAD)" == "$target" ]]
 [[ "$(cat "$app/node_modules/version")" == new ]]
 grep -q '^systemctl restart random-fun-bot$' "$FAKE_LOG"
+grep -q '^systemctl restart random-fun-bot-portal$' "$FAKE_LOG"
+# Both units' permissions and states must be checked before installation/stops.
+expected=$(printf '%s\n' \
+  'permission stop random-fun-bot' 'permission restart random-fun-bot' \
+  'systemctl show random-fun-bot -p ActiveState --value' \
+  'permission stop random-fun-bot-portal' 'permission restart random-fun-bot-portal' \
+  'systemctl show random-fun-bot-portal -p ActiveState --value' \
+  install 'runtime restart preflight' 'systemctl stop random-fun-bot' 'systemctl stop random-fun-bot-portal' \
+  merge swap swap 'systemctl restart random-fun-bot' 'systemctl restart random-fun-bot-portal')
+[[ "$(head -n 15 "$FAKE_LOG")" == "$expected" ]]
+[[ "$(grep -c '^systemctl is-active --quiet random-fun-bot-portal$' "$FAKE_LOG")" -ge 12 ]]
 assert_data
-echo 'PASS: deploy tested code and dependencies, preserving staged and untracked data'
+echo 'PASS: both services preflight/install/stop/swap/restart in order; runtime data preserved'
 
 setup_case incoming-data
 echo incoming > "$home/seed/data/birthdays.json"
@@ -145,6 +232,13 @@ bash "$home/deploy.sh" "$previous" > "$home/output" 2>&1
 grep -q 'skipping this outdated deployment' "$home/output"
 assert_untouched
 echo 'PASS: stale queued deployment is skipped'
+
+setup_case runtime-blocked
+export FAKE_RUNTIME_BLOCKED=1
+if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+assert_untouched
+export FAKE_RUNTIME_BLOCKED=0
+echo 'PASS: runtime restart blockers are rejected before either service stops'
 
 setup_case dirty-code
 echo manual-change >> "$app/app.js"
@@ -181,3 +275,62 @@ if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
 grep -q 'Service state is failed' "$home/output"
 assert_untouched
 echo 'PASS: an unexpectedly failed service requires investigation before deployment'
+
+for unit in random-fun-bot random-fun-bot-portal; do
+  for action in stop restart; do
+    setup_case "denied-$unit-$action"
+    export FAKE_DENY="$action $unit"
+    if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+    assert_untouched
+    ! grep -q '^install$' "$FAKE_LOG"
+  done
+  for state in activating deactivating failed unknown; do
+    setup_case "state-$unit-$state"
+    if [[ "$unit" == random-fun-bot ]]; then export FAKE_SERVICE_STATE=$state; else export FAKE_PORTAL_STATE=$state; fi
+    if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+    assert_untouched
+  done
+  setup_case "inactive-$unit"
+  if [[ "$unit" == random-fun-bot ]]; then export FAKE_SERVICE_STATE=inactive; else export FAKE_PORTAL_STATE=inactive; fi
+  bash "$home/deploy.sh" "$target" > "$home/output" 2>&1 || { cat "$home/output"; exit 1; }
+  assert_data
+  for failure in CRASH PID_CHANGE RESTART_CHANGE; do
+    setup_case "unstable-$unit-$failure"
+    export "FAKE_$failure=$unit"
+    if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+    grep -q 'unhealthy or unstable' "$home/output"
+    assert_data
+    recovery=("$home"/random-fun-bot-deploy.*/previous-node_modules)
+    [[ -d "${recovery[0]}" ]]
+  done
+done
+echo 'PASS: both services require permissions and safe initial states; crashes/PID/restart changes fail deployment'
+
+for failure in login catalog api timeout wrong-redirect; do
+  setup_case "http-$failure"
+  export FAKE_HTTP_FAIL=$failure
+  if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+  grep -q 'Portal HTTP/auth readiness was not observed' "$home/output"
+  assert_data
+done
+setup_case http-crash
+export FAKE_HTTP_CRASH=1
+if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+grep -q 'unhealthy or unstable' "$home/output"
+assert_data
+setup_case redirect-302
+export FAKE_REDIRECT=302
+bash "$home/deploy.sh" "$target" > "$home/output" 2>&1 || { cat "$home/output"; exit 1; }
+assert_data
+echo 'PASS: portal login/catalog/API readiness, bounded timeout, redirect target and crash-during-probe checks'
+
+for staged in no yes; do
+  setup_case "dirty-glossary-$staged"
+  echo vps-edit >> "$app/GLOSSARY.md"
+  if [[ "$staged" == yes ]]; then git -C "$app" add GLOSSARY.md; fi
+  if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+  grep -q 'code changes block deployment' "$home/output"
+  assert_untouched
+  [[ "$(tail -n 1 "$app/GLOSSARY.md")" == vps-edit ]]
+done
+echo 'PASS: staged and unstaged VPS GLOSSARY edits remain guarded, never reconciled automatically'
