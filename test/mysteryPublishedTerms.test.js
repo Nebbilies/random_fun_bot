@@ -120,7 +120,7 @@ for (const phase of ['reserved', 'running', 'timeout']) {
     if (phase !== 'reserved') start(db, roll.sessionId);
     else publishMysteryIntro(db, roll.sessionId, '500', 1100);
     const valid = terms(db, roll.sessionId);
-    for (const invalid of [null, {}, { ...valid, version: 2 }, { ...valid, id: '00000000-0000-4000-8000-000000000099' },
+    for (const invalid of [null, {}, { ...valid, version: 999 }, { ...valid, id: '00000000-0000-4000-8000-000000000099' },
       { ...valid, rank: '1' }, { ...valid, favourites: -1 }, { ...valid, likes_source: 'unknown' },
       { ...valid, image_url: {} }, { ...valid, name_full: 'x'.repeat(4097) }]) {
       const state = JSON.parse(getMysterySession(db, roll.sessionId).stateJson);

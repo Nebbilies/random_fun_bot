@@ -117,7 +117,7 @@ test('published mystery terms migrate only their identity and preserve historica
   assert.deepEqual(result.value.characterSnapshot, { ...characterSnapshot, id: mapping.get(12) });
   assert.equal(result.references[0].id, 12);
   assert.throws(() => adapt('mystery_sessions', 'state_json', value, { event_id: 'doors', character_id: 99 }), /snapshot\/session identity mismatch/);
-  for (const invalid of [null, { ...characterSnapshot, version: 2 }, { ...characterSnapshot, future: 12 },
+  for (const invalid of [null, { ...characterSnapshot, version: 999 }, { ...characterSnapshot, future: 12 },
     { ...characterSnapshot, favourites: -1 }, { ...characterSnapshot, likes_source: 'unknown' }]) {
     assert.throws(() => adapt('mystery_sessions', 'state_json', { characterSnapshot: invalid }, { event_id: 'doors' }), /invalid published character snapshot/);
   }

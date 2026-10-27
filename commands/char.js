@@ -1,3 +1,4 @@
+import { characterSeries } from '../lib/characterSeries.js';
 import { getGameConfig } from '../lib/gameConfig.js';
 import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, escapeMarkdown,
@@ -35,7 +36,7 @@ function button(id, label, disabled = false) {
 function chooserComponents(matches, page, disabled = false) {
   const pages = Math.ceil(matches.length / PAGE_SIZE);
   const options = matches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((character) => {
-    const anime = jsonArray(character.anime_titles)[0] || 'Unknown anime';
+    const anime = characterSeries(character).text;
     return {
       label: short(`#${formatNumber(character.rank)} • ${character.name_full} (${anime})`, 100),
       value: String(character.id),
@@ -57,16 +58,15 @@ function chooserComponents(matches, page, disabled = false) {
 }
 
 function buildCardComponents(character, image, position, hasMoreImages, canGoBack, disabled = false, ownerId = null) {
-  const titles = jsonArray(character.anime_titles);
+  const series = characterSeries(character, 'Unknown', short);
   const names = [character.name_native, ...jsonArray(character.name_alternatives)]
     .filter((name, index, all) => name && name !== character.name_full && all.indexOf(name) === index)
     .slice(0, 3);
-  const anime = titles.length ? `${short(titles[0])}${titles.length > 1 ? ` (+${titles.length - 1} more)` : ''}` : 'Unknown';
   const title = escapeMarkdown(short(character.name_full, 250));
   const heading = character.site_url?.startsWith('https://')
     ? `# [${title}](${character.site_url})` : `# ${title}`;
   const details = [
-    `**Anime:** ${escapeMarkdown(anime)}`,
+    `**${series.label}:** ${escapeMarkdown(series.text)}`,
     ...(names.length ? ['**Other names:**', ...names.map((name) => `• ${escapeMarkdown(short(name))}`)] : []),
     `**Rank:** #${formatNumber(character.rank)} • **Favorites:** ${formatCharacterLikes(character)}`,
   ];

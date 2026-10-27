@@ -36,6 +36,8 @@ test('local franchise review API shows source and counts, then applies validated
 
   const standalonePage = await fetch(`${origin}/`).then((response) => response.text());
   assert.match(standalonePage, /data-standalone="true"/);
+  assert.match(standalonePage, /<a href="\/catalog"><span aria-hidden="true">▤<\/span><span>Catalog<\/span><\/a>/);
+  assert.equal((await fetch(`${origin}/catalog`)).status, 200);
   const stylesheet = await fetch(`${origin}/assets/portal.css`);
   assert.equal(stylesheet.status, 200);
   assert.match(stylesheet.headers.get('content-type'), /text\/css/);
