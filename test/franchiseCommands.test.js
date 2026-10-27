@@ -94,6 +94,24 @@ test('identity migration preserves fresh legacy franchise lookups for !ima and !
   }
 });
 
+test('manual character publication preserves migrated anime franchise freshness', async (t) => {
+  const db = setup(t);
+  migrateCharacterIdentities(db, { dryRun: false, targetVersion: 12 });
+  const preview = previewManualCharacterCreation(db, {
+    account: 'editor', role: 'moderator', rank: 1, now: 1000,
+    input: { name: 'Manual Character', aliases: [], gender: 'unknown', franchiseIds: [10],
+      portraitUrl: 'https://example.com/portrait.jpg' },
+  });
+  confirmManualCharacterCreation(db, {
+    account: 'editor', role: 'moderator', previewId: preview.previewId,
+    payloadHash: preview.payloadHash, idempotencyKey: 'manual-freshness', now: 1001,
+  });
+  const content = text((await command(db, 'Sword Art Online')).payload);
+  assert.match(content, /Kirito/);
+  assert.match(content, /Manual Character/);
+  assert.doesNotMatch(content, /Partial results|out of date/);
+});
+
 test('migrated legacy freshness fallback rejects stale, missing and changed-source coverage', async (t) => {
   const db = setup(t);
   migrateCharacterIdentities(db, { dryRun: false, targetVersion: 12 });
