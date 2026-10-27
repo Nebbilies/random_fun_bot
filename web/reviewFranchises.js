@@ -1,4 +1,6 @@
 import { createServer } from 'node:http';
+import { handleCatalogRequest } from './reviewCatalog.js';
+import { createPortalAuth, loadPortalEnvironment } from './portalAuth.js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -171,7 +173,8 @@ export async function handleFranchiseReviewRequest({ db, request, response, url,
   }
 }
 
-export function createFranchiseReviewServer({ db, host = '127.0.0.1', publicHost = host, port = 8788 }) {
+export function createFranchiseReviewServer({ db, host = '127.0.0.1', publicHost = host, port = 8788, authConfig, sourcePermissionConfirmed = false, verifySource }) {
+  const auth = createPortalAuth(authConfig);
   if (!publicHost || publicHost === '0.0.0.0') throw new Error('Set a public host when listening on all interfaces');
   const server = createServer(async (request, response) => {
     try {
@@ -185,7 +188,10 @@ export function createFranchiseReviewServer({ db, host = '127.0.0.1', publicHost
           return json(response, 403, { error: 'Invalid host' });
         origin = authority.origin;
       } catch { return json(response, 403, { error: 'Invalid host' }); }
+      origin = auth.origin(origin);
       const url = new URL(request.url, origin);
+      if (await auth.handle(request, response, url, origin)) return;
+      if (await handleCatalogRequest({ db, request, response, url, origin, sourcePermissionConfirmed, verifySource })) return;
       if (serveAssets(request, response, url)) return;
       if (!await handleFranchiseReviewRequest({ db, request, response, url, origin, mountPath: '' }))
         json(response, 404, { error: 'Not found' });
@@ -202,13 +208,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       host: { type: 'string', default: '127.0.0.1' },
       port: { type: 'string', default: '8788' },
       'public-host': { type: 'string' },
+      'catalog-source-permission': { type: 'boolean', default: false },
     } });
     const port = Number(values.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('--port must be between 1 and 65535');
     if (!values.host) throw new Error('--host must not be empty');
+    const authConfig = loadPortalEnvironment();
     db = openCatalog();
     const publicHost = values['public-host'] ?? values.host;
-    const server = createFranchiseReviewServer({ db, host: values.host, publicHost, port });
+    const server = createFranchiseReviewServer({ db, host: values.host, publicHost, port, authConfig,
+      sourcePermissionConfirmed: values['catalog-source-permission'],
+      verifySource: values['catalog-source-permission'] ? fetch : undefined });
     server.on('listening', () => console.log(`Review UI: http://${publicHost}:${port} (listening on ${values.host})`));
     server.on('close', () => db.close());
   } catch (error) {

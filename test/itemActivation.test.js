@@ -1,14 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { openCatalog } from '../lib/catalogDb.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { openCatalog, createFinalCatalog } from '../lib/catalogDb.js';
 import { addItemToInventory, getInventory } from '../lib/itemStorage.js';
 import { run } from '../commands/use.js';
 import { onInventoryButton } from '../commands/inv.js';
 import { activateItem } from '../lib/itemActivation.js';
 
-function fixture(t, { failSend = false } = {}) {
-  const db = openCatalog(':memory:');
-  t.after(() => db.close());
+function fixture(t, { failSend = false, final = false } = {}) {
+  const dir = final ? mkdtempSync(join(tmpdir(), 'activation-merge-')) : null;
+  const db = final ? createFinalCatalog(join(dir, 'fixture.sqlite')) : openCatalog(':memory:');
+  t.after(() => { db.close(); if (dir) rmSync(dir, { recursive: true, force: true }); });
   const sent = [], feedback = [], edits = [];
   const channel = { id: '10', send: async (payload) => {
     if (failSend) throw new Error('Discord unavailable');
@@ -44,20 +48,26 @@ for (const entry of ['command', 'button']) {
     assert.equal(x.feedback.length, 1);
   });
 
-  for (const failSend of [false, true]) {
-    test(`${entry}: Golden Hour completes its vault follow-up; send failure=${failSend}`, async (t) => {
-      const x = fixture(t, { failSend });
+  for (const final of [false, true]) for (const failSend of [false, true]) {
+    test(`${entry}: Golden Hour completes its vault follow-up; final=${final}; send failure=${failSend}`, async (t) => {
+      const x = fixture(t, { failSend, final });
       const granted = addItemToInventory(x.db, '1', '101', 'golden_hour');
       x.db.prepare('INSERT INTO roll_allowances(guild_id,user_id,period,used) VALUES(?,?,?,?)').run('1', '202', 0, 5);
       if (entry === 'command') {
         await run({ message: x.message, args: ['use', 'golden_hour'], yoshiko: { catalogDb: x.db } });
       } else {
-        x.interaction.customId = `inv:use:101:${granted.item.id}`;
+        x.interaction.customId = `inv:use:101:${granted.item.id}${final ? ':v12' : ''}`;
         assert.equal(await onInventoryButton(x.db, x.interaction), true);
         assert.equal(x.interaction.deferred, true);
         assert.equal(x.edits.length, 1);
       }
       assert.equal(getInventory(x.db, '1', '101').length, 0);
+      if (final) {
+        const sessions = x.db.prepare('SELECT command_message_id,state FROM vault_sessions').all();
+        assert.equal(sessions.length, 1);
+        assert.equal(sessions[0].command_message_id, entry === 'button' ? 'interaction:999' : '900');
+        assert.equal(sessions[0].state, 'unopened');
+      }
       assert.equal(x.db.prepare('SELECT used FROM roll_allowances WHERE user_id=?').get('202').used, 0);
       assert.equal(x.feedback.length, 1);
       if (failSend) {

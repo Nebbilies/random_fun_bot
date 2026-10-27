@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { authConfig, authenticatedFetch as fetch } from './helpers/portalAuth.js';
 import test from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,7 +29,7 @@ test('local franchise review API shows source and counts, then applies validated
   db.prepare(`INSERT INTO franchise_anime (franchise_id, anime_id, source) VALUES (10, 100, 'automatic'), (10, 101, 'automatic')`).run();
   db.prepare(`INSERT INTO anime_relations (from_anime_id, to_anime_id, relation_type) VALUES (100, 101, 'SEQUEL')`).run();
   db.prepare(`INSERT INTO character_anime (character_id, anime_id) VALUES (1, 100)`).run();
-  const server = createFranchiseReviewServer({ db, port: 0 });
+  const server = createFranchiseReviewServer({ db, port: 0, authConfig });
   t.after(() => server.close());
   await once(server, 'listening');
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -71,7 +72,7 @@ test('franchise options endpoint serves searchable move and merge targets', asyn
     (10, 100, 'automatic'), (10, 101, 'automatic'), (20, 102, 'automatic'), (30, 100, 'automatic')`).run();
   db.prepare(`INSERT INTO franchise_aliases (franchise_id, alias, normalized_alias, source) VALUES
     (20, 'S;G', 's;g', 'automatic'), (20, 'Old Name', 'old name', 'excluded')`).run();
-  const server = createFranchiseReviewServer({ db, port: 0 });
+  const server = createFranchiseReviewServer({ db, port: 0, authConfig });
   t.after(() => server.close());
   await once(server, 'listening');
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -93,7 +94,7 @@ test('local franchise review rejects a foreign Host header', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'franchise-review-host-'));
   const db = openCatalog(join(directory, 'catalog.sqlite'));
   t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
-  const server = createFranchiseReviewServer({ db, port: 0 });
+  const server = createFranchiseReviewServer({ db, port: 0, authConfig });
   t.after(() => server.close());
   await once(server, 'listening');
   const response = await new Promise((resolve, reject) => {
@@ -112,7 +113,7 @@ test('catalog review server mounts franchise review and API under one port', asy
   t.after(() => { db.close(); rmSync(directory, { recursive: true, force: true }); });
   setMeta(db, 'import_phase', 'complete');
   const id = createFranchise(db, 'Sword Art Online');
-  const server = createReviewServer({ db, port: 0 });
+  const server = createReviewServer({ db, port: 0, authConfig });
   t.after(() => server.close());
   await once(server, 'listening');
   const origin = `http://127.0.0.1:${server.address().port}`;

@@ -73,15 +73,17 @@ test('mystery reserves one roll, pauses guild, and starts five seconds after int
   assert.equal(normal(db, '102').status, 'reserved');
 });
 
-test('unavailable event and active pause do not charge a roll', (t) => {
+test('unavailable mystery falls back to one ordinary roll and active pause does not charge', (t) => {
   const db = fixture(t);
-  assert.equal(mystery(db, '200', () => null).status, 'unavailable');
-  assert.equal(getRollStatus(db, '1', '101', start).remaining, 7);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM character_rolls').get().n, 0);
+  const fallback = mystery(db, '200', () => null);
+  assert.equal(fallback.status, 'reserved');
+  assert.equal(getRollStatus(db, '1', '101', start).remaining, 6);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM character_rolls').get().n, 1);
+  failRoll(db, fallback.rollId);
   const active = mystery(db, '201');
   assert.equal(active.status, 'mystery');
   assert.equal(normal(db, '202').status, 'paused');
-  assert.equal(getRollStatus(db, '1', '101', start).remaining, 6);
+  assert.equal(getRollStatus(db, '1', '101', start).remaining, 5);
   assert.equal(failRoll(db, active.rollId), true);
   assert.equal(getMysterySession(db, active.sessionId).state, 'failed');
   assert.equal(normal(db, '203').status, 'reserved');
@@ -131,6 +133,9 @@ test('winner-only claim is atomic and ends the event', (t) => {
     expectedState: 'running', expectedStateJson: running.stateJson,
     state: 'countdown', winnerId: '102', now: start + 7_000 });
   assert.equal(won.status, 'advanced');
+  assert.deepEqual(JSON.parse(won.session.stateJson).runtime, {
+    version: 1, phase: 'countdown', resolved: { type: 'winner', winnerId: '102' },
+  });
   assert.equal(openMysteryClaim(db, { sessionId: picked.sessionId,
     messageId: '901', now: start + 11_999 }).status, 'early');
   const opened = openMysteryClaim(db, { sessionId: picked.sessionId,
@@ -146,7 +151,43 @@ test('winner-only claim is atomic and ends the event', (t) => {
   assert.equal(normal(db, '101').status, 'reserved');
 });
 
-test('winner without claim forfeits and restart cancels only mystery cards', (t) => {
+test('legacy Doors countdown without a known outcome remains a read-only blocker', (t) => {
+  const db = fixture(t);
+  const picked = mystery(db);
+  startEvent(db, picked);
+  db.prepare("UPDATE mystery_sessions SET state='countdown',winner_id='101',next_at=? WHERE id=?")
+    .run(start + 12_000, picked.sessionId);
+  const before = getMysterySession(db, picked.sessionId);
+  assert.deepEqual(openMysteryClaim(db, { sessionId: picked.sessionId,
+    messageId: '901', now: start + 12_000 }), { status: 'ambiguous' });
+  assert.deepEqual(getMysterySession(db, picked.sessionId), before);
+});
+
+for (const resolved of [
+  { type: 'no_winner', winnerId: null },
+  { type: 'winner', winnerId: '103' },
+  { type: 'unknown', winnerId: '102' },
+]) test(`countdown preserves or rejects explicit outcome ${JSON.stringify(resolved)}`, (t) => {
+  const db = fixture(t);
+  const picked = mystery(db);
+  const running = startEvent(db, picked);
+  const transition = () => advanceMysterySession(db, { sessionId: picked.sessionId,
+    expectedState: 'running', expectedStateJson: running.stateJson,
+    state: 'countdown', winnerId: '102', now: start + 7000,
+    stateJson: { ...JSON.parse(running.stateJson), runtime: { version: 1, resolved } } });
+  if (resolved.type !== 'no_winner') {
+    assert.throws(transition, /countdown outcome/);
+    assert.deepEqual(getMysterySession(db, picked.sessionId), running);
+  } else {
+    const moved = transition();
+    assert.equal(moved.status, 'advanced');
+    assert.deepEqual(JSON.parse(moved.session.stateJson).runtime.resolved, resolved);
+    assert.equal(openMysteryClaim(db, { sessionId: picked.sessionId,
+      messageId: '901', now: start + 12000 }).status, 'ambiguous');
+  }
+});
+
+test('winner without claim forfeits and explicit cancellation closes only mystery cards', (t) => {
   const db = fixture(t);
   const ordinary = normal(db, '500', start, () => 0.99);
   publishRoll(db, ordinary.rollId, '950', start);

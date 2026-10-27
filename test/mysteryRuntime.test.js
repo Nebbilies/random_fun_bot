@@ -328,7 +328,23 @@ test('queued clue timers and simultaneous guesses cannot cancel the winner count
   assert.equal(next.status, 'reserved');
 });
 
-test('Clue Reveal accepts an event-channel answer and a restart leaves old message untouched', async (t) => {
+for (const version of [10, 12]) {
+  test(`shutdown cancellation policy preserves legacy v10 and detaches final v12: v${version}`, async (t) => {
+    const { db, reservation, time, start } = fixture(t);
+    await start();
+    // Exercise only the schema-version policy; no final-schema operations run here.
+    db.exec(`PRAGMA user_version = ${version}`);
+    const before = getMysterySession(db, reservation.sessionId);
+    assert.ok(time.pending() > 0);
+    assert.equal(cancelMysteryRuntime(db), version <= 10 ? 1 : 0);
+    assert.equal(time.pending(), 0);
+    if (version <= 10) assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'canceled');
+    else assert.deepEqual(getMysterySession(db, reservation.sessionId), before);
+    db.exec('PRAGMA user_version = 10');
+  });
+}
+
+test('Clue Reveal accepts an event-channel answer and admin cancellation leaves old message untouched', async (t) => {
   const { db, event, reservation, time, start } = fixture(t, 0.5);
   assert.equal(reservation.eventId, 'clue_reveal');
   const intro = await start();
@@ -341,7 +357,7 @@ test('Clue Reveal accepts an event-channel answer and a restart leaves old messa
     author: { id: '102' }, content: answer }), true);
   assert.equal(getMysterySession(db, reservation.sessionId).winnerId, '102');
   const editsBeforeRestart = intro.edits.length;
-  assert.equal(cancelMysteryRuntime(db), 1);
+  assert.equal(cancelMysteryRuntime(db, { cancelPaidSessions: true }), 1);
   await time.advanceTo(100000);
   assert.equal(intro.edits.length, editsBeforeRestart);
   assert.equal(event.sent.length, 3);
@@ -472,7 +488,7 @@ test('Deadlock resolves delayed final timers, including no-winner results, withi
   }
 });
 
-test('competitive events preserve Binoculars, restart cancellation, and winner forfeiture without a claim', async (t) => {
+test('competitive events preserve Binoculars, admin cancellation, and winner forfeiture without a claim', async (t) => {
   for (const eventId of ['greed_chamber', 'deadlock']) {
     const { db, event, reservation, time, start } = fixture(t, eventId);
     addItemToInventory(db, '1', '101', 'binoculars', 1);
@@ -480,7 +496,7 @@ test('competitive events preserve Binoculars, restart cancellation, and winner f
     assert.equal(getInventory(db, '1', '101').find((item) => item.item_id === 'binoculars').charges, 1);
     const old = event.sent.at(-1);
     const edits = old.edits.length;
-    assert.equal(cancelMysteryRuntime(db), 1);
+    assert.equal(cancelMysteryRuntime(db, { cancelPaidSessions: true }), 1);
     await time.advanceTo(getMysterySession(db, reservation.sessionId).deadlineAt + 1);
     assert.equal(old.edits.length, edits);
     assert.equal(getMysterySession(db, reservation.sessionId).outcome, 'canceled');

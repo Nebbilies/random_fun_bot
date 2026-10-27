@@ -143,5 +143,6 @@ jspm_packages/
 # config files
 /data/landmine-config.json
 data/bot.sqlite*
+/data/replacement-rehearsal/
 /service-account.json
 *.sqlite*

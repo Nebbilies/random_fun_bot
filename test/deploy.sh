@@ -13,7 +13,7 @@ echo ubuntu
 EOF
 cat > "$mocks/node" <<'EOF'
 #!/usr/bin/env bash
-echo v22.14.0
+echo v22.23.2
 EOF
 cat > "$mocks/sudo" <<'EOF'
 #!/usr/bin/env bash
@@ -25,9 +25,18 @@ cat > "$mocks/systemctl" <<'EOF'
 #!/usr/bin/env bash
 echo "systemctl $*" >> "$FAKE_LOG"
 case "$*" in
+  'is-active --quiet random-fun-bot') [[ "${FAKE_SERVICE_STATE:-active}" != inactive || -f "${FAKE_LOG}.started" ]] || exit 3 ;;
+  'restart random-fun-bot') touch "${FAKE_LOG}.started" ;;
+  'show random-fun-bot -p ActiveState --value') echo "${FAKE_SERVICE_STATE:-active}" ;;
   'show random-fun-bot -p MainPID --value') echo 123 ;;
   'show random-fun-bot -p NRestarts --value') echo 0 ;;
 esac
+EOF
+cat > "$mocks/journalctl" <<'EOF'
+#!/usr/bin/env bash
+[[ " $* " == *' _PID=123 '* && " $* " == *' --since '* ]] || exit 2
+[[ "${FAKE_DISCORD_READY:-1}" == 1 ]] && echo 'Character game ready.'
+exit 0
 EOF
 cat > "$mocks/npm" <<'EOF'
 #!/usr/bin/env bash
@@ -88,7 +97,7 @@ setup_case() {
   sed -e "s|/home/ubuntu|$home|g" \
       -e "s|systemctl=/usr/bin/systemctl|systemctl=$mocks/systemctl|" \
       "$source_script" > "$home/deploy.sh"
-  export FAKE_LOG="$home/service.log" FAKE_NPM_FAIL=0 FAKE_LOCK_FAIL=0
+  export FAKE_LOG="$home/service.log" FAKE_NPM_FAIL=0 FAKE_LOCK_FAIL=0 FAKE_SERVICE_STATE=active FAKE_DISCORD_READY=1
   : > "$FAKE_LOG"
 }
 
@@ -150,3 +159,25 @@ if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
 grep -q 'Another deployment is running' "$home/output"
 assert_untouched
 echo 'PASS: held deployment lock rejects a competing invocation'
+
+setup_case stopped-service
+export FAKE_SERVICE_STATE=inactive
+bash "$home/deploy.sh" "$target" > "$home/output" 2>&1 || { cat "$home/output"; exit 1; }
+[[ "$(git -C "$app" rev-parse HEAD)" == "$target" ]]
+grep -q '^systemctl restart random-fun-bot$' "$FAKE_LOG"
+assert_data
+echo 'PASS: deployment starts a deliberately stopped service'
+
+setup_case missing-readiness
+export FAKE_DISCORD_READY=0
+if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+grep -q 'Discord/game readiness was not observed' "$home/output"
+assert_data
+echo 'PASS: a live process without Discord/game readiness cannot pass deployment'
+
+setup_case failed-service
+export FAKE_SERVICE_STATE=failed
+if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+grep -q 'Service state is failed' "$home/output"
+assert_untouched
+echo 'PASS: an unexpectedly failed service requires investigation before deployment'

@@ -82,6 +82,13 @@ test('card shows anime under the name and keeps one report button', () => {
   assert.match(JSON.stringify(unknown.components.map((component) => component.toJSON())), /1 roll left/);
 });
 
+test('roll cards label generated likes but leave imported counts unchanged', () => {
+  const character = { name_full: 'Chell', anime_titles: null, rank: 100, favourites: 5050, likes_source: 'generated' };
+  const render = (value) => JSON.stringify(rollCard(value, null, 6).components.map((component) => component.toJSON()));
+  assert.match(render(character), /5,050 \[generated\]/);
+  assert.doesNotMatch(render({ ...character, likes_source: 'anilist' }), /\[generated\]/);
+});
+
 test('shared 1% prank chance runs before character selection in either pool', async (t) => {
   for (const [draw, prank, title, pool] of [
     [0, 'dog_clap', 'ur roll gone', 'w'],

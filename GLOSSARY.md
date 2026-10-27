@@ -5,7 +5,7 @@ Language for the character catalog, ownership, and tag review.
 ## Language
 
 **Character identity**:
-The stable AniList ID of a character, independent of its popularity rank.
+The permanent, source-independent identity of a character, shared across its external references and independent of its catalog rank.
 _Avoid_: Rank, catalog position
 
 **Character ownership**:
@@ -43,6 +43,18 @@ _Avoid_: Release
 **Character catalog**:
 The growing set of published characters and their display metadata. Published characters remain in the catalog, while popularity ranks can change on refresh.
 _Avoid_: Ownership registry
+
+**Manual character**:
+A character added to the catalog through curation rather than an automatic source import.
+_Avoid_: Fake character, custom copy
+
+**Generated likes**:
+A curated character's assigned like count, generated to fit its requested insertion rank rather than obtained from AniList. The count stays fixed across source refreshes unless explicitly edited and is labeled when displayed.
+_Avoid_: AniList likes, imported likes
+
+**Insertion rank**:
+The requested catalog position when a character is added, not a permanent reservation of that rank. Later catalog changes may move the character.
+_Avoid_: Pinned rank, permanent rank
 
 **Character tag mapping**:
 The association between a character and a tag used to find that character's images.

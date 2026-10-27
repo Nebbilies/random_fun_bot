@@ -8,6 +8,7 @@ import { findCharacters } from '../lib/gameCharacterLookup.js';
 import { reportCharacterTag } from '../lib/catalogDb.js';
 import { getMarriage } from '../lib/characterMarriage.js';
 import { formatNumber } from '../lib/formatNumber.js';
+import { formatCharacterLikes } from "../lib/characterLikes.js";
 
 const PAGE_SIZE = 25;
 
@@ -67,7 +68,7 @@ function buildCardComponents(character, image, position, hasMoreImages, canGoBac
   const details = [
     `**Anime:** ${escapeMarkdown(anime)}`,
     ...(names.length ? ['**Other names:**', ...names.map((name) => `• ${escapeMarkdown(short(name))}`)] : []),
-    `**Rank:** #${formatNumber(character.rank)} • **Favorites:** ${formatNumber(character.favourites)}`,
+    `**Rank:** #${formatNumber(character.rank)} • **Favorites:** ${formatCharacterLikes(character)}`,
   ];
   const container = new ContainerBuilder().setAccentColor(0x5865f2)
     .addTextDisplayComponents(

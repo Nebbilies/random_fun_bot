@@ -45,11 +45,15 @@ cd "$app_dir"
 # Also serializes manual invocations on the VPS.
 exec 9>/home/ubuntu/.random-fun-bot-deploy.lock
 flock -n 9 || { echo 'Another deployment is running.' >&2; exit 1; }
-[[ "$(node --version)" == v22.14.0 ]] || { echo 'Expected Node v22.14.0.' >&2; exit 1; }
+[[ "$(node --version)" == v22.23.2 ]] || { echo 'Expected Node v22.23.2 (required SQLite APIs); upgrade runtime before deployment.' >&2; exit 1; }
 [[ "$(git branch --show-current)" == main ]] || { echo 'Checkout must be on main.' >&2; exit 1; }
 sudo -n -l "$systemctl" stop "$service" >/dev/null
 sudo -n -l "$systemctl" restart "$service" >/dev/null
-"$systemctl" is-active --quiet "$service" || { echo 'Service is already unhealthy; investigate first.' >&2; exit 1; }
+service_state=$("$systemctl" show "$service" -p ActiveState --value)
+case "$service_state" in
+  active|inactive) ;;
+  *) echo "Service state is $service_state; investigate before deployment." >&2; exit 1 ;;
+esac
 
 # Local runtime changes under data/ are allowed, including staged birthdays.
 # Other tracked changes need human review before an automated update.
@@ -81,18 +85,27 @@ if [[ -e node_modules || -L node_modules ]]; then
   mv node_modules "$stage/previous-node_modules"
 fi
 mv "$stage/node_modules" node_modules
+started_at=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 sudo -n "$systemctl" restart "$service"
 
 # A stable PID and restart counter catch common startup crash loops.
 pid=$("$systemctl" show "$service" -p MainPID --value)
 restarts=$("$systemctl" show "$service" -p NRestarts --value)
 [[ "$pid" =~ ^[1-9][0-9]*$ ]]
-for attempt in {1..6}; do
+ready=0
+for attempt in {1..12}; do
   sleep 5
   "$systemctl" is-active --quiet "$service"
   [[ "$("$systemctl" show "$service" -p MainPID --value)" == "$pid" ]]
   [[ "$("$systemctl" show "$service" -p NRestarts --value)" == "$restarts" ]]
+  # The marker is emitted only after Discord login and durable game recovery.
+  if journalctl -b -u "$service" "_PID=$pid" --since "$started_at" --no-pager -o cat \
+    | grep -Fx 'Character game ready.' > /dev/null; then
+    ready=1
+  fi
+  if (( attempt >= 6 && ready )); then break; fi
 done
+(( ready )) || { echo 'Discord/game readiness was not observed; check the service journal and deploy-user journal access.' >&2; exit 1; }
 completed=1
 echo "Deployed $target; service process stayed stable for 30 seconds."
-echo 'This process check does not establish Discord readiness.'
+echo 'Discord login and game recovery readiness were observed for the started process.'

@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AniListCatalogApi } from '../lib/anilistCatalogApi.js';
 import { getMeta, keepCandidate, openCatalog, publishCatalog, setMeta, transaction } from '../lib/catalogDb.js';
+import { assertSourceCatalogStagingBinding, bindSourceCatalogStaging, sourceCatalogRevisionToken } from '../lib/sourceCatalogPublication.js';
 
 const RANGE_SIZE = 500;
 const TARGET_COUNT = 15_000;
@@ -20,11 +21,15 @@ function characterSummary(nodes) {
   return `${nodes.length} characters${names.length ? `: ${names.join(', ')}${nodes.length > names.length ? ', ...' : ''}` : ''}`;
 }
 
-export async function scanOnePage(db, api, log = () => {}) {
+export async function scanOnePage(db, api, log = () => {}, binding = assertSourceCatalogStagingBinding(db)) {
+  assertSourceCatalogStagingBinding(db, binding);
   const start = Number(getMeta(db, 'scan_range_start'));
   const maxId = Number(getMeta(db, 'scan_max_id'));
   if (start > maxId) {
-    setMeta(db, 'import_phase', 'hydrate');
+    transaction(db, () => {
+      assertSourceCatalogStagingBinding(db, binding);
+      setMeta(db, 'import_phase', 'hydrate');
+    });
     return false;
   }
   const page = Number(getMeta(db, 'scan_page'));
@@ -57,6 +62,7 @@ export async function scanOnePage(db, api, log = () => {}) {
     }
   }
   transaction(db, () => {
+    assertSourceCatalogStagingBinding(db, binding);
     const growing = getMeta(db, 'scan_mode') === 'growing';
     const stageLimit = growing ? null : Number(getMeta(db, 'stage_limit') ?? TARGET_COUNT);
     for (const character of characters) keepCandidate(db, character, stageLimit);
@@ -100,10 +106,15 @@ async function qualifyingMedia(api, character) {
   }
 }
 
-export async function hydrateOneBatch(db, api, log = () => {}) {
+export async function hydrateOneBatch(db, api, log = () => {}, binding = assertSourceCatalogStagingBinding(db)) {
+  assertSourceCatalogStagingBinding(db, binding);
+  const sourceAware = Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='character_sources'").get());
+  const existing = sourceAware
+    ? `SELECT 1 FROM character_sources AS source JOIN characters AS c ON c.id=source.character_id
+       WHERE source.source='anilist' AND source.external_id=CAST(stage.id AS TEXT)`
+    : 'SELECT 1 FROM characters WHERE characters.id = stage.id';
   const ids = db.prepare(`SELECT stage.id FROM stage_characters AS stage
-    WHERE stage.name_full IS NULL AND NOT EXISTS
-      (SELECT 1 FROM characters WHERE characters.id = stage.id)
+    WHERE stage.name_full IS NULL AND NOT EXISTS (${existing})
     ORDER BY stage.id LIMIT 25`).all().map((row) => row.id);
   if (!ids.length) return false;
   log(`==== Fetching character metadata for ${ids.length} finalists (IDs ${ids[0]}-${ids.at(-1)}) ====`);
@@ -113,6 +124,7 @@ export async function hydrateOneBatch(db, api, log = () => {}) {
   const prepared = [];
   for (const character of details) prepared.push({ character, media: await qualifyingMedia(api, character) });
   transaction(db, () => {
+    assertSourceCatalogStagingBinding(db, binding);
     const remove = db.prepare('DELETE FROM stage_characters WHERE id = ?');
     for (const id of missingIds) remove.run(id);
     for (const { character, media } of prepared) {
@@ -126,18 +138,26 @@ export async function hydrateOneBatch(db, api, log = () => {}) {
   return true;
 }
 
-export async function runImport({ db, api, refresh = false, log = console.log }) {
+export async function runImport({ db, api, refresh = false, restart = false, log = console.log }) {
   let phase = getMeta(db, 'import_phase');
-  if (refresh && phase && phase !== 'complete')
+  let binding;
+  if (refresh && !restart && phase && phase !== 'complete')
     throw new Error('Cannot refresh while an import is in progress; resume it without --refresh');
-  if (phase === 'complete' && !refresh) {
+  if (phase === 'complete' && !refresh && !restart) {
     log('Catalog already complete. Use --refresh to build a new snapshot.');
     return;
   }
-  if (!phase || refresh) {
+  if (!phase || refresh || restart) {
+    // Capture before any network request; reject a source edit during discovery
+    // setup rather than silently rebinding the new scan to a later revision.
+    const token = sourceCatalogRevisionToken(db);
+    const priorGeneration = getMeta(db, 'character_import_scan_generation');
     const maxId = await api.highestAnimeId();
     transaction(db, () => {
+      if (getMeta(db, 'character_import_scan_generation') !== priorGeneration)
+        throw new Error('Character import scan was replaced; restart discovery with --restart');
       db.exec('DELETE FROM stage_characters');
+      binding = bindSourceCatalogStaging(db, token);
       setMeta(db, 'scan_started_at', new Date().toISOString());
       setMeta(db, 'scan_max_id', maxId);
       setMeta(db, 'scan_range_start', 1);
@@ -152,9 +172,14 @@ export async function runImport({ db, api, refresh = false, log = console.log })
     phase = 'scan';
     log(`Scanning anime media IDs 1-${maxId}. This may take many hours.`);
   }
+  // Saved typed staging without a binding predates this safety contract and
+  // cannot be adopted retroactively, even when its current source IDs are free.
+  if (binding === undefined) binding = assertSourceCatalogStagingBinding(db);
+  assertSourceCatalogStagingBinding(db, binding);
   if (!getMeta(db, 'scan_scope')) {
     if (phase !== 'scan') throw new Error('This older scan is past discovery and cannot adopt the new filters without rebuilding');
     transaction(db, () => {
+      assertSourceCatalogStagingBinding(db, binding);
       setMeta(db, 'scan_scope', MIXED_SCOPE);
       setMeta(db, 'stage_limit', MIXED_SCAN_LIMIT);
       setMeta(db, 'legacy_unfiltered_range_start', Number(getMeta(db, 'scan_page')) > 1
@@ -167,7 +192,7 @@ export async function runImport({ db, api, refresh = false, log = console.log })
   if (phase === 'scan') {
     if (getMeta(db, 'scanned_pages') !== '0') log(`==== Resuming anime scan at ID ${getMeta(db, 'scan_range_start')}, page ${getMeta(db, 'scan_page')} ====`);
     let pages = 0;
-    while (await scanOnePage(db, api, log)) {
+    while (await scanOnePage(db, api, log, binding)) {
       pages++;
       if (pages % 25 === 0) log(`Scanned through media ID ${getMeta(db, 'scan_range_start')}, page ${getMeta(db, 'scan_page')}; ${getMeta(db, 'scanned_media')} anime found.`);
     }
@@ -177,11 +202,14 @@ export async function runImport({ db, api, refresh = false, log = console.log })
   if (phase === 'hydrate') {
     log('==== Fetching finalist character metadata ====');
     let batches = 0;
-    while (await hydrateOneBatch(db, api, log)) {
+    while (await hydrateOneBatch(db, api, log, binding)) {
       batches++;
       if (batches % 20 === 0) log(`Hydrated ${db.prepare('SELECT COUNT(*) AS n FROM stage_characters WHERE name_full IS NOT NULL').get().n} characters.`);
     }
-    setMeta(db, 'import_phase', 'publish');
+    transaction(db, () => {
+      assertSourceCatalogStagingBinding(db, binding);
+      setMeta(db, 'import_phase', 'publish');
+    });
     phase = 'publish';
   }
   if (phase === 'publish') {
@@ -191,11 +219,15 @@ export async function runImport({ db, api, refresh = false, log = console.log })
     if (growing && count === 0) throw new Error('No eligible characters found; catalog not published');
     if (!growing && count < TARGET_COUNT)
       throw new Error(`Expected at least ${TARGET_COUNT} eligible characters, found ${count}; catalog not published`);
-    if (!growing) transaction(db, () => db.prepare(`DELETE FROM stage_characters WHERE id NOT IN
-      (SELECT id FROM stage_characters ORDER BY favourites DESC, id ASC LIMIT ?)`).run(TARGET_COUNT));
-    const published = publishCatalog(db);
-    setMeta(db, 'scan_finished_at', new Date().toISOString());
-    setMeta(db, 'import_phase', 'complete');
+    const published = publishCatalog(db, () => {
+      // catalogDb owns the publication transaction. Keep the expected binding,
+      // trimming and completion checkpoint in that same rollback boundary.
+      assertSourceCatalogStagingBinding(db, binding);
+      if (!growing) db.prepare(`DELETE FROM stage_characters WHERE id NOT IN
+        (SELECT id FROM stage_characters ORDER BY favourites DESC, id ASC LIMIT ?)`).run(TARGET_COUNT);
+      setMeta(db, 'scan_finished_at', new Date().toISOString());
+      setMeta(db, 'import_phase', 'complete');
+    });
     log(JSON.stringify({ published, filter: FILTER_SCOPE, approximate: getMeta(db, 'scan_scope') === MIXED_SCOPE,
       startedAt: getMeta(db, 'scan_started_at'),
       finishedAt: getMeta(db, 'scan_finished_at'), maxAnimeId: Number(getMeta(db, 'scan_max_id')),
@@ -211,7 +243,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const db = openCatalog();
     try {
       console.log(`Database: ${db.prepare('PRAGMA database_list').get().file}`);
-      await runImport({ db, api: new AniListCatalogApi(), refresh: process.argv.includes('--refresh') });
+      await runImport({ db, api: new AniListCatalogApi(), refresh: process.argv.includes('--refresh'), restart: process.argv.includes('--restart') });
     } catch (error) {
       console.error(error);
       process.exitCode = 1;

@@ -119,9 +119,14 @@ function saveAttempt(db, row, searches, outcome, suggestions) {
 
 export async function matchDuckDuckGoTags({ db, api, fetchImpl = fetch, limit = 50,
   delayMs = 30_000, apply = false, log = console.log }) {
-  if (getMeta(db, 'import_phase') !== 'complete') throw new Error('Publish the catalog before matching tags');
-  const pending = pendingRows(db, limit, apply);
   const summary = { searched: 0, approved: 0, manual: 0 };
+  if (limit === 0) {
+    log(`DuckDuckGo ${apply ? 'apply' : 'read-only sample'} complete: 0 approvals, 0 manual, 0 searched.`);
+    return summary;
+  }
+  if (db.prepare('PRAGMA user_version').get().user_version !== 12
+    && getMeta(db, 'import_phase') !== 'complete') throw new Error('Publish the catalog before matching tags');
+  const pending = pendingRows(db, limit, apply);
   for (const [index, row] of pending.entries()) {
     if (index) await sleep(delayMs);
     const queries = [...new Set([animeQueryFor(row), characterQueryFor(row)])];
@@ -181,8 +186,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     } });
     const limit = Number(values.limit);
     const delayMs = Number(values['delay-ms']);
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 15_000)
-      throw new Error('--limit must be an integer between 1 and 15000');
+    if (!Number.isSafeInteger(limit) || limit < 0 || limit > 15_000)
+      throw new Error('--limit must be an integer between 0 and 15000');
     if (!Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > 600_000)
       throw new Error('--delay-ms must be an integer between 0 and 600000');
     db = values.apply ? openCatalog() : openCatalogReadOnly();

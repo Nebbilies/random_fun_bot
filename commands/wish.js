@@ -96,9 +96,11 @@ async function pick(ctx, wishes, mode) {
         flags: MessageFlags.Ephemeral }).catch(() => {});
       return;
     }
-    const characterId = Number(interaction.values?.[0]);
-    const wish = wishes.find((entry) => entry.characterId === characterId);
+    // Match only an offered value, then preserve the original UUID or legacy integer.
+    const value = interaction.values?.[0];
+    const wish = wishes.slice(0, 25).find((entry) => String(entry.characterId) === value);
     if (!wish) { await interaction.deferUpdate().catch(() => {}); return; }
+    const characterId = wish.characterId;
     try {
       if (mode === 'remove') {
         removeWish(ctx.yoshiko.catalogDb, { guildId: ctx.message.guildId,
