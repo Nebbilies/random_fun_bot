@@ -124,6 +124,18 @@ _Avoid_: Current ownership, personal discovery
 A server's view of the full item catalog, showing names and descriptions for discovered items and concealing both for undiscovered items. It can be filtered by rarity tier.
 _Avoid_: Inventory, behavior-type list
 
+**Fortune's Lens**:
+A consumable item that reveals a mystery vault's three reward choices before its owner selects one. Revealing those choices does not establish guild item discovery.
+_Avoid_: Reward reroll, discovery item
+
+**Armed Recast**:
+A player's prepared Fortune's Recast effect in one server, waiting to offer a same-tier replacement choice for their next eligible vault reward after any Double or Nothing gamble.
+_Avoid_: Spent Recast, inventory reroll
+
+**Item release**:
+A dated group of newly introduced item kinds announced together, with each name concealed until that item is discovered in the viewer's server.
+_Avoid_: Item discovery, inventory update
+
 **Wish match**:
 A roll whose character appears on at least one wishlist in that server. A wish match is announced as one wish line naming every matching player and is presented with the wishlist accent color.
 _Avoid_: Wish alert, wish notification
