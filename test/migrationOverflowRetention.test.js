@@ -209,3 +209,43 @@ for (const [name, corrupt] of Object.entries(corruptions)) test(`${name} blocks 
   assert.deepEqual(inventory(f.db), items);
   assert.equal(f.db.prepare('PRAGMA user_version').get().user_version, 10);
 });
+
+
+function historicalRules(value) {
+  delete value._rules.masqueradeConfirmationMs;
+  value._rules.masqueradeMaxRankMultiplier = 2;
+}
+test('exact pre-Masquerade-update captured rules survive settlement, conversion and reward acceptance unchanged', t => {
+  const f = fixture(t);
+  const saved = row(f.db);
+  for (const column of ['original_json', 'reward_json']) jsonChange(saved, column, historicalRules);
+  f.db.prepare('UPDATE vault_rewards SET original_json=?,reward_json=?').run(saved.original_json, saved.reward_json);
+  const before = row(f.db);
+  assert.doesNotThrow(() => validateRetainedVaultOverflow(before));
+  assert.deepEqual(settleCharacterMigration(f.db, { offline: true, backupVerified: true, retainOverflow: true, now: now + 10 }).retainedOverflow, [scope.vaultId]);
+  assert.deepEqual(inventoryCharacterIdentities(f.db).blockers, []);
+  convertLegacyCatalogToFinal(f.db, { dryRun: false });
+  f.reopen(false);
+  assert.deepEqual(row(f.db), before);
+  assert.equal(inspectCatalogRuntimeRestart(f.db).ready, true);
+  assert.ok(removeItemFromInventory(f.db, inventory(f.db)[0].id));
+  assert.equal(decideVaultReward(f.db, { ...scope, action: 'accept', now: now + 10 }).reward.state, 'delivered');
+  assert.equal(row(f.db).original_json, before.original_json);
+  assert.equal(row(f.db).reward_json, before.reward_json);
+});
+test('historical rules reject hybrids, partial shapes and invalid removed multiplier values', t => {
+  const f = fixture(t);
+  const before = row(f.db);
+  for (const mutate of [
+    value => { value._rules.masqueradeConfirmationMs = 180000; },
+    value => { delete value._rules.masqueradeMaxRankMultiplier; },
+    value => { delete value._rules.hostageDecisionMs; },
+    value => { value._rules.unknown = 1; },
+    ...[null, '2', {}, 0, 101, 0.2].map(max => value => { value._rules.masqueradeMaxRankMultiplier = max; })
+  ]) {
+    const changed = { ...before };
+    for (const column of ['original_json', 'reward_json']) jsonChange(changed, column, value => { historicalRules(value); mutate(value); });
+    assert.throws(() => validateRetainedVaultOverflow(changed), /Invalid retained/);
+  }
+  assert.deepEqual(row(f.db), before);
+});
