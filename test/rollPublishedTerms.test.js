@@ -81,7 +81,7 @@ for (const phase of ['publish', 'claim']) {
     try {
       const roll = reserve(db);
       if (phase === 'claim') assert.equal(publishRoll(db, roll.rollId, '500', 1100), true);
-      for (const invalid of [{}, { ...roll.character, version: 2 }, { ...roll.character, rank: 0 },
+      for (const invalid of [{}, { ...roll.character, version: 999 }, { ...roll.character, rank: 0 },
         { ...roll.character, favourites: -1 }, { ...roll.character, likes_source: 'unknown' },
         { ...roll.character, name_full: 'Forged name' },
         { ...roll.character, id: '00000000-0000-4000-8000-000000000099' }]) {

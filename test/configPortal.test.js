@@ -63,9 +63,13 @@ test('configuration portal validates atomic writes, inheritance, reset, revision
   for (const body of ['{', JSON.stringify({ padding: 'x'.repeat(66000) })]) {
     assert.equal((await fetch(`${origin}/api/config/section`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body })).status, 400);
   }
-  for (const path of ['/', '/game', '/franchise', '/config']) {
+  for (const path of ['/', '/game', '/franchise', '/config', '/catalog']) {
     const html = await fetch(origin + path).then((r) => r.text());
     assert.match(html, /href="\/config"/);
+    const navigation = html.match(/<nav aria-label="Management portal">([\s\S]*?)<\/nav>/)?.[1];
+    assert.ok(navigation, `${path} has management navigation`);
+    assert.match(navigation, /<a href="\/catalog"(?: aria-current="page")?>[\s\S]*?Catalog[\s\S]*?<\/a>/);
+    assert.equal((navigation.match(/href="\/catalog"/g) || []).length, 1);
   }
   const page = await fetch(`${origin}/config`).then((r) => r.text());
   assert.match(page, /id="scopeForm"/); assert.match(page, /id="changeReview"/);
@@ -123,6 +127,9 @@ test('configuration portal validates atomic writes, inheritance, reset, revision
       await page.getByRole('button', { name: 'Sign out (test-moderator)', exact: true }).waitFor();
       assert.equal(await page.locator('nav a[href="/config"]').isVisible(), false);
       assert.equal(await page.locator('nav a[href="/game"]').isVisible(), false);
+      await page.locator('nav a[href="/catalog"]').click();
+      await page.waitForURL(`${origin}/catalog`);
+      assert.equal(await page.locator('nav a[href="/catalog"][aria-current="page"]').isVisible(), true);
       assert.equal(await page.evaluate(() => fetch('/api/config').then((response) => response.status)), 403);
       await page.getByRole('button', { name: 'Sign out (test-moderator)', exact: true }).click();
       await page.waitForURL(`${origin}/login`);

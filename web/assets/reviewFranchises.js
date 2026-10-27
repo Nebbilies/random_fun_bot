@@ -70,7 +70,17 @@ async function loadDetails(id) {
     }
     byId('aliases').append(row);
   }
+  byId('directCharacters').replaceChildren();
+  const directCharacters = data.directCharacters ?? [];
+  if (!directCharacters.length) byId('directCharacters').textContent = 'No directly assigned characters.';
+  for (const character of directCharacters) {
+    const row = document.createElement('p');
+    row.className = 'row';
+    row.textContent = `#${character.rank} · ${character.name}`;
+    byId('directCharacters').append(row);
+  }
   byId('members').replaceChildren();
+  if (!data.members.length) byId('members').textContent = 'No anime members. Characters can belong directly to this franchise without an anime.';
   for (const member of data.members) {
     const section = document.createElement('article');
     section.className = 'member';

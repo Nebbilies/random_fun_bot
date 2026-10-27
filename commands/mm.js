@@ -1,3 +1,4 @@
+import { characterSeries } from '../lib/characterSeries.js';
 import { getGameConfig } from '../lib/gameConfig.js';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
   escapeMarkdown, MediaGalleryBuilder, MediaGalleryItemBuilder, MessageFlags,
@@ -19,15 +20,6 @@ function actionRow(...components) {
 
 function short(value, length = 150) {
   return value.length > length ? `${value.slice(0, length - 1)}…` : value;
-}
-
-function jsonArray(value) {
-  try {
-    const parsed = JSON.parse(value || '[]');
-    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string' && item.trim()) : [];
-  } catch {
-    return [];
-  }
 }
 
 /**
@@ -150,10 +142,9 @@ function individualCardComponents(rows, targetId, index, disabled = false) {
     ? `# [${title}](${row.site_url})`
     : `# ${title}`;
 
-  const titles = jsonArray(row.anime_titles);
-  const anime = titles.length ? `${short(titles[0])}${titles.length > 1 ? ` (+${titles.length - 1} more)` : ''}` : 'Unknown';
+  const series = characterSeries(row, 'Unknown', short);
   const details = [
-    `**Anime:** ${escapeMarkdown(anime)}`,
+    `**${series.label}:** ${escapeMarkdown(series.text)}`,
     `**Rank:** #${formatNumber(row.rank)} • **Favorites:** ${formatCharacterLikes(row)}`,
   ];
   const footer = `<@${targetId}>'s harem • Character ${index + 1} of ${total}`;

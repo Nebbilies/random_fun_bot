@@ -27,7 +27,7 @@ for (const corruption of ['null','version','identity','rank','scalar']) {
     if(phase==='award') assert.equal(openMysteryClaim(db,{sessionId:roll.sessionId,messageId:'501',now:6200}).status,'open');
     const session=getMysterySession(db,roll.sessionId); const state=JSON.parse(session.stateJson);
     if(corruption==='null') state.characterSnapshot=null;
-    if(corruption==='version') state.characterSnapshot.version=2;
+    if(corruption==='version') state.characterSnapshot.version=999;
     if(corruption==='identity') state.characterSnapshot.id=99;
     if(corruption==='rank') state.characterSnapshot.rank=0;
     if(corruption==='scalar') db.prepare('UPDATE mystery_sessions SET rank_snapshot=999 WHERE id=?').run(roll.sessionId);

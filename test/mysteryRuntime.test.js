@@ -62,7 +62,7 @@ function channel(id) {
   };
 }
 
-function fixture(t, eventDraw = 0, slotDraw = 0) {
+function fixture(t, eventDraw = 0, slotDraw = 0, franchiseFallback = false) {
   const dir = mkdtempSync(join(tmpdir(), 'mystery-runtime-'));
   const db = openCatalog(join(dir, 'catalog.sqlite'));
   t.after(() => { cancelMysteryRuntime(db); db.close(); rmSync(dir, { recursive: true, force: true }); });
@@ -71,6 +71,9 @@ function fixture(t, eventDraw = 0, slotDraw = 0) {
   db.exec(`INSERT INTO anime (id, title_english, genres, tags, season_year, format, is_adult, fetched_at)
     VALUES (10, 'Example Anime', '["Adventure"]', '[{"name":"Space","rank":90}]', 2020, 'TV', 0, 'now');
     INSERT INTO character_anime (character_id, anime_id) VALUES (1, 10)`);
+  if (franchiseFallback) db.exec(`UPDATE characters SET anime_titles='[]';
+    INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Zulu','now'),(2,'Alpha','now');
+    INSERT INTO franchise_anime(franchise_id,anime_id) VALUES(1,10),(2,10)`);
   const origin = channel('10');
   const event = channel('20');
   setMysteryEventChannel(db, '1', '20');
@@ -604,4 +607,16 @@ test('Greed Chamber styles Stay and Escape as distinct actions', async (t) => {
   assert.match(later, /Greed Chamber · Round 2\/5/);
   assert.match(later, /mystery:1:choice:2:stay/);
   assert.doesNotMatch(later, /Stay to risk your unbanked points|Participants: |Entry is closed/);
+});
+
+for (const selected of ['1', '2']) test(`mystery ${selected === '1' ? 'winning' : 'unclaimable'} prize keeps frozen franchise fallback`, async t => {
+  const { db, event, time, start } = fixture(t, 0, 0, true);
+  db.exec("UPDATE franchises SET display_name='Renamed'");
+  await start();
+  await time.advanceTo(6100);
+  await onMysteryButton(db, doorInteraction(event.sent[1], selected));
+  await time.advanceTo(selected === '1' ? 9100 : 11100);
+  const prize = event.sent.at(-1);
+  assert.equal(prize.embeds[0].data.description, 'Alpha (+1 more)');
+  assert.doesNotMatch(JSON.stringify(prize.payload), /Renamed/);
 });

@@ -118,7 +118,7 @@ test('malformed pending terms abort before send, cleanup, or row mutation', asyn
   const { db } = fixture(t);
   const directive = siren(db);
   const valid = loadRollCharacterSnapshot(db, directive.pendingRollId);
-  for (const bad of [{}, { ...valid, version: 2 }, { ...valid, id: '00000000-0000-4000-8000-000000000099' },
+  for (const bad of [{}, { ...valid, version: 999 }, { ...valid, id: '00000000-0000-4000-8000-000000000099' },
     { ...valid, name_full: 'Wrong published name' }, { ...valid, favourites: -1 }]) {
     db.prepare('UPDATE character_rolls SET character_snapshot_json=? WHERE id=?').run(JSON.stringify(bad), directive.pendingRollId);
     const before = db.prepare('SELECT * FROM character_rolls').all();
