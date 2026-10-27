@@ -1,6 +1,6 @@
 # Fortune items — Phase 1 design proposal
 
-Status: Design proposal approved by the user. Implementation plan awaiting approval; no production implementation yet.
+Status: Design and implementation plan approved; Phase 1 implemented and release validation passed. Includes the user's later automatic-additive-migration correction.
 
 ## Scope
 

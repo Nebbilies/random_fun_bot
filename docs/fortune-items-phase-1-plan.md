@@ -1,6 +1,6 @@
 # Fortune items — Phase 1 implementation plan
 
-Status: Approved and implementation in progress. User subsequently corrected the migration policy: routine additive Fortune tables must migrate automatically during normal writable startup/deploy; manual maintenance is only for substantial/risky changes.
+Status: Approved, implemented, and validated. See `docs/fortune-validation.md` for final test/review results. User subsequently corrected the migration policy: routine additive Fortune tables must migrate automatically during normal writable startup/deploy; manual maintenance is only for substantial/risky changes.
 
 Design authority: `docs/fortune-items-phase-1-design.md`, approved in conversation. Sequence is Lens -> slot selection -> Double or Nothing -> Recast -> inventory/overflow. A lost gamble leaves Recast armed; a won gamble uses the upgraded tier.
 
