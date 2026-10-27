@@ -72,6 +72,24 @@ for (const firstOpen of [openCatalog, openFinalCatalog]) {
   });
 }
 
+for (const busyTimeout of [0, 5000, 90000]) {
+  test(`upgrade preserves caller busy timeout ${busyTimeout} after rehearsal, commit, and failure`, () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      previous(db);
+      db.exec(`PRAGMA busy_timeout=${busyTimeout}`);
+      upgradeFortuneCatalog(db);
+      assert.equal(db.prepare('PRAGMA busy_timeout').get().timeout, busyTimeout);
+      upgradeFortuneCatalog(db, { dryRun: false });
+      assert.equal(db.prepare('PRAGMA busy_timeout').get().timeout, busyTimeout);
+      db.exec('CREATE TABLE unknown_extension(id INTEGER)');
+      assert.throws(() => upgradeFortuneCatalog(db, { dryRun: false }), /invalid final/);
+      assert.equal(db.isTransaction, false);
+      assert.equal(db.prepare('PRAGMA busy_timeout').get().timeout, busyTimeout);
+    } finally { db.close(); }
+  });
+}
+
 test('late upgrade failure rolls back every new object and preserves the original database', () => {
   const db = new DatabaseSync(':memory:');
   try {
@@ -123,6 +141,75 @@ test('concurrent first starts serialize and recheck after acquiring the migratio
     await completed;
     assert.equal(validateFinalCatalogSchema(db), true);
   } finally {
+    await Promise.all(workers.map(worker => worker.terminate()));
+    db.close(); rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('startup upgrade waits beyond five seconds for another migration and restores caller timeouts', { timeout: 20000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fortune-slow-startup-')), path = join(dir, 'fixture.sqlite');
+  const db = new DatabaseSync(path);
+  const workers = [];
+  const release = new Int32Array(new SharedArrayBuffer(4));
+  const run = (holder, busyTimeout) => {
+    const worker = new Worker(`
+      const { parentPort, workerData } = require('node:worker_threads');
+      (async () => {
+        const { DatabaseSync } = await import('node:sqlite');
+        const { upgradeFortuneCatalog } = await import(workerData.module);
+        const db = new DatabaseSync(workerData.path);
+        db.exec('PRAGMA busy_timeout=' + workerData.busyTimeout);
+        const connection = workerData.holder ? {
+          get isTransaction() { return db.isTransaction; },
+          prepare: sql => db.prepare(sql),
+          exec(sql) {
+            db.exec(sql);
+            if (sql === 'BEGIN IMMEDIATE') {
+              parentPort.postMessage('ready');
+              // Model slow production validation while holding the actual upgrade lock.
+              Atomics.wait(new Int32Array(workerData.release), 0, 0, 15000);
+            }
+          }
+        } : db;
+        if (!workerData.holder) parentPort.postMessage('ready');
+        try {
+          upgradeFortuneCatalog(connection, { dryRun: false });
+          parentPort.postMessage({ timeout: db.prepare('PRAGMA busy_timeout').get().timeout });
+        } finally { db.close(); }
+      })().catch(error => { throw error; });
+    `, { eval: true, workerData: { path, holder, busyTimeout, release: release.buffer,
+      module: new URL('../lib/vaultFortuneUpgrade.js', import.meta.url).href } });
+    workers.push(worker);
+    const ready = new Promise((resolve, reject) => {
+      worker.once('message', resolve);
+      worker.once('error', reject);
+      worker.once('exit', code => { if (code !== 0) reject(new Error(`Worker exit ${code}`)); });
+    });
+    const completed = new Promise((resolve, reject) => {
+      let result;
+      worker.on('message', message => { if (typeof message === 'object') result = message; });
+      worker.once('error', reject);
+      worker.once('exit', code => code === 0 ? resolve(result) : reject(new Error(`Worker exit ${code}`)));
+    });
+    // A contender can fail while the parent is deliberately holding the lock.
+    completed.catch(() => {});
+    return { ready, completed };
+  };
+  try {
+    previous(db);
+    const holder = run(true, 0);
+    await holder.ready;
+    const contenders = [run(false, 0), run(false, 5000)];
+    await Promise.all(contenders.map(worker => worker.ready));
+    await new Promise(resolve => setTimeout(resolve, 5500));
+    Atomics.store(release, 0, 1);
+    Atomics.notify(release, 0);
+    const results = await Promise.all([holder, ...contenders].map(worker => worker.completed));
+    assert.deepEqual(results, [{ timeout: 0 }, { timeout: 0 }, { timeout: 5000 }]);
+    assert.equal(validateFinalCatalogSchema(db), true);
+  } finally {
+    Atomics.store(release, 0, 1);
+    Atomics.notify(release, 0);
     await Promise.all(workers.map(worker => worker.terminate()));
     db.close(); rmSync(dir, { recursive: true, force: true });
   }
