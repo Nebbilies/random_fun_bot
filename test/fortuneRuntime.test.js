@@ -46,6 +46,49 @@ async function bound(f, capturedOutcome) {
   return startVaultRoll({ db: f.db, channel: f.channel, guildId: 'guild', rollerId: 'owner', commandMessageId, remaining: 0, now: () => 100 });
 }
 
+for (const inventory of ['empty', 'other-user', 'other-guild', 'spent', 'held', 'usable']) {
+  test(`Lens control requires the roller's usable inventory (${inventory})`, async t => {
+    const f = fixture(t);
+    if (inventory !== 'empty') {
+      const source = addItemToInventory(f.db, inventory === 'other-guild' ? 'other-guild' : 'guild',
+        inventory === 'other-user' ? 'other-user' : 'owner', 'fortunes_lens', inventory === 'spent' ? 0 : 1).item;
+      if (inventory === 'held') f.db.prepare(`INSERT INTO item_action_costs
+        (action_id, inventory_id, snapshot_json) VALUES (?, ?, ?)`)
+        .run('held-action', source.id, JSON.stringify(source));
+    }
+    const { vaultId, message } = await bound(f);
+    const hasControl = () => JSON.stringify(message.payload).includes(`vault:${vaultId}:lens`);
+    assert.equal(hasControl(), inventory === 'usable');
+    await recoverVaultSessions(f.db, f.client, { now: () => 200 });
+    assert.equal(hasControl(), inventory === 'usable');
+    if (inventory === 'empty') {
+      let rejected;
+      await onVaultInteraction(f.db, click(vaultId, message, 'lens', {
+        reply: async payload => { rejected = payload; },
+      }), { now: () => 300 });
+      assert.match(rejected.content, /unavailable/);
+      assert.equal(getLens(f.db, vaultId), null, 'forged clicks cannot bypass inventory checks');
+    }
+  });
+}
+
+test('Lens controls refresh with inventory while saved reveals survive consumption', async t => {
+  const f = fixture(t);
+  addItemToInventory(f.db, 'guild', 'owner', 'fortunes_lens');
+  const first = await bound(f), second = await bound(f);
+  const hasControl = vault => JSON.stringify(vault.message.payload).includes(`vault:${vault.vaultId}:lens`);
+  assert.equal(hasControl(first), true);
+  assert.equal(hasControl(second), true);
+  await onVaultInteraction(f.db, click(first.vaultId, first.message, 'lens'), { now: () => 200, random: () => 0 });
+  await recoverVaultSessions(f.db, f.client, { now: () => 300 });
+  assert.equal(hasControl(second), false);
+  assert.ok(JSON.stringify(first.message.payload).includes(`Fortune Lens v1 · ${first.vaultId}`));
+  addItemToInventory(f.db, 'guild', 'owner', 'fortunes_lens');
+  await recoverVaultSessions(f.db, f.client, { now: () => 400 });
+  assert.equal(hasControl(second), true);
+  assert.equal(hasControl(first), false, 'already revealed vault must not offer another activation');
+});
+
 test('prefix use accepts multiword Fortune names and rejects ambiguous fortune without spending', async t => {
   const f = fixture(t);
   addItemToInventory(f.db, 'guild', 'owner', 'fortunes_lens');
