@@ -33,7 +33,7 @@ function fixture(t) {
     if (!messages.has(id)) throw Object.assign(Error('deleted'), { code: 10008 });
     return messages.get(id);
   } }, async send(payload) {
-    const message = { id: String(500 + sent++), channelId: '10', payload,
+    const message = { id: String(500 + sent++), channelId: '10', channel, payload,
       async edit(change) { this.payload = { ...this.payload, ...change }; return this; } };
     messages.set(message.id, message); return message;
   } };
@@ -46,8 +46,8 @@ function fixture(t) {
 function choose(f, session, action = 'A') {
   const message = f.messages.get(getVaultSession(f.db, session.vaultId).messageId);
   return { customId: `vault:${session.vaultId}:${action}`, guildId: '1', channelId: '10',
-    user: { id: '101' }, message, isButton: () => true, isStringSelectMenu: () => false,
-    reply: async () => {}, update: payload => message.edit(payload) };
+    user: { id: '101' }, message, channel: f.channel, isButton: () => true, isStringSelectMenu: () => false,
+    deferUpdate: async () => {}, reply: async () => {}, update: payload => message.edit(payload) };
 }
 function allowances(db) {
   return db.prepare('SELECT * FROM roll_allowances ORDER BY guild_id,user_id').all();
@@ -97,7 +97,9 @@ test('actual paid roll crashes before startVault: reopen recovers captured reser
   assert.deepEqual(getVaultReward(f.db, session.vaultId).original, reward.original);
   assert.equal(f.db.prepare('SELECT count(*) n FROM vault_rewards').get().n, 1);
   assert.equal(getInventory(f.db, '1', '101').length, 1);
-  assert.equal(f.sent, 1);
+  assert.equal(f.sent, 2, 'one source card and one distinct reward card, even after recovery');
+  assert.notEqual(reward.messageId, recovered.messageId);
+  assert.equal(reward.sourceMessageId, recovered.messageId);
   assert.deepEqual(allowances(f.db), paid);
 });
 

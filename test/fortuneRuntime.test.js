@@ -38,6 +38,7 @@ function fixture(t) {
 function click(vaultId, message, action, extra = {}) {
   return { customId: `vault:${vaultId}:${action}`, guildId: 'guild', channelId: 'channel', channel: message.channel,
     user: { id: 'owner' }, message, isButton: () => true, isStringSelectMenu: () => false,
+    deferUpdate: async () => {},
     reply: async () => {}, update: payload => message.edit(payload), ...extra };
 }
 async function bound(f, capturedOutcome) {
@@ -110,7 +111,7 @@ test('Lens send-before-ack is reconciled after reopen, never refunded; selected 
   addItemToInventory(f.db, 'guild', 'owner', 'fortunes_recast');
   assert.equal(executeItemUse(f.db, 'guild', 'owner', 'fortune').success, false);
   assert.equal(executeItemUse(f.db, 'guild', 'owner', 'recast', [], { now: 100 }).success, true);
-  const { vaultId, message } = await bound(f);
+  let { vaultId, message } = await bound(f);
   assert.ok(JSON.stringify(message.payload).includes('Use Fortune'));
   await assert.rejects(onVaultInteraction(f.db, click(vaultId, message, 'lens', {
     update: async payload => { await message.edit(payload); throw new Error('lost ack'); },
@@ -122,6 +123,7 @@ test('Lens send-before-ack is reconciled after reopen, never refunded; selected 
   assert.equal(getLens(f.db, vaultId).state, 'presented');
   assert.equal(getInventory(f.db, 'guild', 'owner').filter(item => item.item_id === 'fortunes_lens').length, 0);
   await onVaultInteraction(f.db, click(vaultId, message, 'B'), { now: () => 400, random: () => { throw new Error('redraw'); } });
+  message = f.messages.get(getVaultReward(f.db, vaultId).messageId);
   assert.equal(getVaultReward(f.db, vaultId).state, 'recast');
   assert.equal(getRecast(f.db, vaultId).original.item.id, saved[1].item.id);
   const decision = getRecast(f.db, vaultId);
@@ -149,8 +151,9 @@ test('failed private publication is unspent and resumable; forged owner/binding 
   const f = fixture(t);
   addItemToInventory(f.db, 'guild', 'owner', 'fortunes_recast');
   executeItemUse(f.db, 'guild', 'owner', 'recast', [], { now: 100 });
-  const { vaultId, message } = await bound(f);
+  let { vaultId, message } = await bound(f);
   await onVaultInteraction(f.db, click(vaultId, message, 'A'), { now: () => 200, random: () => 0 });
+  message = f.messages.get(getVaultReward(f.db, vaultId).messageId);
   assert.equal(getRecast(f.db, vaultId).state, 'pending');
   await assert.rejects(onVaultInteraction(f.db, click(vaultId, message, 'recastopen', { reply: async () => { throw new Error('private failed'); } }), { now: () => 300 }), /private failed/);
   assert.equal(getInventory(f.db, 'guild', 'owner')[0].charges, 1);
@@ -194,10 +197,11 @@ for (const viaKeep of [false, true]) test(`automatic Recast followUp edits its o
   addItemToInventory(f.db, 'guild', 'owner', 'fortunes_recast');
   if (viaKeep) addItemToInventory(f.db, 'guild', 'owner', 'double_or_nothing');
   executeItemUse(f.db, 'guild', 'owner', 'recast', [], { now: 100 });
-  const { vaultId, message } = await bound(f);
+  let { vaultId, message } = await bound(f);
   if (viaKeep) {
     await onVaultInteraction(f.db, click(vaultId, message, 'A'), { now: () => 200, random: () => 0 });
     assert.equal(getVaultReward(f.db, vaultId).state, 'decision');
+    message = f.messages.get(getVaultReward(f.db, vaultId).messageId);
   }
   const edits = [], sent = [];
   class Interaction {
@@ -221,7 +225,9 @@ for (const viaKeep of [false, true]) test(`automatic Recast followUp edits its o
   assert.ok((sent[0].flags & 64) === 64);
   assert.equal(edits.length, 1);
   assert.ok(JSON.stringify(edits[0]).includes('<t:30:R>'));
-  assert.ok(JSON.stringify(message.payload).includes('Open Recast choice'));
+  const rewardMessage = f.messages.get(getVaultReward(f.db, vaultId).messageId);
+  assert.ok(JSON.stringify(rewardMessage.payload).includes('Open Recast choice'));
+  assert.ok(JSON.stringify(sent[0]).includes(`recastchoice:${rewardMessage.id}`));
 });
 
 test('Lens masks undiscovered Kaimetsu per guild without changing saved candidates or discovering previews', async t => {
@@ -264,11 +270,13 @@ test('a gated Lens write cannot overwrite slot delivery, even with concurrent re
   release();
   await Promise.all([lens, selection, recovery]);
   assert.equal(getVaultReward(f.db, vaultId).state, 'delivered');
-  assert.match(JSON.stringify(message.payload), /received/);
-  assert.ok(!JSON.stringify(message.payload).includes('Choose one item'));
+  const rewardMessage = f.messages.get(getVaultReward(f.db, vaultId).messageId);
+  assert.notEqual(rewardMessage.id, message.id);
+  assert.match(JSON.stringify(rewardMessage.payload), /received/);
+  assert.match(JSON.stringify(message.payload), /"disabled":true/);
   assert.equal(getInventory(f.db, 'guild', 'owner').length, 1);
   await recoverVaultSessions(f.db, f.client, { now: () => 1200 });
-  assert.match(JSON.stringify(message.payload), /received/);
+  assert.match(JSON.stringify(rewardMessage.payload), /received/);
 });
 
 test('a reward write catches up timeout reconciliation that commits during its transport await', async t => {
@@ -276,8 +284,9 @@ test('a reward write catches up timeout reconciliation that commits during its t
   addItemToInventory(f.db, 'guild', 'owner', 'fortunes_recast');
   addItemToInventory(f.db, 'guild', 'owner', 'double_or_nothing');
   executeItemUse(f.db, 'guild', 'owner', 'recast', [], { now: 100 });
-  const { vaultId, message } = await bound(f);
+  let { vaultId, message } = await bound(f);
   await onVaultInteraction(f.db, click(vaultId, message, 'A'), { now: () => 200, random: () => 0 });
+  message = f.messages.get(getVaultReward(f.db, vaultId).messageId);
   await onVaultInteraction(f.db, click(vaultId, message, 'keep'), { now: () => 300 });
   await onVaultInteraction(f.db, click(vaultId, message, 'recastopen'), { now: () => 400 });
   const deadline = getRecast(f.db, vaultId).deadline;

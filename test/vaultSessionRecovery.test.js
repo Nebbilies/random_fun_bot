@@ -36,7 +36,11 @@ function discord() {
     return messages.get(id);
   } }, send: async payload => {
     if (failure) throw new Error('temporary send failure');
-    const message = { id: String(++channel.sent), channelId: channel.id, payload,
+    if (payload.enforceNonce) {
+      const existing = [...messages.values()].find(message => message.nonce === payload.nonce);
+      if (existing) return existing;
+    }
+    const message = { id: String(++channel.sent), channelId: channel.id, channel, payload, nonce: payload.nonce,
       edit: async change => {
         if (failure) throw new Error('temporary edit failure');
         message.payload = change; return message;
@@ -54,6 +58,7 @@ const request = (extra = {}) => ({ guildId: '10001', rollerId: 'roller', channel
 function click(vaultId, message, extra = {}) {
   return { customId: `vault:${vaultId}:A`, guildId: '10001', channelId: 'channel',
     user: { id: 'roller' }, message, isButton: () => true, isStringSelectMenu: () => false,
+    channel: message.channel, deferUpdate: async () => {},
     reply: async () => {}, update: async payload => message.edit(payload), ...extra };
 }
 async function start(f, d) {
@@ -87,7 +92,57 @@ test('paid reservation rolls back with allowance transaction, adopts by command 
   f.reopen();
   await onVaultInteraction(f.db, click(reserved.vaultId, started.message), { now: () => 5000, random: noDraw });
   assert.equal(getInventory(f.db, '10001', 'roller').length, 1);
-  assert.equal(getVaultReward(f.db, reserved.vaultId).messageId, started.message.id);
+  const reward = getVaultReward(f.db, reserved.vaultId);
+  assert.notEqual(reward.messageId, started.message.id);
+  assert.equal(reward.sourceMessageId, started.message.id);
+  assert.equal(d.channel.sent, 2);
+  assert.match(JSON.stringify(started.message.payload), /"disabled":true/);
+  assert.match(JSON.stringify(d.messages.get(reward.messageId).payload), /received/);
+});
+
+test('failed reward send recovers on the new message without rerolling or re-enabling the vault', async t => {
+  const f = fixture(t), d = discord();
+  const reserved = reservePaidVaultSession(f.db, request({ capturedOutcome: outcome() }));
+  const started = await start(f, d);
+  const send = d.channel.send;
+  d.channel.send = async payload => {
+    if (payload.enforceNonce && !payload.reply) throw new Error('reward send unavailable');
+    return send(payload);
+  };
+  await assert.rejects(onVaultInteraction(f.db, click(reserved.vaultId, started.message), { now: () => 3000 }), /reward send unavailable/);
+  assert.equal(getVaultReward(f.db, reserved.vaultId).messageId, null);
+  assert.match(JSON.stringify(started.message.payload), /"disabled":true/);
+  assert.equal(d.channel.sent, 1);
+  d.channel.send = send;
+  f.reopen();
+  await recoverVaultSessions(f.db, d.client, { now: () => 4000 });
+  const reward = getVaultReward(f.db, reserved.vaultId);
+  assert.notEqual(reward.messageId, started.message.id);
+  assert.equal(d.channel.sent, 2);
+  assert.equal(getInventory(f.db, '10001', 'roller').length, 1);
+  await recoverVaultSessions(f.db, d.client, { now: () => 5000 });
+  assert.equal(d.channel.sent, 2);
+  assert.match(JSON.stringify(d.messages.get(reward.messageId).payload), /received/);
+});
+
+test('reward send response loss is deduplicated by nonce on retry', async t => {
+  const f = fixture(t), d = discord();
+  const reserved = reservePaidVaultSession(f.db, request({ capturedOutcome: outcome() }));
+  const started = await start(f, d);
+  const send = d.channel.send;
+  let lost = true;
+  d.channel.send = async payload => {
+    const message = await send(payload);
+    if (lost && payload.enforceNonce && !payload.reply) { lost = false; throw new Error('lost reward response'); }
+    return message;
+  };
+  await assert.rejects(onVaultInteraction(f.db, click(reserved.vaultId, started.message), { now: () => 3000 }), /lost reward response/);
+  assert.equal(d.channel.sent, 2);
+  assert.equal(getVaultReward(f.db, reserved.vaultId).messageId, null);
+  f.reopen();
+  await recoverVaultSessions(f.db, d.client, { now: () => 4000 });
+  assert.equal(d.channel.sent, 2);
+  assert.equal(getVaultReward(f.db, reserved.vaultId).messageId, '2');
 });
 
 test('original expiry survives repeated transient delivery failures before and after reopen', async t => {
@@ -122,11 +177,11 @@ test('failed reveal acknowledgement commits once; reopened post-reveal recovery 
   const reserved = reservePaidVaultSession(f.db, request({ capturedOutcome: outcome() }));
   const started = await start(f, d);
   await assert.rejects(onVaultInteraction(f.db, click(reserved.vaultId, started.message, {
-    update: async () => { throw new Error('temporary ack failure'); },
+    deferUpdate: async () => { throw new Error('temporary ack failure'); },
   }), { now: () => 3000 }), /temporary ack/);
   const first = getVaultReward(f.db, reserved.vaultId);
   assert.equal(first.state, 'decision');
-  assert.equal(first.messageId, started.message.id);
+  assert.equal(first.messageId, null);
   assert.equal(getVaultSession(f.db, reserved.vaultId).state, 'revealed');
   f.reopen();
   d.fail(true);
@@ -138,7 +193,7 @@ test('failed reveal acknowledgement commits once; reopened post-reveal recovery 
   await recoverVaultSessions(f.db, d.client, { now: () => first.deadline + 1 });
   assert.equal(getVaultReward(f.db, reserved.vaultId).state, 'delivered');
   assert.equal(getInventory(f.db, '10001', 'roller').length, 2);
-  assert.equal(d.channel.sent, 1);
+  assert.equal(d.channel.sent, 2);
 });
 
 test('transient fetch errors never replace a live vault or reset its timeout; definite deletion rebinds', async t => {
