@@ -6,20 +6,32 @@ import vm from 'node:vm';
 // Run the actual browser module with controllable fetch completion and a small DOM.
 function browser() {
   class Element {
-    constructor(value = '') { this.value = String(value); this.children = []; this.listeners = {}; this.hidden = false; this.open = false; this.disabled = false; this.dataset = {}; }
+    constructor(value = '') { this.value = String(value); this.children = []; this.listeners = {}; this.hidden = false; this.open = false; this.disabled = false; this.dataset = {}; this.attributes = {}; }
     addEventListener(name, fn) { (this.listeners[name] ??= []).push(fn); }
-    async fire(name, extra = {}) { for (const fn of this.listeners[name] || []) await fn({ preventDefault() {}, ...extra }); }
-    append(...nodes) { this.children.push(...nodes); }
+    async fire(name, extra = {}) {
+      const event = { target: this, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...extra };
+      for (let node = this; node; node = node.parentElement) {
+        for (const fn of node.listeners[name] || []) await fn(event);
+        if (!['input', 'change', 'keydown', 'click', 'focusout'].includes(name)) break;
+      }
+      return event;
+    }
+    setAttribute(name, value) { this.attributes[name] = String(value); }
+    removeAttribute(name) { delete this.attributes[name]; }
+    contains(node) { return node === this || this.children.some(child => child.contains?.(node)); }
+    append(...nodes) { for (const node of nodes) node.parentElement = this; this.children.push(...nodes); }
     replaceChildren(...nodes) { this.children = nodes; if (nodes.length && this === elements.franchiseEditId) this.value = nodes[0].value; }
     get options() { return this.children; }
     get selectedOptions() { return this.children.filter(node => node.selected); }
     reset() {}
     setCustomValidity(message) { this.validationMessage = message; }
     reportValidity() { return !this.validationMessage; }
-    focus() {}
+    focus() { this.focused = true; }
   }
   const html = readFileSync(new URL('../web/reviewCatalog.html', import.meta.url), 'utf8');
   const elements = Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, new Element()]));
+  elements.franchisePicker.append(elements.franchiseChips, elements.franchiseSearch, elements.franchiseOptions);
+  elements.characterForm.append(elements.franchisePicker, elements.franchiseIds);
   const requests = [];
   let key = 0;
   const context = vm.createContext({
@@ -33,6 +45,113 @@ function browser() {
   return { elements, requests, run: code => vm.runInContext(code, context) };
 }
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+
+const franchiseRows = [
+  { id: 1, display_name: 'One', aliases: ['FIRST SERIES'] },
+  { id: 2, display_name: '<img src=x onerror=alert(1)> Two', aliases: ['Second'] },
+  { id: 3, display_name: 'Three', aliases: [] },
+];
+async function pickerReady() {
+  const b = browser();
+  b.requests.find(r => r.path === '/api/catalog/franchises').resolve(franchiseRows);
+  await flush(); return b;
+}
+
+test('franchise picker searches names and aliases without changing a preview, selects with keys and prevents submit', async () => {
+  const b = await pickerReady();
+  await preview(b, 'stable');
+  const input = b.elements.franchiseSearch;
+  await input.fire('focus');
+  assert.equal(input.attributes['aria-expanded'], 'true');
+  input.value = 'fIrSt'; await input.fire('input');
+  assert.equal(b.elements.franchiseOptions.children.length, 1);
+  assert.equal(b.elements.franchiseOptions.children[0].textContent, 'One');
+  await input.fire('change');
+  assert.equal(b.run('pending.previewId'), 'stable', 'search is not a membership edit');
+  const down = await input.fire('keydown', { key: 'ArrowDown' });
+  assert.equal(down.defaultPrevented, true);
+  assert.equal(input.attributes['aria-activedescendant'], 'franchise-option-1');
+  const enter = await input.fire('keydown', { key: 'Enter' });
+  assert.equal(enter.defaultPrevented, true);
+  assert.equal(b.run('pending'), null);
+  assert.deepEqual(Array.from(b.run('selectedFranchises()')), [1]);
+  assert.equal(input.validationMessage, '');
+  assert.equal(b.elements.franchiseChips.children.length, 1);
+  assert.equal(b.elements.franchiseChips.children[0].children[1].attributes['aria-label'], 'Remove One');
+  assert.equal(input.value, '');
+  assert.ok(!b.elements.franchiseOptions.children.some(option => option.textContent === 'One'));
+  await preview(b, 'unchanged');
+  b.run('setFranchiseSelection([1, 1], true)');
+  assert.equal(b.run('pending.previewId'), 'unchanged', 'duplicate selection is not an edit');
+  await input.fire('keydown', { key: 'ArrowUp' });
+  assert.equal(input.attributes['aria-activedescendant'], 'franchise-option-3');
+  await input.fire('keydown', { key: 'Escape' });
+  assert.equal(input.attributes['aria-expanded'], 'false');
+  assert.equal(input.attributes['aria-activedescendant'], undefined);
+  const count = b.requests.length;
+  assert.equal((await input.fire('keydown', { key: 'Enter' })).defaultPrevented, true);
+  assert.equal(b.requests.length, count);
+  await input.fire('click');
+  input.value = 'tWo'; await input.fire('input');
+  const option = b.elements.franchiseOptions.children[0];
+  assert.equal(option.textContent, franchiseRows[1].display_name);
+  assert.equal(option.children.length, 0, 'untrusted names are text, not markup');
+  assert.equal((await option.fire('mousedown')).defaultPrevented, true);
+  await option.fire('click');
+  assert.deepEqual(Array.from(b.run('selectedFranchises()')), [1, 2]);
+  await b.elements.franchisePicker.fire('focusout', { relatedTarget: b.elements.name });
+  assert.equal(b.elements.franchiseOptions.hidden, true);
+});
+
+test('chip removal invalidates selection previews and visible validation follows manual/imported editor state', async () => {
+  const b = await pickerReady();
+  assert.match(b.elements.franchiseSearch.validationMessage, /at least one/);
+  b.run(`editor(${JSON.stringify({ ...character('manual', [1]), creationMethod: 'manual' })})`);
+  assert.equal(b.elements.franchiseSearch.attributes['aria-required'], 'true');
+  await preview(b, 'remove');
+  const remove = b.elements.franchiseChips.children[0].children[1];
+  assert.equal(remove.type, 'button');
+  await remove.fire('click');
+  assert.equal(b.run('pending'), null);
+  assert.equal(b.elements.franchiseSearch.focused, true);
+  assert.match(b.elements.franchiseSearch.validationMessage, /at least one/);
+  b.run(`editor(${JSON.stringify(character('imported'))})`);
+  assert.equal(b.elements.franchiseSearch.validationMessage, '');
+  assert.equal(b.elements.franchiseSearch.attributes['aria-required'], 'false');
+  b.run('editor()');
+  assert.match(b.elements.franchiseSearch.validationMessage, /at least one/);
+  assert.equal(b.elements.franchiseChips.children.length, 0);
+  const html = readFileSync(new URL('../web/reviewCatalog.html', import.meta.url), 'utf8');
+  const select = html.match(/<select\b[^>]*\bid="franchiseIds"[^>]*>/)[0];
+  assert.match(select, /\bhidden\b/); assert.doesNotMatch(select, /\brequired\b/);
+  assert.match(html, /for="franchiseSearch"/);
+  assert.match(html, /id="franchiseOptions"[^>]*role="listbox"[^>]*aria-labelledby="franchiseLabel"/);
+});
+
+test('late lists, editor switches, refresh and franchise publication preserve chip IDs and payloads', async () => {
+  const b = browser();
+  b.run(`editor(${JSON.stringify(character('A', [1]))})`);
+  assert.equal(b.elements.franchiseChips.children[0].children[0].textContent, 'Franchise #1');
+  b.run(`editor(${JSON.stringify(character('B', [2]))})`);
+  b.requests.find(r => r.path === '/api/catalog/franchises').resolve(franchiseRows); await flush();
+  assert.equal(b.elements.franchiseChips.children[0].children[0].textContent, franchiseRows[1].display_name);
+  const refreshing = b.run('loadFranchises()');
+  b.run('setFranchiseSelection([1, 3], true)');
+  b.requests.at(-1).resolve(franchiseRows); await refreshing;
+  assert.deepEqual(Array.from(b.run('selectedFranchises()')), [1, 3]);
+  const publishing = b.run("showPreview('franchise', {input: {}})");
+  b.requests.at(-1).resolve({ previewId: 'franchise', payloadHash: 'hash' }); await publishing;
+  const confirming = b.elements.confirm.fire('click');
+  b.requests.at(-1).resolve({ franchiseId: 4 }); await flush();
+  b.requests.at(-1).resolve([...franchiseRows, { id: 4, display_name: 'New franchise', aliases: ['Published'] }]); await flush();
+  b.requests.at(-1).resolve({ characters: [], count: 0 }); await confirming;
+  assert.deepEqual(Array.from(b.run('selectedFranchises()')), [1, 3]);
+  b.elements.franchiseSearch.value = 'published'; await b.elements.franchiseSearch.fire('input');
+  await b.elements.franchiseOptions.children[0].fire('click');
+  const editing = b.elements.characterForm.fire('submit');
+  assert.deepEqual(b.requests.at(-1).body.input.franchiseIds, [1, 3, 4]);
+  b.requests.at(-1).resolve({ previewId: 'edit', payloadHash: 'hash' }); await editing;
+});
 
 test('catalog controls use no checkboxes and preview JSON is collapsed by default', () => {
   const html = readFileSync(new URL('../web/reviewCatalog.html', import.meta.url), 'utf8');
@@ -358,6 +477,7 @@ test('initial franchise options retain authoritative detail memberships and subs
     const loading = b.run("loadCharacter('A')");
     b.requests.at(-1).resolve(character('A', [1])); await loading;
     if (selection !== 'untouched') {
+      for (const option of b.elements.franchiseIds.options) option.selected = false;
       if (selection === 'select') b.elements.franchiseIds.append({ value: '2', selected: true });
       await b.elements.franchiseIds.fire('change');
     }

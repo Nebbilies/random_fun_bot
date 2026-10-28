@@ -4,7 +4,6 @@ const $ = id => document.getElementById(id);
 let current = null;
 let pending = null;
 let franchises = [];
-let franchisesInitialized = false;
 let franchiseSelection = [];
 let generation = 0;
 let characterGeneration = 0;
@@ -29,7 +28,90 @@ async function api(path, body) {
 }
 function fail(error) { feedback($('message'), error.message, 'error'); }
 const lines = id => $(id).value.split('\n').map(value => value.trim()).filter(Boolean);
-const selectedFranchises = () => [...$('franchiseIds').selectedOptions].map(option => Number(option.value));
+const selectedFranchises = () => [...franchiseSelection];
+let franchiseOpen = false;
+let franchiseActive = -1;
+let franchiseMatches = [];
+function closeFranchisePicker() {
+  franchiseOpen = false;
+  $('franchiseOptions').hidden = true;
+  $('franchiseSearch').setAttribute('aria-expanded', 'false');
+  $('franchiseSearch').removeAttribute('aria-activedescendant');
+}
+function renderFranchiseOptions() {
+  const query = $('franchiseSearch').value.trim().toLocaleLowerCase();
+  franchiseMatches = franchises.filter(row => !franchiseSelection.includes(row.id)
+    && [row.display_name, ...(row.aliases || [])].some(name => name.toLocaleLowerCase().includes(query)));
+  if (franchiseActive >= franchiseMatches.length) franchiseActive = franchiseMatches.length - 1;
+  const list = $('franchiseOptions');
+  list.replaceChildren();
+  franchiseMatches.forEach((row, index) => {
+    const option = document.createElement('li');
+    option.id = `franchise-option-${row.id}`;
+    option.className = `picker-option${index === franchiseActive ? ' active' : ''}`;
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', 'false');
+    option.textContent = row.display_name;
+    // Keep focus on the combobox so pointer and keyboard selection behave alike.
+    option.addEventListener('mousedown', event => event.preventDefault());
+    option.addEventListener('click', () => {
+      setFranchiseSelection([...franchiseSelection, row.id], true);
+      $('franchiseSearch').focus();
+    });
+    list.append(option);
+  });
+  if (!franchiseMatches.length) {
+    const empty = document.createElement('li'); empty.className = 'picker-empty';
+    empty.textContent = 'No matching unselected franchises.'; list.append(empty);
+  }
+  list.hidden = !franchiseOpen;
+  $('franchiseSearch').setAttribute('aria-expanded', String(franchiseOpen));
+  const active = franchiseOpen && franchiseMatches[franchiseActive];
+  if (active) {
+    $('franchiseSearch').setAttribute('aria-activedescendant', `franchise-option-${active.id}`);
+    list.children[franchiseActive]?.scrollIntoView?.({ block: 'nearest' });
+  } else $('franchiseSearch').removeAttribute('aria-activedescendant');
+  $('franchiseSearchStatus').textContent = `${franchiseSelection.length} selected. ${franchiseMatches.length} available matches.`;
+}
+function renderFranchiseSelection() {
+  const select = $('franchiseIds'); select.replaceChildren();
+  for (const row of franchises) {
+    const option = new Option(row.display_name, row.id);
+    option.selected = franchiseSelection.includes(row.id); select.append(option);
+  }
+  $('franchiseChips').replaceChildren();
+  for (const id of franchiseSelection) {
+    const name = franchises.find(row => row.id === id)?.display_name || `Franchise #${id}`;
+    // Retain authoritative memberships even if the list has not loaded yet.
+    if (!franchises.some(row => row.id === id)) {
+      const option = new Option(name, id); option.selected = true; select.append(option);
+    }
+    const chip = document.createElement('span'); chip.className = 'franchise-chip';
+    const label = document.createElement('span'); label.textContent = name;
+    const remove = document.createElement('button'); remove.type = 'button';
+    remove.className = 'secondary'; remove.textContent = '×';
+    remove.setAttribute('aria-label', `Remove ${name}`);
+    remove.addEventListener('click', () => {
+      setFranchiseSelection(franchiseSelection.filter(value => value !== id), true);
+      $('franchiseSearch').focus();
+    });
+    chip.append(label, remove); $('franchiseChips').append(chip);
+  }
+  const required = !current || current.creationMethod === 'manual';
+  $('franchiseSearch').setAttribute('aria-required', String(required));
+  // A required hidden select cannot receive focus; validate the visible search instead.
+  $('franchiseSearch').setCustomValidity(required && !franchiseSelection.length ? 'Select at least one direct franchise.' : '');
+  renderFranchiseOptions();
+}
+function setFranchiseSelection(ids, edited = false) {
+  const next = [...new Set(ids)];
+  const changed = next.length !== franchiseSelection.length || next.some(id => !franchiseSelection.includes(id));
+  franchiseSelection = next;
+  if (edited && changed) {
+    invalidate(); $('franchiseSearch').value = ''; franchiseActive = -1;
+  }
+  renderFranchiseSelection();
+}
 function invalidate() {
   generation++;
   pending = null; $('previewPanel').hidden = true;
@@ -97,16 +179,11 @@ async function showPreview(operation, body) {
 async function loadFranchises(isActive = () => true) {
   const rows = await api('/franchises');
   if (!isActive()) return;
-  // Before options exist, an empty select is not an explicit membership clear.
-  const selected = franchisesInitialized ? selectedFranchises() : franchiseSelection;
-  franchisesInitialized = true;
   const editing = $('franchiseEditId').value;
   franchises = rows;
-  $('franchiseIds').replaceChildren(); $('franchiseEditId').replaceChildren(new Option('New franchise', ''));
-  for (const row of franchises) {
-    const option = new Option(row.display_name, row.id); option.selected = selected.includes(row.id);
-    $('franchiseIds').append(option); $('franchiseEditId').append(new Option(row.display_name, row.id));
-  }
+  renderFranchiseSelection();
+  $('franchiseEditId').replaceChildren(new Option('New franchise', ''));
+  for (const row of franchises) $('franchiseEditId').append(new Option(row.display_name, row.id));
   if (franchises.some(row => String(row.id) === editing)) $('franchiseEditId').value = editing;
   else if (editing) {
     $('franchiseForm').reset();
@@ -141,7 +218,8 @@ function editor(row = null) {
   $('characterForm').reset(); $('createTag').setCustomValidity(''); $('portrait').hidden = true;
   const imported = row && row.creationMethod !== 'manual';
   for (const id of ['name', 'gender', 'portraitUrl', 'description']) $(id).disabled = Boolean(imported);
-  $('franchiseIds').required = !imported;
+  $('franchiseSearch').value = ''; franchiseActive = -1;
+  closeFranchisePicker(); renderFranchiseSelection();
   $('createRank').hidden = Boolean(row); $('rank').required = !row;
   $('createTagField').hidden = Boolean(row);
   $('existingActions').hidden = !row;
@@ -154,7 +232,6 @@ function editor(row = null) {
   $('externalId').value = row.sources.find(source => source.source === 'anilist')?.external_id || '';
   $('tag').value = row.tag?.tag_name || '';
   $('tagStatus').value = row.tag?.status || 'approve';
-  for (const option of $('franchiseIds').options) option.selected = row.franchiseIds.includes(Number(option.value));
 }
 async function loadCharacter(id, isActive = () => true) {
   if (!isActive()) return;
@@ -181,13 +258,42 @@ $('previewPortrait').addEventListener('click', () => {
   $('portrait').src = img.src; $('portrait').hidden = false;
 });
 for (const form of document.querySelectorAll('form:not(#searchForm)')) {
-  form.addEventListener('input', invalidate);
-  form.addEventListener('change', invalidate);
+  const onEdit = event => { if (event.target !== $('franchiseSearch')) invalidate(); };
+  form.addEventListener('input', onEdit);
+  form.addEventListener('change', onEdit);
 }
 for (const event of ['input', 'change']) {
-  $('franchiseIds').addEventListener(event, () => { franchiseSelection = selectedFranchises(); });
+  $('franchiseIds').addEventListener(event, () => {
+    setFranchiseSelection([...$('franchiseIds').selectedOptions].map(option => Number(option.value)), true);
+  });
 }
+for (const event of ['focus', 'click']) {
+  $('franchiseSearch').addEventListener(event, () => { franchiseOpen = true; renderFranchiseOptions(); });
+}
+$('franchiseSearch').addEventListener('input', () => {
+  franchiseOpen = true; franchiseActive = -1; renderFranchiseOptions();
+});
+$('franchiseSearch').addEventListener('keydown', event => {
+  if (event.isComposing) return;
+  if (event.key === 'Escape') { event.preventDefault(); closeFranchisePicker(); }
+  else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault(); franchiseOpen = true;
+    const count = franchiseMatches.length;
+    franchiseActive = count ? (franchiseActive < 0 ? (event.key === 'ArrowDown' ? 0 : count - 1)
+      : (franchiseActive + (event.key === 'ArrowDown' ? 1 : -1) + count) % count) : -1;
+    renderFranchiseOptions();
+  } else if (event.key === 'Enter') {
+    event.preventDefault(); // Never implicitly submit the character form from the picker.
+    if (franchiseOpen && franchiseMatches[franchiseActive]) {
+      setFranchiseSelection([...franchiseSelection, franchiseMatches[franchiseActive].id], true);
+    }
+  }
+});
+$('franchisePicker').addEventListener('focusout', event => {
+  if (!$('franchisePicker').contains(event.relatedTarget)) closeFranchisePicker();
+});
 $('createTag').addEventListener('input', () => $('createTag').setCustomValidity(''));
+renderFranchiseSelection();
 onForm('characterForm', () => {
   const input = { aliases: lines('aliases'), franchiseIds: selectedFranchises(), referenceUrl: $('referenceUrl').value || null };
   if (!current || current.creationMethod === 'manual') Object.assign(input, {
