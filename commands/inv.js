@@ -156,7 +156,7 @@ export function getItemHelpBullet(def) {
     case 'golden_hour':
       return `• **${tier.emoji} Golden Hour**: Click the button on \`!inv\` or type \`!use golden\` to reset everyone's hourly rolls in this server and open a mystery vault for yourself.`;
     case 'blood_pact':
-      return `• **${tier.emoji} Blood Pact**: Type \`!use blood <char1>, <char2>, <char3>\` to activate it. ${def.description}`;
+      return `• **${tier.emoji} Blood Pact**: Type \`!use blood\` to choose sacrifices from the select menu, then confirm. ${def.description}`;
     case 'master_key':
       return `• **${tier.emoji} Master Key**: Type \`!use masterkey @user <character name>\` to steal a specific married character from them.`;
     case 'wish_upon_a_star':

@@ -56,6 +56,92 @@ async function nominate(f, action, own, target) {
   assert.equal(updateItemSelection(f.db, action.id, '1', '101', selections), true);
 }
 
+test('Blood Pact opens a V2 sacrifice select instead of requiring typed names', async (t) => {
+  const f = fixture(t);
+  for (let id = 1; id <= 3; id++) marry(f, id, '101', id, `Multiword Name ${id}`);
+  const action = await launch(f, 'blood_pact');
+  assert.ok(action.id);
+  assert.ok(f.sent[0].payload.flags & 32768);
+  const menu = menus(f.sent[0])[0];
+  assert.ok(menu.custom_id.endsWith(':sacrifices'));
+  assert.equal(menu.max_values, 3);
+  assert.equal(menu.options.length, 3);
+  assert.equal(getInventory(f.db, '1', '101').length, 1);
+});
+
+function pactPool(f) {
+  // Duplicate names deliberately exercise exact identity selection.
+  const choices = [1, 2, 3].map((id) => marry(f, id, '101', id * 100, 'Same Multiword Name'));
+  f.db.exec(`INSERT INTO characters(id,rank,favourites,name_full) VALUES(4,10,0,'Summon');
+    INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Shared franchise','2026');
+    INSERT INTO anime(id,title_romaji,fetched_at) VALUES(1,'Shared franchise','2026');
+    INSERT INTO franchise_anime(franchise_id,anime_id) VALUES(1,1);
+    INSERT INTO character_anime(character_id,anime_id) VALUES(1,1),(2,1),(3,1),(4,1);`);
+  return choices;
+}
+
+test('Blood Pact selects exact duplicate-name sacrifices and activates only once', async (t) => {
+  const f = fixture(t);
+  const choices = pactPool(f);
+  const action = await launch(f, 'blood_pact');
+  const menu = control(f.sent[0], 'sacrifices');
+  const values = choices.map((c) => `${c.characterId}.${c.marriageId}`);
+  await onItemActionInteraction(f.db, f.click(menu, f.sent[0], '202', values));
+  assert.equal(getItemAction(f.db, action.id).selections.sacrifices, undefined);
+  await onItemActionInteraction(f.db, f.click(menu, f.sent[0], '101', values));
+  assert.equal(getItemAction(f.db, action.id).selections.sacrifices.length, 3);
+  const confirm = control(f.sent[0], 'confirm');
+  await onItemActionInteraction(f.db, f.click(confirm));
+  assert.equal(getItemAction(f.db, action.id).state, 'resolved');
+  assert.deepEqual(f.db.prepare('SELECT character_id FROM marriages').all().map((r) => r.character_id), [4]);
+  assert.equal(getInventory(f.db, '1', '101').length, 0);
+  await onItemActionInteraction(f.db, f.click(confirm));
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM marriages').get().n, 1);
+});
+
+for (const changed of ['ownership', 'franchise', 'soulbind', 'no reward', 'cancel']) test(`Blood Pact preserves item and sacrifices on ${changed}`, async (t) => {
+  const f = fixture(t);
+  const choices = pactPool(f);
+  const action = await launch(f, 'blood_pact');
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'sacrifices'), f.sent[0], '101', choices.map((c) => `${c.characterId}.${c.marriageId}`)));
+  if (changed === 'ownership') f.db.exec("UPDATE marriages SET owner_id='202' WHERE character_id=1");
+  if (changed === 'franchise') f.db.exec('DELETE FROM character_anime WHERE character_id=1');
+  if (changed === 'soulbind') f.db.exec("INSERT INTO character_protection_locks(guild_id,character_id,lock_type,protected_until) VALUES('1',1,'soulbound',NULL)");
+  if (changed === 'no reward') f.db.exec('DELETE FROM character_anime WHERE character_id=4');
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], changed === 'cancel' ? 'cancel' : 'confirm')));
+  assert.equal(getItemAction(f.db, action.id).state, 'canceled');
+  assert.equal(getInventory(f.db, '1', '101').length, 1);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM marriages').get().n, 3);
+});
+
+test('Blood Pact rolls back sacrifices and item cost when summoning fails', async (t) => {
+  const f = fixture(t);
+  const sacrifices = pactPool(f);
+  const action = await launch(f, 'blood_pact');
+  updateItemSelection(f.db, action.id, '1', '101', { sacrifices });
+  f.db.exec(`CREATE TRIGGER reject_pact_summon BEFORE INSERT ON marriages WHEN NEW.character_id=4
+    BEGIN SELECT RAISE(ABORT,'test summon failure'); END;`);
+  assert.throws(() => activateItemAction(f.db, { actionId: action.id, guildId: '1', actorId: '101' }), /test summon failure/);
+  assert.equal(getItemAction(f.db, action.id).state, 'confirming');
+  assert.equal(getInventory(f.db, '1', '101').length, 1);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM marriages').get().n, 3);
+});
+
+test('Blood Pact preserves selections across pages and supports clearing a page', async (t) => {
+  const f = fixture(t);
+  for (let id = 1; id <= 26; id++) marry(f, id, '101');
+  const action = await launch(f, 'blood_pact');
+  const choose = async (values) => onItemActionInteraction(f.db, f.click(control(f.sent[0], 'sacrifices'), f.sent[0], '101', values));
+  await choose(menus(f.sent[0])[0].options.slice(0, 2).map((o) => o.value));
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'next')));
+  await choose([menus(f.sent[0])[0].options[0].value]);
+  assert.equal(getItemAction(f.db, action.id).selections.sacrifices.length, 3);
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'prev')));
+  assert.equal(menus(f.sent[0])[0].options.filter((o) => o.default).length, 2);
+  await choose([]);
+  assert.equal(getItemAction(f.db, action.id).selections.sacrifices.length, 1);
+});
+
 test('Grand Masquerade use prompt explains rank constraint and lasts 180 seconds', async (t) => {
   const f = fixture(t);
   const action = await launch(f, 'grand_masquerade');

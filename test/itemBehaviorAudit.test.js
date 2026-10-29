@@ -282,7 +282,7 @@ test('Golden Hour resets every hourly allowance in the guild and grants a vault'
     'Golden Hour must open a vault for the host');
 });
 
-test('Blood Pact trades three owned characters for a better-ranked one of the franchise', (t) => {
+test('Blood Pact dispatch opens a pending selection without consuming characters', (t) => {
   const db = fixture(t);
   db.exec(`INSERT INTO franchises (id, display_name, created_at) VALUES (1, 'Show A', '2026');
     INSERT INTO anime (id, title_english, title_romaji, fetched_at) VALUES (1, 'Show A', 'Show A', '2026');
@@ -296,11 +296,10 @@ test('Blood Pact trades three owned characters for a better-ranked one of the fr
   grant(db, 'blood_pact');
 
   const result = use(db, 'blood', ['Alpha', 'Beta', 'Gamma']);
-  assert.equal(result.success, true);
-  for (const id of [1, 2, 3]) assert.equal(getMarriage(db, '1', id), null, `character ${id} is sacrificed`);
-  const summoned = getMarriage(db, '1', 4);
-  assert.ok(summoned, 'the pact must summon the better-ranked franchise character');
-  assert.equal(summoned.ownerId, '101');
+  assert.equal(result.pendingAction, true);
+  for (const id of [1, 2, 3]) assert.equal(getMarriage(db, '1', id)?.ownerId, '101');
+  assert.equal(getMarriage(db, '1', 4), null);
+  assert.equal(getInventory(db, '1', '101').some((item) => item.item_id === 'blood_pact'), true);
 });
 
 test('Four-Leaf Clover keeps its charges while a Franchise Passport is the active filter', (t) => {
