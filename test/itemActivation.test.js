@@ -30,6 +30,30 @@ function fixture(t, { failSend = false, final = false } = {}) {
   return { db, sent, feedback, edits, message, interaction };
 }
 
+for (const kind of ['master_key', 'pickpockets_hook']) test(`${kind}: committed character delivery is durable and does not leak during anticipation`, async (t) => {
+  const x = fixture(t);
+  x.db.exec("INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,10,20,'Hidden Character'); INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES('1',1,'202','2026')");
+  const source = addItemToInventory(x.db, '1', '101', kind).item;
+  let pauses = 0;
+  const edits = [];
+  x.message.channel.send = async (payload) => { x.sent.push(payload); return { id: '500', edit: async (data) => edits.push(data) }; };
+  const result = await activateItem({ db: x.db, message: x.message, inventoryId: source.id, args: ['<@202>', 'Hidden Character'],
+    options: { wait: async () => { pauses++; assert.equal(x.db.prepare('SELECT owner_id FROM marriages').get().owner_id, '101'); } } });
+  assert.equal(result.success, true);
+  assert.equal(getInventory(x.db, '1', '101').length, 0);
+  const action = x.db.prepare('SELECT * FROM item_actions').get();
+  assert.equal(action.delivery_pending, 0);
+  assert.equal(action.message_id, '500');
+  assert.equal(pauses, kind === 'master_key' ? 0 : 2);
+  if (kind === 'pickpockets_hook') {
+    assert.ok(!JSON.stringify(x.sent[0]).includes('Hidden Character'));
+    assert.match(JSON.stringify(edits.at(-1)), /Hidden Character/);
+  } else {
+    assert.match(JSON.stringify(x.sent[0]), /Hidden Character/);
+    assert.equal(x.sent[0].components[0].toJSON().type, 10);
+  }
+});
+
 for (const entry of ['command', 'button']) {
   test(`${entry}: ordinary activation consumes once and retains its feedback style`, async (t) => {
     const x = fixture(t);

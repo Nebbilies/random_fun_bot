@@ -11,7 +11,7 @@ function fixture(t, kind = 'chaos_exchange') {
   const events = [];
   const message = { id: '10', edit: async (data) => { events.push(JSON.stringify(data)); } };
   const channel = { send: async (data) => { events.push(JSON.stringify(data)); return message; } };
-  const saveProgress = (step) => { action.selections._ui = { characterRevealStep: step }; };
+  const saveProgress = (step) => { action.selections._ui = { itemRevealStep: step }; };
   const wait = async (ms) => { assert.equal(ms, 3000); events.push('wait'); };
   return { db, action, events, message, channel, saveProgress, wait };
 }
@@ -24,14 +24,14 @@ for (const kind of ['chaos_exchange', 'pickpockets_hook', 'wish_upon_a_star']) t
   assert.ok(!f.events[2].includes('Secret Reward'));
   assert.equal(f.events[3], 'wait');
   assert.match(f.events[4], /Secret Reward/);
-  assert.equal(f.action.selections._ui.characterRevealStep, 3);
+  assert.equal(f.action.selections._ui.itemRevealStep, 3);
 });
 test('failed final card resumes without rerolling or repeating teaser', async (t) => {
   const f = fixture(t);
   const edit = f.message.edit;
   f.message.edit = async (data) => { if (JSON.stringify(data).includes('Secret Reward')) throw Error('offline'); return edit(data); };
   await assert.rejects(publishItemCharacterReveal(f), /offline/);
-  assert.equal(f.action.selections._ui.characterRevealStep, 2);
+  assert.equal(f.action.selections._ui.itemRevealStep, 2);
   f.events.length = 0; f.message.edit = edit;
   await publishItemCharacterReveal(f);
   assert.equal(f.events.length, 2);
@@ -39,11 +39,23 @@ test('failed final card resumes without rerolling or repeating teaser', async (t
 });
 test('deleted completed reveal restores final card without suspense', async (t) => {
   const f = fixture(t); f.message = null;
-  f.action.selections._ui = { characterRevealStep: 3 };
+  f.action.selections._ui = { itemRevealStep: 3 };
   await publishItemCharacterReveal(f);
   assert.equal(f.events.length, 1);
   assert.match(f.events[0], /Secret Reward/);
 });
+test('Hostage Gamble reveals only the committed loser with divorce wording', async (t) => {
+  const f = fixture(t, 'hostage_note');
+  f.action.result = { choice: 'gamble', loser: { characterId: 1, ownerId: '202' }, message: 'Secret Reward was divorced. The other stake remains owned.' };
+  await publishItemCharacterReveal(f);
+  assert.ok(!f.events[0].includes('Secret Reward'));
+  assert.match(f.events[2], /loses their bond/);
+  assert.match(f.events[4], /Divorced from <@202>/);
+  assert.ok(!f.events[4].includes('Married by'));
+  f.action.result.choice = 'exchange';
+  assert.equal(characterRevealPlan(f.action), null);
+});
+
 test('Siren and deterministic activations have no staged reveal', () => {
   for (const kind of ['sirens_call', 'blood_pact', 'master_key', 'heart_for_a_heart', 'severed_fate', 'counterfeit_crown']) {
     assert.equal(characterRevealPlan({ kind, state: 'resolved', result: { character: { id: 1 } } }), null);
