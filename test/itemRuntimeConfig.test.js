@@ -148,18 +148,16 @@ test('buff activations retain independent strengths and remaining rolls after ru
 
 test('durable item confirmation retains Alchemist cost and reward definitions after config changes', () => {
   const db = fixture();
-  const source = addItemToInventory(db, '123', 'u', 'alchemist').item;
-  const costs = Array.from({ length: 3 }, () => addItemToInventory(db, '123', 'u', 'love_letter').item);
-  // The legacy Common-cost check is structural; use Common entries.
-  db.prepare("UPDATE user_inventory SET item_id='hourglass_of_haste' WHERE item_id='love_letter'").run();
+  const now = 100;
+  const source = addItemToInventory(db, '123', 'u', 'alchemist', 2, { now }).item;
+  const costs = Array.from({ length: 3 }, () => addItemToInventory(db, '123', 'u', 'hourglass_of_haste', undefined, { now }).item);
   const action = createItemAction(db, { guildId: '123', actorId: 'u', channelId: 'c', inventoryId: source.id, now: 100 });
   save(db, 'itemActions', { 'itemActions.alchemistCost': 4 });
   save(db, 'items', { 'items.alchemist.startingCharges': 7 });
-  db.prepare('UPDATE user_inventory SET charges=2 WHERE id=?').run(source.id);
   assert.equal(updateItemSelection(db, action.id, '123', 'u', { inventoryIds: costs.map(item => item.id), _rules: {} }, 101), true);
   const result = activateItemAction(db, { actionId: action.id, guildId: '123', actorId: 'u', now: 102, random: () => 0 });
   assert.equal(result.status, 'resolved');
-  const inventory = getInventory(db, '123', 'u');
+  const inventory = getInventory(db, '123', 'u', 102);
   assert.equal(inventory.length, 2);
   assert.equal(inventory.find(item => item.id === source.id).charges, 1);
   assert.equal(inventory.find(item => item.id !== source.id).charges, 1);
@@ -168,7 +166,7 @@ test('durable item confirmation retains Alchemist cost and reward definitions af
 
 test('durable vault gamble retains reveal odds, deadline, eligibility pools and grant charges', () => {
   const db = fixture();
-  addItemToInventory(db, '123', 'u', 'double_or_nothing');
+  addItemToInventory(db, '123', 'u', 'double_or_nothing', undefined, { now: 100 });
   save(db, 'itemActions', { 'itemActions.doubleWinChance': 1 });
   const scope = { vaultId: 'v', guildId: '123', userId: 'u', channelId: 'c', messageId: 'm' };
   const original = rollResolvedVaultOutcome(db, '123', () => 0, () => 0);
@@ -177,6 +175,6 @@ test('durable vault gamble retains reveal odds, deadline, eligibility pools and 
   const result = decideVaultReward(db, { ...scope, action: 'gamble', now: 101, random: () => 0.1 });
   assert.equal(result.reward.result, 'won');
   assert.equal(reward.deadline, 30100);
-  assert.equal(getInventory(db, '123', 'u').length, 1);
+  assert.equal(getInventory(db, '123', 'u', 101).length, 1);
   db.close();
 });

@@ -7,7 +7,7 @@ import { openCatalog, createFinalCatalog } from '../lib/catalogDb.js';
 import { addItemToInventory, getInventory } from '../lib/itemStorage.js';
 import { run } from '../commands/use.js';
 import { onInventoryButton } from '../commands/inv.js';
-import { activateItem } from '../lib/itemActivation.js';
+import { activateItem, executeItemUseById } from '../lib/itemActivation.js';
 
 function fixture(t, { failSend = false, final = false } = {}) {
   const dir = final ? mkdtempSync(join(tmpdir(), 'activation-merge-')) : null;
@@ -134,6 +134,29 @@ for (const entry of ['command', 'button']) {
   });
 }
 
+test('immediate use respects exact expiry and commits valid effects before asynchronous delivery', async (t) => {
+  const x = fixture(t);
+  const source = addItemToInventory(x.db, '1', '101', 'love_letter', 2).item;
+  x.db.prepare('UPDATE user_inventory SET expires_at=2000 WHERE id=?').run(source.id);
+  assert.equal(executeItemUseById(x.db, '1', '101', source.id, [], { now: 2000 }).success, false);
+  const result = await activateItem({ db: x.db, message: x.message, inventoryId: source.id, options: { now: 1999 },
+    notify: async () => {
+      assert.equal(getInventory(x.db, '1', '101', 1999)[0].charges, 1);
+      assert.deepEqual(getInventory(x.db, '1', '101', 2000), []);
+    } });
+  assert.equal(result.success, true);
+  assert.equal(executeItemUseById(x.db, '1', '101', source.id, [], { now: 2001 }).success, false);
+});
+
+test('immediate effect failure rolls back its source cost and partial effect', (t) => {
+  const x = fixture(t);
+  const source = addItemToInventory(x.db, '1', '101', 'love_letter').item;
+  x.db.exec("CREATE TRIGGER reject_item_cost BEFORE DELETE ON user_inventory BEGIN SELECT RAISE(ABORT,'cost failed'); END");
+  assert.throws(() => executeItemUseById(x.db, '1', '101', source.id), /cost failed/);
+  assert.deepEqual(getInventory(x.db, '1', '101'), [source]);
+  assert.equal(x.db.prepare('SELECT COUNT(*) AS n FROM active_user_buffs').get().n, 0);
+});
+
 test('shared activation opens a forced escape and consumes its source once', async (t) => {
   const x = fixture(t);
   x.db.exec(`INSERT INTO characters(id,rank,favourites,name_full,gender,anime_titles) VALUES(1,1,100,'Alpha','Female','[]');
@@ -176,7 +199,7 @@ test('stale inventory button reports failure without activating anything', async
   await onInventoryButton(x.db, x.interaction);
   assert.equal(x.sent.length, 0);
   assert.equal(x.edits.length, 0);
-  assert.match(x.feedback[0].content, /Item not found/);
+  assert.match(x.feedback[0].content, /Item not found|expired or is no longer available/i);
 });
 
 test('inventory ownership check rejects another player before activation', async (t) => {

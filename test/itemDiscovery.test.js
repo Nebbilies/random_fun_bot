@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { getDiscoveredItemIds, syncItemDiscovery } from '../lib/itemDiscovery.js';
 import { initItemStorage, addItemToInventory, removeItemFromInventory, decrementItemCharge } from '../lib/itemStorage.js';
+import { getItemExpiryDeadline } from '../lib/itemExpiry.js';
 
 function memoryDb(t) {
   const db = new DatabaseSync(':memory:');
@@ -84,7 +85,14 @@ test('initialization never backfills; explicit sync is scoped, idempotent, and p
   legacyInventory(db);
   const before = snapshot(db);
   initItemStorage(db);
+  const initialized = snapshot(db);
+  const rollout = db.prepare('SELECT rollout_at FROM item_expiry_schema WHERE version=1').get().rollout_at;
+  assert.deepEqual(initialized.map(({ expires_at, ...row }) => row), before.map(row => ({ ...row })));
+  for (const row of initialized) {
+    assert.equal(row.expires_at, getItemExpiryDeadline(db, row.guild_id, row.item_id, rollout));
+  }
   initItemStorage(db);
+  assert.deepEqual(snapshot(db), initialized, 'reinitialization must not refresh deadlines');
   assert.deepEqual(getDiscoveredItemIds(db, '123'), new Set());
   const dry = syncItemDiscovery(db, { guildId: '123', dryRun: true });
   assert.deepEqual(dry, {
@@ -107,7 +115,7 @@ test('initialization never backfills; explicit sync is scoped, idempotent, and p
   assert.equal(repeat.insertedDiscoveries, 0);
   assert.equal(repeat.existingDiscoveries, 4);
   assert.equal(syncItemDiscovery(db, { guildId: '789' }).candidateDiscoveries, 0);
-  assert.deepEqual(snapshot(db), before);
+  assert.deepEqual(snapshot(db), initialized, 'discovery sync must preserve every inventory field, including deadlines');
   db.exec('DELETE FROM user_inventory');
   assert.equal(syncItemDiscovery(db).insertedDiscoveries, 0);
   assert.deepEqual(getDiscoveredItemIds(db, '456'), new Set(['love_letter', 'hourglass_of_haste']));

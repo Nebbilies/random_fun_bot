@@ -21,6 +21,8 @@ import {onTradeAnswer} from "./lib/tradeRuntime.js";
 import {onVaultInteraction, recoverVaultRewards, recoverVaultSessions} from "./lib/vaultRuntime.js";
 import {onItemActionInteraction, recoverItemActionRuntime} from "./lib/itemActionRuntime.js";
 import {onInventoryButton} from "./commands/inv.js";
+import {cleanupExpiredItems} from './lib/itemExpiryCleanup.js';
+import {recoverBinocularsUses} from './lib/binocularsUse.js';
 import {parseFranchiseCommand} from "./lib/franchiseModifiers.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
@@ -66,6 +68,7 @@ client.on(Events.MessageReactionAdd, (reaction, user) => {
 yoshiko.client.once(Events.ClientReady, async (c) => {
     yoshiko.client.user.setActivity("Se hoat dong khi thay 727");
     console.log("dmLam");
+    recoverBinocularsUses(yoshiko.catalogDb);
     await recoverItemActionRuntime(yoshiko.catalogDb, yoshiko.client);
     await recoverPendingRollDeliveries(yoshiko.catalogDb, yoshiko.client);
     await recoverForcedEscapes(yoshiko.catalogDb, yoshiko.client);
@@ -73,6 +76,7 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
     await recoverMysteryRuntime({ db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker });
     await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
     await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
+    cleanupExpiredItems(yoshiko.catalogDb);
     gameRuntimeReady = true;
     console.log('Character game ready.');
     let vaultRecoveryRunning = false;
@@ -86,6 +90,7 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
             await recoverMysteryRuntime({ db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker });
             await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
             await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
+            cleanupExpiredItems(yoshiko.catalogDb);
         }
         catch (error) { console.error('Vault recovery failed:', error); }
         finally { vaultRecoveryRunning = false; }

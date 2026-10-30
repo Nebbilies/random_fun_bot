@@ -25,7 +25,7 @@ function decide(db, action, extra = {}) {
   return decideVaultReward(db, { vaultId: 'vault', ...scope, action, now: 101, ...extra });
 }
 function fill(db) {
-  while (getInventory(db, scope.guildId, scope.userId).length < getInventoryCapacity(db, scope.guildId, scope.userId)) {
+  while (getInventory(db, scope.guildId, scope.userId, 101).length < getInventoryCapacity(db, scope.guildId, scope.userId)) {
     addItemToInventory(db, scope.guildId, scope.userId, getItemsInTier('common')[0].id);
   }
 }
@@ -35,14 +35,14 @@ test('Keep delivers the persisted original once and preserves the gambling entry
   addItemToInventory(db, scope.guildId, scope.userId, 'double_or_nothing');
   const reward = reveal(db);
   assert.equal(reward.state, 'decision');
-  assert.equal(getInventory(db, scope.guildId, scope.userId).length, 1);
+  assert.equal(getInventory(db, scope.guildId, scope.userId, 101).length, 1);
   const kept = decide(db, 'keep');
   assert.equal(kept.reward.state, 'delivered');
   assert.equal(kept.reward.result, 'kept');
-  assert.ok(getInventory(db, scope.guildId, scope.userId).some(i => i.item_id === 'double_or_nothing'));
+  assert.ok(getInventory(db, scope.guildId, scope.userId, 101).some(i => i.item_id === 'double_or_nothing'));
   assert.equal(decide(db, 'gamble').status, 'stale');
   assert.equal(getVaultReward(db, reward.vaultId).original.item.id, reward.original.item.id);
-  assert.equal(getInventory(db, scope.guildId, scope.userId).length, 2);
+  assert.equal(getInventory(db, scope.guildId, scope.userId, 101).length, 2);
   db.close();
 });
 
@@ -60,7 +60,7 @@ test('Gamble commits win or loss once, uses freed capacity and never redraws on 
     const before = draws;
     assert.equal(decide(db, 'gamble', { random: () => { throw new Error('must not reroll'); } }).status, 'stale');
     assert.equal(draws, before);
-    assert.ok(!getInventory(db, scope.guildId, scope.userId).some(i => i.item_id === 'double_or_nothing'));
+    assert.ok(!getInventory(db, scope.guildId, scope.userId, 101).some(i => i.item_id === 'double_or_nothing'));
     db.close();
   }
 });
@@ -92,8 +92,8 @@ test('overflow survives reopened database and overdue Keep occurs only once', ()
     reconcileVaultRewards(db, { now: reward.deadline });
     assert.equal(getVaultReward(db, 'vault').state, 'overflow');
     reconcileVaultRewards(db, { now: reward.deadline + 1 });
-    assert.equal(getInventory(db, scope.guildId, scope.userId).length, getInventoryCapacity(db, scope.guildId, scope.userId));
-    const discarded = getInventory(db, scope.guildId, scope.userId)[0];
+    assert.equal(getInventory(db, scope.guildId, scope.userId, 101).length, getInventoryCapacity(db, scope.guildId, scope.userId));
+    const discarded = getInventory(db, scope.guildId, scope.userId, 101)[0];
     assert.equal(decide(db, 'replace', { inventoryId: discarded.id }).reward.state, 'delivered');
     assert.equal(decide(db, 'replace', { inventoryId: discarded.id }).status, 'stale');
     db.close();
@@ -109,7 +109,7 @@ test('overflow rejects forged scope, foreign and escrowed discard IDs and repeat
   }
   const foreign = addItemToInventory(db, '10002', 'other', 'double_or_nothing').item;
   assert.equal(decide(db, 'replace', { inventoryId: foreign.id }).status, 'invalid_inventory');
-  const own = getInventory(db, scope.guildId, scope.userId)[0];
+  const own = getInventory(db, scope.guildId, scope.userId, 101)[0];
   db.prepare('INSERT INTO item_action_costs VALUES (?, ?, ?)').run('note', own.id, '{}');
   assert.equal(decide(db, 'replace', { inventoryId: own.id }).status, 'invalid_inventory');
   assert.equal(decide(db, 'decline').reward.state, 'declined');
@@ -123,7 +123,7 @@ test('revealed Double or Nothing cannot enable its own gamble and duplicate reve
   const reward = reveal(db, 'vault', { outcome: { tier: 'rare', item } });
   assert.equal(reward.state, 'delivered');
   assert.equal(reveal(db).original.item.id, item.id);
-  assert.equal(getInventory(db, scope.guildId, scope.userId).length, 1);
+  assert.equal(getInventory(db, scope.guildId, scope.userId, 101).length, 1);
   db.close();
 });
 
@@ -135,7 +135,7 @@ test('failed reward insertion rolls back the gambling cost and leaves the origin
   db.exec("CREATE TRIGGER reject_reward BEFORE INSERT ON user_inventory BEGIN SELECT RAISE(ABORT, 'injected failure'); END");
   assert.throws(() => decide(db, 'gamble', { random: () => 0 }), /injected failure/);
   assert.equal(getVaultReward(db, 'vault').state, 'decision');
-  assert.equal(getInventory(db, scope.guildId, scope.userId)[0].item_id, 'double_or_nothing');
+  assert.equal(getInventory(db, scope.guildId, scope.userId, 101)[0].item_id, 'double_or_nothing');
   db.exec('DROP TRIGGER reject_reward');
   assert.equal(decide(db, 'keep').reward.state, 'delivered');
   db.close();
@@ -155,7 +155,7 @@ test('configured replacement tier partitions choose current roster members with 
     assert.equal(result.reward.reward.tier, tier);
     const definition = getItemsInTier(tier).find(item => item.id === result.reward.reward.item.id);
     assert.ok(definition);
-    assert.equal(getInventory(db, scope.guildId, scope.userId)[0].charges, definition.maxCharges ?? 1);
+    assert.equal(getInventory(db, scope.guildId, scope.userId, 101)[0].charges, definition.maxCharges ?? 1);
     preceding += weight;
     db.close();
   }

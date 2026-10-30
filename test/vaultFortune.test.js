@@ -37,6 +37,56 @@ function recastFixture(db, { full = false, gamble = false } = {}) {
   return { scope, source };
 }
 
+test('Fortune start refuses sources at their exact inventory deadline', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    installEmptyFinalCatalog(db);
+    const recast = addItemToInventory(db, 'guild', 'owner', 'fortunes_recast').item;
+    addItemToInventory(db, 'guild', 'owner', 'fortunes_lens');
+    db.prepare('UPDATE user_inventory SET expires_at=200').run();
+    assert.equal(armRecast(db, { guildId: 'guild', userId: 'owner', inventoryId: recast.id, now: 200 }).status, 'missing_item');
+    const session = reservePaidVaultSession(db, { guildId: 'guild', userId: 'owner', channelId: 'channel', now: 100 });
+    bindVaultSessionMessage(db, session.vaultId, 'message');
+    assert.equal(activateLens(db, { vaultId: session.vaultId, guildId: 'guild', userId: 'owner', channelId: 'channel', messageId: 'message', now: 200 }).status, 'missing_item');
+    assert.equal(getLens(db, session.vaultId), null);
+  } finally { db.close(); }
+});
+
+test('armed Recast survives expiry and runtime inspection until a later reward is presented', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    installEmptyFinalCatalog(db);
+    const source = addItemToInventory(db, 'guild', 'owner', 'fortunes_recast', 2).item;
+    db.prepare('UPDATE user_inventory SET expires_at=200 WHERE id=?').run(source.id);
+    assert.equal(armRecast(db, { guildId: 'guild', userId: 'owner', inventoryId: source.id, now: 199 }).status, 'armed');
+    assert.deepEqual(getInventory(db, 'guild', 'owner', 200), []);
+    assert.equal(inspectReadOnly(db).blockers.length, 0);
+    const session = reservePaidVaultSession(db, { guildId: 'guild', userId: 'owner', channelId: 'channel', now: 1000000 });
+    const scope = { vaultId: session.vaultId, guildId: 'guild', userId: 'owner', channelId: 'channel', messageId: 'message' };
+    assert.equal(revealVaultReward(db, { ...scope, outcome: drawVaultSessionOutcome(session, () => 0), now: 1000001 }).state, 'recast');
+    assert.equal(presentRecast(db, { ...scope, now: 1000002 }).status, 'presented');
+    assert.equal(getArmedRecast(db, 'guild', 'owner'), null);
+    assert.equal(getInventory(db, 'guild', 'owner', 199).find(i => i.id === source.id).charges, 1);
+    assert.equal(decideVaultReward(db, { ...scope, action: 'recast', choice: -1, now: 1000003 }).reward.state, 'delivered');
+    assert.equal(getInventory(db, 'guild', 'owner', 1000003).some(i => i.id === source.id), false);
+    assert.equal(inspectReadOnly(db).blockers.length, 0);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally { db.close(); }
+});
+
+for (const refund of [false, true]) test(`Lens started before expiry completes refund=${refund} without reviving its source`, () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    const { source, session } = lensFixture(db);
+    db.prepare('UPDATE user_inventory SET expires_at=201 WHERE id=?').run(source.id);
+    if (refund) assert.equal(refundUnpresentedLens(db, session.vaultId, { absent: true, now: session.deadline }), true);
+    else assert.equal(acknowledgeLens(db, session.vaultId, 202), true);
+    assert.deepEqual(getInventory(db, 'guild', 'owner', session.deadline), []);
+    assert.equal(getLens(db, session.vaultId).state, refund ? 'refunded' : 'presented');
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally { db.close(); }
+});
+
 test('preflight rejects stranded chosen Recasts and payloads inconsistent with their persisted choice', () => {
   const corruptions = [
     ['chosen reward still recast', 'chosen', db => db.exec("UPDATE vault_rewards SET state='recast'")],
@@ -197,9 +247,9 @@ test('Recast gates delivery, consumes only on private presentation, persists alt
     assert.equal(getArmedRecast(db, 'guild', 'owner'), null);
     reconcileVaultRewards(db, { now: deadline });
     assert.equal(getVaultReward(db, session.vaultId).state, 'delivered');
-    assert.equal(getInventory(db, 'guild', 'owner').length, 2);
+    assert.equal(getInventory(db, 'guild', 'owner', deadline).length, 2);
     reconcileVaultRewards(db, { now: deadline + 1 });
-    assert.equal(getInventory(db, 'guild', 'owner').length, 2);
+    assert.equal(getInventory(db, 'guild', 'owner', deadline + 1).length, 2);
   } finally { db.close(); }
 });
 
@@ -293,7 +343,7 @@ test('single alternative can be Recast itself and overflow remains downstream of
     assert.equal(getArmedRecast(db, 'guild', 'owner'), null);
     const discard = getUsableInventory(db, 'guild', 'owner').find(item => item.item_id !== 'fortunes_recast');
     assert.equal(decideVaultReward(db, { ...scope, action: 'replace', inventoryId: discard.id, now: 400 }).reward.state, 'delivered');
-    assert.equal(getInventory(db, 'guild', 'owner').filter(item => item.item_id === 'fortunes_recast').length, 2);
+    assert.equal(getInventory(db, 'guild', 'owner', 400).filter(item => item.item_id === 'fortunes_recast').length, 2);
     assert.equal(getArmedRecast(db, 'guild', 'owner'), null);
   } finally { db.close(); }
 });

@@ -109,6 +109,7 @@ test('Lens send-before-ack is reconciled after reopen, never refunded; selected 
   const f = fixture(t);
   addItemToInventory(f.db, 'guild', 'owner', 'fortunes_lens');
   addItemToInventory(f.db, 'guild', 'owner', 'fortunes_recast');
+  f.db.exec('UPDATE user_inventory SET expires_at=201');
   assert.equal(executeItemUse(f.db, 'guild', 'owner', 'fortune').success, false);
   assert.equal(executeItemUse(f.db, 'guild', 'owner', 'recast', [], { now: 100 }).success, true);
   let { vaultId, message } = await bound(f);
@@ -142,9 +143,9 @@ test('Lens send-before-ack is reconciled after reopen, never refunded; selected 
     values: ['0'], isButton: () => false, isStringSelectMenu: () => true, update: async () => {},
   }), { now: () => 700 });
   assert.equal(getVaultReward(f.db, vaultId).state, 'delivered');
-  assert.equal(getInventory(f.db, 'guild', 'owner')[0].item_id, decision.alternatives[0].id);
+  assert.equal(getInventory(f.db, 'guild', 'owner', 700)[0].item_id, decision.alternatives[0].id);
   await recoverVaultSessions(f.db, f.client, { now: () => 40000 });
-  assert.equal(getInventory(f.db, 'guild', 'owner').length, 1);
+  assert.equal(getInventory(f.db, 'guild', 'owner', 40000).length, 1);
 });
 
 test('failed private publication is unspent and resumable; forged owner/binding cannot consume or choose; timeout survives reopen', async t => {
@@ -172,7 +173,7 @@ test('failed private publication is unspent and resumable; forged owner/binding 
   await recoverVaultSessions(f.db, f.client, { now: () => deadline });
   assert.equal(getVaultReward(f.db, vaultId).state, 'delivered');
   assert.equal(getVaultReward(f.db, vaultId).reward.item.id, getRecast(f.db, vaultId).original.item.id);
-  assert.equal(getInventory(f.db, 'guild', 'owner').length, 1);
+  assert.equal(getInventory(f.db, 'guild', 'owner', deadline).length, 1);
 });
 
 test('multi-charge Lens publication releases only its hold, preserving later use of the same entry across restart', async t => {
@@ -274,7 +275,7 @@ test('a gated Lens write cannot overwrite slot delivery, even with concurrent re
   assert.notEqual(rewardMessage.id, message.id);
   assert.match(JSON.stringify(rewardMessage.payload), /received/);
   assert.match(JSON.stringify(message.payload), /"disabled":true/);
-  assert.equal(getInventory(f.db, 'guild', 'owner').length, 1);
+  assert.equal(getInventory(f.db, 'guild', 'owner', 400).length, 1);
   await recoverVaultSessions(f.db, f.client, { now: () => 1200 });
   assert.match(JSON.stringify(rewardMessage.payload), /received/);
 });
@@ -331,12 +332,11 @@ test('unshown Lens retains its zero-charge row through transient expiry, then re
   await assert.rejects(onVaultInteraction(f.db, click(vaultId, message, 'lens', { update: async () => { throw new Error('failed'); } }), { now: () => 200 }), /failed/);
   f.reopen(); f.fail(true);
   await recoverVaultSessions(f.db, f.client, { now: () => 1200 });
-  assert.equal(getInventory(f.db, 'guild', 'owner')[0].charges, 0);
+  assert.equal(getInventory(f.db, 'guild', 'owner').find(i => i.id === source.id).charges, 0);
   f.fail(false);
   await recoverVaultSessions(f.db, f.client, { now: () => 1300 });
   assert.equal(getLens(f.db, vaultId).state, 'refunded');
-  assert.equal(getInventory(f.db, 'guild', 'owner')[0].id, source.id);
-  assert.equal(getInventory(f.db, 'guild', 'owner')[0].charges, 1);
+  assert.equal(getInventory(f.db, 'guild', 'owner').find(i => i.id === source.id).charges, 1);
   await recoverVaultSessions(f.db, f.client, { now: () => 1400 });
-  assert.equal(getInventory(f.db, 'guild', 'owner')[0].charges, 1);
+  assert.equal(getInventory(f.db, 'guild', 'owner').find(i => i.id === source.id).charges, 1);
 });
