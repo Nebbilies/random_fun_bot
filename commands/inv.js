@@ -16,9 +16,10 @@ import {
 import { getItemDefinition, getResolvedItemDefinition, ITEM_TIERS } from '../lib/itemRoster.js';
 import { resolveUserTarget, resolveTargetUsername } from '../lib/userTarget.js';
 import { activateItem } from '../lib/itemActivation.js';
+import { formatItemLifetime } from '../lib/itemDuration.js';
 
 export function renderInventoryEmbed(db, guildId, userId, username, now = Date.now(), isSelf = true) {
-  const inv = getInventory(db, guildId, userId);
+  const inv = getInventory(db, guildId, userId, now);
   const capacity = getInventoryCapacity(db, guildId, userId);
   const buffs = getActiveBuffs(db, guildId, userId, now);
 
@@ -37,8 +38,9 @@ export function renderInventoryEmbed(db, guildId, userId, username, now = Date.n
       const def = getResolvedItemDefinition(db, guildId, item.item_id);
       const tier = def ? ITEM_TIERS[def.tier] : { emoji: '⚪' };
       const chargeText = item.charges > 1 ? ` (${item.charges} charges)` : '';
+      const lifetime = formatItemLifetime(item.expires_at - now);
       embed.addFields({
-        name: `${tier?.emoji ?? '⚪'} ${def?.name || item.item_id}${chargeText}`,
+        name: `${tier?.emoji ?? '⚪'} ${def?.name || item.item_id}${chargeText}${lifetime ? ` ${lifetime}` : ''}`,
         value: `${isInventoryEscrowed(db, item.id) ? '🔒 Reserved / temporarily held — unavailable for use or replacement.\n' : ''}${def?.description || 'No description available.'}`,
         inline: false,
       });
@@ -78,9 +80,8 @@ export function renderInventoryEmbed(db, guildId, userId, username, now = Date.n
   return embed;
 }
 
-export function renderInventoryComponents(db, guildId, userId) {
-  const inv = getInventory(db, guildId, userId);
-  const usableItems = getUsableInventory(db, guildId, userId).filter((item) => {
+export function renderInventoryComponents(db, guildId, userId, now = Date.now()) {
+  const usableItems = getUsableInventory(db, guildId, userId, now).filter((item) => {
     const def = getItemDefinition(item.item_id);
     return def && (def.type === 'active' || def.type === 'item_action');
   });
@@ -173,8 +174,8 @@ export function getItemHelpBullet(def) {
   }
 }
 
-export function renderInventoryHelpEmbed(db, guildId, userId, username, isSelf = true) {
-  const inv = getInventory(db, guildId, userId);
+export function renderInventoryHelpEmbed(db, guildId, userId, username, isSelf = true, now = Date.now()) {
+  const inv = getInventory(db, guildId, userId, now);
 
   const embed = new EmbedBuilder()
     .setColor(0x5865f2)
@@ -198,7 +199,7 @@ export function renderInventoryHelpEmbed(db, guildId, userId, username, isSelf =
     ? 'Here is how to use the items currently in your inventory:'
     : `Here is how to use the items currently in <@${userId}>'s inventory:`;
 
-  embed.setDescription(`${prefix}\n\n${bullets.join('\n\n')}`);
+  embed.setDescription(`${prefix}\n\n${bullets.join('\n\n')}\n\nItems have fixed lifetimes from acquisition, shown as remaining time (for example, \`(2d 16h)\`). Charges share that deadline. A valid use started before expiry may finish afterward; unused charges still expire. See \`!itemlist\` for current rarity lifetimes.`);
   embed.setFooter({
     text: '💡 Type !inv to view your inventory, or !use <item> [args] to activate items',
   });
@@ -229,20 +230,21 @@ export async function run(ctx) {
 
   const username = await resolveTargetUsername(message, targetId, isSelf ? message.author.username : null);
 
+  const now = Date.now();
   if (isHelp) {
-    const embed = renderInventoryHelpEmbed(db, guildId, targetId, username, isSelf);
+    const embed = renderInventoryHelpEmbed(db, guildId, targetId, username, isSelf, now);
     await message.reply({ embeds: [embed] });
     return;
   }
 
-  const embed = renderInventoryEmbed(db, guildId, targetId, username, Date.now(), isSelf);
+  const embed = renderInventoryEmbed(db, guildId, targetId, username, now, isSelf);
   // Only provide use buttons when inspecting one's own inventory
-  const components = isSelf ? renderInventoryComponents(db, guildId, targetId) : [];
+  const components = isSelf ? renderInventoryComponents(db, guildId, targetId, now) : [];
 
   await message.reply({ embeds: [embed], components });
 }
 
-export async function onInventoryButton(db, interaction) {
+export async function onInventoryButton(db, interaction, now = Date.now()) {
   if (!interaction.isButton() || !interaction.customId.startsWith('inv:use:')) return false;
 
   const parts = interaction.customId.split(':');
@@ -263,19 +265,36 @@ export async function onInventoryButton(db, interaction) {
     await interaction.reply({ content: 'Character game is draining for maintenance. No item was consumed.', flags: MessageFlags.Ephemeral });
     return true;
   }
-  // Acknowledge before channel delivery; an interaction ID is not a Discord
-  // message ID and must never be used as a vault reply reference.
-  await interaction.deferUpdate();
-  await activateItem({ db, inventoryId: Number(invIdStr), message: {
+  // Check the exact live entry, never substitute another copy by name. A purged
+  // row cannot prove expiry, so keep stale feedback deliberately non-specific.
+  const inventoryId = Number(invIdStr);
+  const entry = Number.isSafeInteger(inventoryId) && getInventory(db, interaction.guildId, expectedUserId, now)
+    .find(item => item.id === inventoryId);
+  if (!entry) {
+    await interaction.reply({ content: 'This item has expired or is no longer available. Run the inventory command again.', flags: MessageFlags.Ephemeral });
+    return true;
+  }
+  // Start synchronously before the acknowledgement await. activateItem commits
+  // immediate uses or creates the confirmation reservation before its first await.
+  // Follow-up Discord delivery still waits for the interaction acknowledgement.
+  let acknowledge;
+  let rejectAcknowledgement;
+  const acknowledged = new Promise((resolve, reject) => { acknowledge = resolve; rejectAcknowledgement = reject; });
+  // Attach immediately: acknowledgement may fail before a delivery continuation
+  // reaches its await, and must never surface as an unhandled rejection.
+  void acknowledged.catch(() => {});
+  const activation = activateItem({ db, inventoryId, options: { now, beforeDelivery: () => acknowledged }, message: {
     guildId: interaction.guildId, channelId: interaction.channelId, channel: interaction.channel,
     author: interaction.user, activationId: `interaction:${interaction.id}`,
-    reply: (payload) => interaction.followUp(payload),
+    reply: async (payload) => { await acknowledged; return interaction.followUp(payload); },
   }, notify: async (result) => {
+    await acknowledged;
     if (result.success) {
       try {
+        const now = Date.now();
         await interaction.editReply({
-          embeds: [renderInventoryEmbed(db, interaction.guildId, interaction.user.id, interaction.user.username)],
-          components: renderInventoryComponents(db, interaction.guildId, interaction.user.id),
+          embeds: [renderInventoryEmbed(db, interaction.guildId, interaction.user.id, interaction.user.username, now)],
+          components: renderInventoryComponents(db, interaction.guildId, interaction.user.id, now),
         });
       } catch (error) {
         // A deleted inventory message must not suppress private status feedback.
@@ -287,6 +306,15 @@ export async function onInventoryButton(db, interaction) {
       flags: MessageFlags.Ephemeral,
     });
   } });
+  try {
+    await interaction.deferUpdate();
+    acknowledge();
+  } catch (error) {
+    rejectAcknowledgement(error);
+    await activation.catch(() => {});
+    throw error;
+  }
+  await activation;
 
   return true;
 }

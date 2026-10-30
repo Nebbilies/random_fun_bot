@@ -9,6 +9,7 @@ import {
 } from '../commands/inv.js';
 import { executeItemUse } from '../commands/use.js';
 import { addItemToInventory, getInventory } from '../lib/itemStorage.js';
+import { getConfigView, saveConfigSection } from '../lib/gameConfig.js';
 
 test('renderInventoryEmbed displays slots, items, active buffs, and footer helper', () => {
   const db = openCatalog(':memory:');
@@ -28,6 +29,38 @@ test('renderInventoryEmbed displays slots, items, active buffs, and footer helpe
 
   const components = renderInventoryComponents(db, guildId, userId);
   assert.ok(components.length > 0);
+});
+
+test('inventory renderers share a controlled clock for lifetime, slots, help and buttons', t => {
+  const db = openCatalog(':memory:');
+  t.after(() => db.close());
+  const now = Date.now();
+  const acquired = addItemToInventory(db, '1001', '3001', 'golden_whistle', 3, { now });
+  addItemToInventory(db, '1001', '3001', 'hourglass_of_haste', 1, { now });
+  // Rare entries last four days; common entries expire after two.
+  const renderAt = now + 115_200_000;
+  const embed = renderInventoryEmbed(db, '1001', '3001', 'TestUser', renderAt, false);
+  assert.ok(embed.data.fields.some(field => field.name.endsWith('Golden Whistle (3 charges) (2d 16h)')));
+  const boundary = now + 172_800_000;
+  const expired = renderInventoryEmbed(db, '1001', '3001', 'TestUser', boundary);
+  assert.match(expired.data.title, /\[1\/5\]/);
+  assert.ok(expired.data.fields.every(field => !field.name.includes('Hourglass')));
+  assert.deepEqual(renderInventoryComponents(db, '1001', '3001', boundary), []);
+  assert.doesNotMatch(renderInventoryHelpEmbed(db, '1001', '3001', 'TestUser', true, boundary).data.description, /Hourglass/);
+  assert.equal(getInventory(db, '1001', '3001', now)[0].expires_at, now + 172_800_000);
+  assert.equal(acquired.status, 'added');
+});
+
+test('lifetime configuration edits leave owned inventory countdowns unchanged', t => {
+  const db = openCatalog(':memory:');
+  t.after(() => db.close());
+  const now = Date.now();
+  addItemToInventory(db, '1001', '3001', 'hourglass_of_haste', 1, { now });
+  const before = renderInventoryEmbed(db, '1001', '3001', 'TestUser', now).data.fields[0].name;
+  saveConfigSection(db, { guildId: '1001', section: 'itemExpiryDays',
+    values: { 'itemExpiryDays.common': 365 }, expectedRevision: getConfigView(db, '1001').revision });
+  assert.equal(renderInventoryEmbed(db, '1001', '3001', 'TestUser', now).data.fields[0].name, before);
+  assert.match(before, /\(2d\)$/);
 });
 
 test('renderInventoryHelpEmbed shows empty message when user has no items', () => {

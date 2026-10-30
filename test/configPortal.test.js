@@ -28,6 +28,7 @@ test('configuration portal validates atomic writes, inheritance, reset, revision
   });
   let view = await get();
   assert.ok(view.registry['rolls.maxRolls']);
+  assert.deepEqual(view.effective.itemExpiryDays, { common: 2, rare: 4, epic: 7, legendary: 14, '???': 30 });
   assert.equal(view.sources['rolls.maxRolls'], 'builtin');
   assert.deepEqual(view.effective, view.defaults);
   const save = { section: 'rolls', values: { 'rolls.maxRolls': 12 }, expectedRevision: view.revision };
@@ -75,6 +76,7 @@ test('configuration portal validates atomic writes, inheritance, reset, revision
   assert.match(page, /id="scopeForm"/); assert.match(page, /id="changeReview"/);
   assert.match(page, /reviewConfig.js/); assert.match(page, /Reload \/ discard edits/);
   const script = await fetch(`${origin}/assets/reviewConfig.js`).then((r) => r.text());
+  assert.ok(script.includes('Applies to newly acquired items only.'));
   for (const marker of ['view.registry', 'view.sources', 'expectedRevision', '/api/config/activate-schedule', 'dialog.showModal()', 'reportValidity()', "input.type = 'checkbox'", 'JSON.parse(input.value)']) assert.ok(script.includes(marker), marker);
   const game = await fetch(`${origin}/game`).then((r) => r.text());
   assert.doesNotMatch(game, /id="rateForm"|id="customRatesList"/);
@@ -100,6 +102,13 @@ test('configuration portal validates atomic writes, inheritance, reset, revision
       const session = await login(origin);
       await page.context().addCookies([{ name: 'portal_session', value: session.cookie.split('=')[1], url: origin }]);
       await page.goto(`${origin}/config`);
+      const expiry = page.getByLabel('Common (days)', { exact: true });
+      assert.equal(await expiry.inputValue(), '2');
+      assert.equal(await expiry.getAttribute('min'), '1');
+      assert.equal(await expiry.getAttribute('max'), '365');
+      assert.equal(await expiry.getAttribute('step'), '1');
+      await page.getByText('Applies to newly acquired items only.', { exact: true }).waitFor();
+      assert.equal(await page.getByLabel('??? (days)', { exact: true }).inputValue(), '30');
       const input = page.locator('[data-key="rolls.maxRolls"]');
       await input.fill('13');
       await input.locator('xpath=ancestor::form').getByRole('button', { name: 'Review changes…', exact: true }).click();

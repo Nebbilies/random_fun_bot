@@ -15,7 +15,7 @@ Shared persistence and runtime contract for the Configuration portal.
 
 Exports `GAME_CONFIG_DEFAULTS`, `GAME_CONFIG_REGISTRY` (flat allowlist: key, section, default, type, guild, activationRequired, numeric min/max or array maxLength), `GAME_CONFIG_SECTIONS`, `validateConfigValue`, `validateGameConfig`, `flattenConfig`, `setConfigPath`.
 
-All keys permit global and guild scope. Sections are top-level groups. No arbitrary keys, code, secrets, audit history, or live state. Durations/intervals use milliseconds; timezone is fixed UTC offset minutes (current UTC+7, no DST). Weights are relative, not probabilities. Starting charges affect new entries only. Runtime must snapshot rules for active buffs/events/actions. Capacity reductions preserve existing entries and earned expansions. Treasure Hunt exists but is absent from current selectable roster, so defaults disabled. Internal event safety ceiling is not editable.
+All keys permit global and guild scope. Sections are top-level groups. No arbitrary keys, code, secrets, audit history, or live state. Timer durations/intervals use milliseconds; `itemExpiryDays.{common,rare,epic,legendary,???}` instead uses whole days (1–365 inclusive), with defaults 2/4/7/14/30. These fixed inventory deadlines are not Node timers, so 30 and 365 days are valid. Lifetime edits apply to newly acquired items only; existing deadlines and charges never refresh. The section supports the same global/guild inheritance and reset behavior as other rules. Timezone is fixed UTC offset minutes (current UTC+7, no DST). Weights are relative, not probabilities. Starting charges affect new entries only. Runtime must snapshot rules for active buffs/events/actions. Capacity reductions preserve existing entries and earned expansions. Treasure Hunt exists but is absent from current selectable roster, so defaults disabled. Internal event safety ceiling is not editable.
 
 ## Operator workflow and deployment
 
@@ -158,6 +158,13 @@ Validation rejects unknown keys, invalid inherited combinations, empty positive-
       "epic": 15,
       "legendary": 5
     }
+  },
+  "itemExpiryDays": {
+    "common": 2,
+    "rare": 4,
+    "epic": 7,
+    "legendary": 14,
+    "???": 30
   },
   "capacity": {
     "inventoryBase": 5,

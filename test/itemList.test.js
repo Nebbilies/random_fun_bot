@@ -31,6 +31,20 @@ test('guild list conceals unknown names and descriptions and uses effective disc
   }
 });
 
+test('catalog tier controls show effective lifetimes without revealing unknown items', async t => {
+  const db = fixture(t);
+  saveConfigSection(db, { guildId: '123', section: 'itemExpiryDays',
+    values: { 'itemExpiryDays.common': 365 }, expectedRevision: getConfigView(db, '123').revision });
+  let payload;
+  await run({ yoshiko: { catalogDb: db }, message: { guildId: '123',
+    reply: async value => { payload = value; } } });
+  const card = payload.components[0].toJSON();
+  const options = card.components[1].components[0].options;
+  assert.equal(options.find(option => option.value === 'common').description, 'Lifetime: 365 days · new acquisitions only');
+  assert.equal(options.find(option => option.value === '???').description, 'Lifetime: 30 days · new acquisitions only');
+  assert.doesNotMatch(card.components[2].content, /Hourglass|Kaimetsu/);
+});
+
 test('known items sort by tier then name', t => {
   const db = fixture(t);
   for (const [i, item] of ITEM_ROSTER.entries()) addItemToInventory(db, '123', `u${i}`, item.id);
