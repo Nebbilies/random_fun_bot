@@ -88,10 +88,15 @@ test('paid reservation rolls back with allowance transaction, adopts by command 
   const noDraw = () => { throw new Error('must not reroll captured/revealed outcome'); };
   await onVaultInteraction(f.db, click(reserved.vaultId, started.message), { now: () => 4000, random: noDraw });
   assert.equal(getVaultSession(f.db, reserved.vaultId).rewardId, reserved.vaultId);
-  assert.equal(getInventory(f.db, '10001', 'roller').length, 1);
+  const [granted] = getInventory(f.db, '10001', 'roller', 4000);
+  assert.ok(granted);
+  assert.equal(getInventory(f.db, '10001', 'roller', 4000).length, 1);
+  assert.equal(granted.acquired_at, new Date(4000).toISOString());
+  assert.ok(getInventory(f.db, '10001', 'roller', granted.expires_at - 1).some(item => item.id === granted.id));
+  assert.equal(getInventory(f.db, '10001', 'roller', granted.expires_at).length, 0);
   f.reopen();
   await onVaultInteraction(f.db, click(reserved.vaultId, started.message), { now: () => 5000, random: noDraw });
-  assert.equal(getInventory(f.db, '10001', 'roller').length, 1);
+  assert.deepEqual(getInventory(f.db, '10001', 'roller', 5000), [granted]);
   const reward = getVaultReward(f.db, reserved.vaultId);
   assert.notEqual(reward.messageId, started.message.id);
   assert.equal(reward.sourceMessageId, started.message.id);
@@ -119,7 +124,9 @@ test('failed reward send recovers on the new message without rerolling or re-ena
   const reward = getVaultReward(f.db, reserved.vaultId);
   assert.notEqual(reward.messageId, started.message.id);
   assert.equal(d.channel.sent, 2);
-  assert.equal(getInventory(f.db, '10001', 'roller').length, 1);
+  const inventory = getInventory(f.db, '10001', 'roller', 4000);
+  assert.equal(inventory.length, 1);
+  assert.equal(inventory[0].acquired_at, new Date(3000).toISOString());
   await recoverVaultSessions(f.db, d.client, { now: () => 5000 });
   assert.equal(d.channel.sent, 2);
   assert.match(JSON.stringify(d.messages.get(reward.messageId).payload), /received/);
@@ -173,7 +180,7 @@ test('original expiry survives repeated transient delivery failures before and a
 
 test('failed reveal acknowledgement commits once; reopened post-reveal recovery keeps original decision deadline', async t => {
   const f = fixture(t), d = discord();
-  addItemToInventory(f.db, '10001', 'roller', 'double_or_nothing');
+  addItemToInventory(f.db, '10001', 'roller', 'double_or_nothing', undefined, { now: 1000 });
   const reserved = reservePaidVaultSession(f.db, request({ capturedOutcome: outcome() }));
   const started = await start(f, d);
   await assert.rejects(onVaultInteraction(f.db, click(reserved.vaultId, started.message, {
@@ -192,7 +199,10 @@ test('failed reveal acknowledgement commits once; reopened post-reveal recovery 
     now: () => 5000, random: () => { throw new Error('must reuse original'); } });
   await recoverVaultSessions(f.db, d.client, { now: () => first.deadline + 1 });
   assert.equal(getVaultReward(f.db, reserved.vaultId).state, 'delivered');
-  assert.equal(getInventory(f.db, '10001', 'roller').length, 2);
+  const inventory = getInventory(f.db, '10001', 'roller', first.deadline + 1);
+  assert.equal(inventory.length, 2);
+  const granted = inventory.find(item => item.item_id === outcome().item.id);
+  assert.equal(granted.acquired_at, new Date(first.deadline + 1).toISOString());
   assert.equal(d.channel.sent, 2);
 });
 

@@ -62,15 +62,16 @@ test('invalid mystery selection still rolls back rather than becoming an ordinar
 function actionFixture(db, kind) {
   const choices = ids.map((characterId, i) => ({ characterId, ownerId: `${i + 1}01`,
     marriageId: marryCharacter(db, '1', characterId, `${i + 1}01`).marriage.id }));
-  const item = addItemToInventory(db, '1', '101', kind).item;
+  const item = addItemToInventory(db, '1', '101', kind, undefined, { now }).item;
   const action = createItemAction(db, { guildId: '1', actorId: '101', channelId: '10',
     inventoryId: item.id, selections: { own: choices[0], targets: kind === 'grand_masquerade' ? choices.slice(1) : [choices[1]] }, now });
+  assert.equal(action.state, 'confirming');
   return { action, choices, item, request: { actionId: action.id, guildId: '1', actorId: '101', now: now + 1, random: () => 0 } };
 }
 for (const kind of ['heart_for_a_heart', 'grand_masquerade']) test(`${kind} live eligibility refusal cancels durably without cost or revival`, t => {
   const db = fixture(t);
   const { action, choices, item, request } = actionFixture(db, kind);
-  const inventory = getInventory(db, '1', '101');
+  const inventory = getInventory(db, '1', '101', now);
   // Heart retains rank bounds; upstream Masquerade intentionally removed them.
   // A live ownership change must still refuse the stale Masquerade selection.
   if (kind === 'heart_for_a_heart') db.prepare('UPDATE characters SET rank=10000 WHERE id=?').run(ids[0]);
@@ -81,25 +82,25 @@ for (const kind of ['heart_for_a_heart', 'grand_masquerade']) test(`${kind} live
   assert.equal(stored.state, 'canceled');
   assert.equal(stored.delivery_pending, 1);
   assert.equal(stored.result.noCost, true);
-  assert.deepEqual(getInventory(db, '1', '101'), inventory);
+  assert.deepEqual(getInventory(db, '1', '101', request.now), inventory);
   ids.forEach((id, i) => db.prepare('UPDATE characters SET rank=? WHERE id=?').run(i + 1, id));
   if (kind === 'grand_masquerade') db.prepare('UPDATE marriages SET owner_id=? WHERE id=?').run(choices[1].ownerId, choices[1].marriageId);
   assert.equal(activateItemAction(db, request).status, 'canceled');
   choices.forEach(row => assert.equal(getMarriage(db, '1', row.characterId).ownerId, row.ownerId));
-  assert.ok(getInventory(db, '1', '101').some(row => row.id === item.id));
+  assert.ok(getInventory(db, '1', '101', request.now).some(row => row.id === item.id));
   assert.equal(db.prepare('SELECT count(*) n FROM item_character_reservations').get().n, 0);
 });
 
 test('SQL failure rolls back but leaves confirmation retryable; unauthorized refusal cannot cancel it', t => {
   const db = fixture(t);
   const { action, request } = actionFixture(db, 'grand_masquerade');
-  const inventory = getInventory(db, '1', '101');
+  const inventory = getInventory(db, '1', '101', now);
   assert.equal(activateItemAction(db, { ...request, actorId: '999' }).status, 'invalid');
   assert.equal(getItemAction(db, action.id).state, 'confirming');
   db.exec("CREATE TRIGGER reject_transfer BEFORE UPDATE ON marriages BEGIN SELECT RAISE(ABORT,'simulated DB failure'); END");
   assert.throws(() => activateItemAction(db, request), /simulated DB failure/);
   assert.equal(getItemAction(db, action.id).state, 'confirming');
-  assert.deepEqual(getInventory(db, '1', '101'), inventory);
+  assert.deepEqual(getInventory(db, '1', '101', request.now), inventory);
   db.exec('DROP TRIGGER reject_transfer');
   assert.equal(activateItemAction(db, request).status, 'resolved');
 });

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openCatalog } from '../lib/catalogDb.js';
 import { marryCharacter, getMarriage, divorceCharacter } from '../lib/characterMarriage.js';
-import { addItemToInventory, getInventory, isCharacterLocked } from '../lib/itemStorage.js';
+import { addItemToInventory, getInventory as getInventoryAt, isCharacterLocked } from '../lib/itemStorage.js';
 import { getItemAction, getCounterfeitCrown } from '../lib/itemActionStorage.js';
 import { createItemAction, activateItemAction, confirmHostageDelivery, recoverItemActions,
   resolveHostage } from '../lib/itemActions.js';
@@ -13,6 +13,8 @@ import { executeItemUse } from '../commands/use.js';
 
 const now = Date.parse('2026-10-18T01:00:00Z');
 const noDraw = () => { throw new Error('must not draw again'); };
+// Inventory observations share the action clock, never the machine's date.
+const getInventory = (db, guildId, userId, at = now) => getInventoryAt(db, guildId, userId, at);
 
 function fixture(t, disk = false) {
   const dir = disk ? mkdtempSync(join(tmpdir(), 'item-edges-')) : null;
@@ -30,7 +32,7 @@ function own(db, id, ownerId) {
   return { characterId: id, ownerId, marriageId: result.marriage.id };
 }
 function grant(db, kind, user = '101') {
-  const result = addItemToInventory(db, '1', user, kind);
+  const result = addItemToInventory(db, '1', user, kind, undefined, { now });
   assert.equal(result.status, 'added');
   return result.item;
 }
@@ -81,13 +83,13 @@ test('restart cancels an unconfirmed Hostage, refunds its exact Note and Crown o
   const recoveryAt = getItemAction(db, action.id).expires_at + 1;
   recoverItemActions(db, recoveryAt, noDraw);
   assert.equal(getItemAction(db, action.id).state, 'canceled');
-  assert.deepEqual(getInventory(db, '1', '101'), [item]);
+  assert.deepEqual(getInventory(db, '1', '101', recoveryAt), [item]);
   assert.deepEqual(getCounterfeitCrown(db, '1', '202'), defense);
   assert.deepEqual(marriages(db), before);
   assert.deepEqual(reservations(db), []);
   db = f.restart();
   recoverItemActions(db, recoveryAt, noDraw);
-  assert.deepEqual(getInventory(db, '1', '101'), [item]);
+  assert.deepEqual(getInventory(db, '1', '101', recoveryAt), [item]);
   assert.deepEqual(getCounterfeitCrown(db, '1', '202'), defense);
   assert.deepEqual(marriages(db), before);
 });

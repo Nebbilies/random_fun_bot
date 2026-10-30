@@ -162,9 +162,9 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
 test('revealed Keep/Gamble prompt is owner/message scoped and timeout keeps through recovery', async () => {
   const db = openCatalog(':memory:');
   initVaultRewards(db);
-  addItemToInventory(db, '10001', 'roller', 'double_or_nothing');
-  const channel = mockChannel('channel');
   let clock = 100;
+  addItemToInventory(db, '10001', 'roller', 'double_or_nothing', undefined, { now: clock });
+  const channel = mockChannel('channel');
   const vault = await startVaultRoll({ db, channel, guildId: '10001', rollerId: 'roller', remaining: 1,
     now: () => clock, rollOutcome: () => ({ tier: 'common', tierData: ITEM_TIERS.common, item: getItemsInTier('common')[0] }) });
   const prompt = { id: 'reward-prompt', channelId: 'channel', edit: async () => prompt };
@@ -189,7 +189,12 @@ test('revealed Keep/Gamble prompt is owner/message scoped and timeout keeps thro
     return prompt;
   } } }) } }, { now: () => clock });
   assert.equal(getVaultReward(db, vault.vaultId).state, 'delivered');
-  assert.equal(getInventory(db, '10001', 'roller').length, 2);
+  const inventory = getInventory(db, '10001', 'roller', clock);
+  assert.equal(inventory.length, 2);
+  const granted = inventory.find(item => item.item_id === getItemsInTier('common')[0].id);
+  assert.equal(granted.acquired_at, new Date(clock).toISOString());
+  assert.ok(getInventory(db, '10001', 'roller', granted.expires_at - 1).some(item => item.id === granted.id));
+  assert.ok(!getInventory(db, '10001', 'roller', granted.expires_at).some(item => item.id === granted.id));
   db.close();
 });
 

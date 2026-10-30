@@ -116,6 +116,14 @@ _Avoid_: Favorite, target, wanted character
 A player's bounded set of wishes in one Discord server, holding at most seven. It is a target list, so wishing for an already owned character is allowed and changes nothing about ownership.
 _Avoid_: Harem wishlist, global wishlist
 
+**Item lifetime**:
+The real-world duration an inventory entry remains available for starting uses, determined by its rarity tier when acquired. Time continues to pass while its owner is offline.
+_Avoid_: Effect duration, inactivity timeout
+
+**Item expiry deadline**:
+The fixed moment an inventory entry's lifetime ends and it leaves the usable inventory, without interrupting an already-started use. Later changes to rarity-tier lifetimes do not alter an existing entry's deadline.
+_Avoid_: Effect end time, cooldown
+
 **Guild item discovery**:
 A server's permanent knowledge of an item kind after any player successfully acquires it there. The item remains discovered after all copies are consumed; revealing an unacquired reward does not establish discovery.
 _Avoid_: Current ownership, personal discovery

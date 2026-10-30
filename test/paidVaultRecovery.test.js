@@ -89,14 +89,14 @@ test('actual paid roll crashes before startVault: reopen recovers captured reser
   await onVaultInteraction(f.db, choose(f, session), { now: () => NOW + 3000, random: () => 0 });
   const reward = getVaultReward(f.db, session.vaultId);
   assert.ok(reward);
-  assert.equal(getInventory(f.db, '1', '101').length, 1);
+  assert.equal(getInventory(f.db, '1', '101', NOW + 3000).length, 1);
   f.reopen();
   await onVaultInteraction(f.db, choose(f, session, 'C'), { now: () => NOW + 4000,
     random: () => { throw Error('duplicate choice must not redraw'); } });
   await recoverVaultSessions(f.db, f.client, { now: () => NOW + 5000 });
   assert.deepEqual(getVaultReward(f.db, session.vaultId).original, reward.original);
   assert.equal(f.db.prepare('SELECT count(*) n FROM vault_rewards').get().n, 1);
-  assert.equal(getInventory(f.db, '1', '101').length, 1);
+  assert.equal(getInventory(f.db, '1', '101', NOW + 5000).length, 1);
   assert.equal(f.sent, 2, 'one source card and one distinct reward card, even after recovery');
   assert.notEqual(reward.messageId, recovered.messageId);
   assert.equal(reward.sourceMessageId, recovered.messageId);
@@ -112,14 +112,14 @@ test('Golden Hour actual use commits cost/reset/reservation together and recover
     .run('1', '202', 4);
   f.db.prepare('INSERT INTO roll_allowances(guild_id,user_id,period,used) SELECT ?,?,period,? FROM roll_allowances LIMIT 1')
     .run('2', '101', 5);
-  const inventoryId = addItemToInventory(f.db, '1', '101', 'golden_hour').item.id;
+  const inventoryId = addItemToInventory(f.db, '1', '101', 'golden_hour', undefined, { now: NOW }).item.id;
   const result = executeItemUseById(f.db, '1', '101', inventoryId, [], {
     channelId: '10', commandMessageId: '100', now: NOW + 1,
   });
   assert.equal(result.success, true);
   assert.equal(result.startVault, true);
   assert.equal(result.vaultCommandMessageId, '100');
-  assert.equal(getInventory(f.db, '1', '101').length, 0);
+  assert.equal(getInventory(f.db, '1', '101', NOW + 1).length, 0);
   assert.deepEqual(allowances(f.db).map(r => [r.guild_id, r.user_id, r.used]),
     [['1', '101', 0], ['1', '202', 0], ['2', '101', 5]]);
   const session = getVaultSessionByCommand(f.db, '100');
@@ -135,14 +135,14 @@ test('Golden Hour actual use commits cost/reset/reservation together and recover
   await recoverVaultSessions(f.db, f.client, { now: () => NOW + 2000 });
   assert.equal(f.sent, sent + 1);
   assert.deepEqual(allowances(f.db), paid);
-  assert.equal(getInventory(f.db, '1', '101').length, 0);
+  assert.equal(getInventory(f.db, '1', '101', NOW + 2000).length, 0);
   assert.equal(executeItemUseById(f.db, '1', '101', inventoryId, [], {
     channelId: '10', commandMessageId: '100', now: NOW + 2000,
   }).success, false);
   await onVaultInteraction(f.db, choose(f, session), { now: () => NOW + 3000, random: () => 0 });
   await onVaultInteraction(f.db, choose(f, session, 'B'), { now: () => NOW + 4000,
     random: () => { throw Error('must not redraw'); } });
-  assert.equal(getInventory(f.db, '1', '101').length, 1);
+  assert.equal(getInventory(f.db, '1', '101', NOW + 4000).length, 1);
   assert.deepEqual(allowances(f.db), paid);
   assert.equal(getVaultSession(f.db, session.vaultId).deadline, session.deadline);
 });
@@ -159,13 +159,13 @@ test('paid roll reservation failure rolls back allowance and paid roll row', t =
 test('Golden Hour reservation failure rolls back both spent charge and guild roll reset', t => {
   const f = fixture(t);
   f.db.prepare('INSERT INTO roll_allowances(guild_id,user_id,period,used) VALUES (?,?,?,?)').run('1', '101', 0, 4);
-  const inventoryId = addItemToInventory(f.db, '1', '101', 'golden_hour').item.id;
-  const before = allowances(f.db), inventory = getInventory(f.db, '1', '101');
+  const inventoryId = addItemToInventory(f.db, '1', '101', 'golden_hour', undefined, { now: NOW }).item.id;
+  const before = allowances(f.db), inventory = getInventory(f.db, '1', '101', NOW);
   failReservation(f.db);
   assert.throws(() => executeItemUseById(f.db, '1', '101', inventoryId, [], {
     channelId: '10', commandMessageId: '100', now: NOW,
   }), /synthetic reservation failure/);
   assert.deepEqual(allowances(f.db), before);
-  assert.deepEqual(getInventory(f.db, '1', '101'), inventory);
+  assert.deepEqual(getInventory(f.db, '1', '101', NOW), inventory);
   assert.equal(f.db.prepare('SELECT count(*) n FROM vault_sessions').get().n, 0);
 });

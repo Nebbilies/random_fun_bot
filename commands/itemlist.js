@@ -13,7 +13,7 @@ export async function run(ctx) {
     // Components V2 shares a 4,000-character budget across all TextDisplays.
     const pages = itemListPages(guildItemList(db, guildId, filter), Math.min(3500, 3800 - (changelog?.length ?? 0)));
     page = Math.min(page, pages.length - 1);
-    return itemListComponents(pages, page, filter, disabled, changelog);
+    return itemListComponents(pages, page, filter, disabled, changelog, getGameConfig(db, guildId).itemExpiryDays);
   };
   const reply = await ctx.message.reply({
     flags: MessageFlags.IsComponentsV2, components: render(),

@@ -200,7 +200,7 @@ test('undelivered escrow releases without duplicate refund even at capacity; Cro
   const original = db.prepare('SELECT * FROM item_actions WHERE id=?').get(action.id);
   const report = settleCharacterMigration(db, options);
   assert.deepEqual(new Set(report.canceledActions), new Set([action.id, confirmation.id]));
-  assert.deepEqual(report.releasedEscrow, [item.id]);
+  assert.deepEqual(report.releasedEscrow, [item.id, confirmation.inventory_id]);
   assert.equal(report.refundedConsumedCosts, 0);
   assert.deepEqual(rows(db, 'user_inventory'), inventory);
   assert.deepEqual(rows(db, 'marriages'), marriages);
@@ -224,9 +224,9 @@ test('undelivered escrow releases without duplicate refund even at capacity; Cro
 test('delivered Hostage lacks refund journal and blocks other safe cancellations', t => {
   const db = fixture(t);
   const { action } = hostage(db);
-  confirming(db);
+  const confirmation = confirming(db);
   assert.equal(confirmHostageDelivery(db, action.id, '999', 200), true);
-  assert.equal(rows(db, 'item_action_costs').length, 0);
+  assert.deepEqual(rows(db, 'item_action_costs').map(row => row.action_id), [confirmation.id]);
   const before = snapshot(db);
   assert.throws(() => settleCharacterMigration(db, options), error => error instanceof CharacterMigrationSettlementError
     && /delivered Hostage.*exact refund unsupported/.test(error.message));
@@ -258,6 +258,9 @@ test('orphan and terminal escrow/reservations block rather than deleting evidenc
   const before = snapshot(db);
   assert.throws(() => settleCharacterMigration(db, options), /terminal action retains/);
   assert.deepEqual(snapshot(db), before);
+  // Deliberately corrupt a disposable fixture; the new provenance FK prevents
+  // this orphan through an ordinary writable connection.
+  db.exec('PRAGMA foreign_keys=OFF');
   db.prepare('DELETE FROM item_actions WHERE id=?').run(action.id);
   const orphaned = snapshot(db);
   assert.throws(() => settleCharacterMigration(db, options), /Orphan escrow\/reservation/);
@@ -332,6 +335,8 @@ test('late SQL failure rolls back all durable settlement; retry succeeds', t => 
 test('terminal history and spent costs remain byte-for-byte unchanged', t => {
   const db = fixture(t);
   const action = confirming(db);
+  db.prepare('DELETE FROM item_action_costs WHERE action_id=?').run(action.id);
+  db.prepare('DELETE FROM item_use_reservations WHERE action_id=?').run(action.id);
   db.prepare("UPDATE item_actions SET state='resolved',result_json=?,delivery_pending=1 WHERE id=?")
     .run('{"status":"resolved","message":"historic result"}', action.id);
   db.exec(`INSERT INTO character_rolls(guild_id,channel_id,command_message_id,character_id,character_name,state,published_at)

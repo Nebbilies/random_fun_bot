@@ -3,10 +3,96 @@ import { test } from 'node:test';
 import { openCatalog } from '../lib/catalogDb.js';
 import { addItemToInventory, getInventory } from '../lib/itemStorage.js';
 import { getItemsInTier } from '../lib/itemRoster.js';
-import { createItemAction, activateItemAction, confirmHostageDelivery, cancelUndeliveredHostage, resolveHostage } from '../lib/itemActions.js';
+import { createItemAction, activateItemAction, confirmHostageDelivery, cancelUndeliveredHostage, resolveHostage, cancelItemAction, recoverItemActions } from '../lib/itemActions.js';
 import { executeItemUse } from '../commands/use.js';
 import { startForcedEscape, recoverForcedEscapes } from '../lib/characterRollRuntime.js';
 import { marryCharacter, getMarriage } from '../lib/characterMarriage.js';
+
+test('confirmation reserves its source against duplicate starts and releases on cancellation', () => {
+  const db = openCatalog(':memory:');
+  try {
+    const source = addItemToInventory(db, '1', '101', 'kaimetsu', 2).item;
+    const request = { guildId: '1', actorId: '101', channelId: '10', inventoryId: source.id };
+    const first = createItemAction(db, request);
+    assert.equal(first.state, 'confirming');
+    assert.equal(createItemAction(db, request).status, 'invalid');
+    assert.equal(cancelItemAction(db, first.id, '1', '101'), true);
+    assert.equal(createItemAction(db, request).state, 'confirming');
+  } finally { db.close(); }
+});
+
+function expiryFixture(db, itemId, charges = 2) {
+  const source = addItemToInventory(db, '1', '101', itemId, charges).item;
+  db.prepare('UPDATE user_inventory SET expires_at=2000 WHERE id=?').run(source.id);
+  return source;
+}
+
+test('expiry gates only start: a reserved confirmation survives recovery and spends one charge once', () => {
+  const db = openCatalog(':memory:');
+  try {
+    db.exec("INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,50,1,'Target')");
+    const target = marryCharacter(db, '1', 1, '202').marriage;
+    const source = expiryFixture(db, 'severed_fate');
+    const request = { guildId: '1', actorId: '101', channelId: '10', inventoryId: source.id,
+      selections: { targets: [{ characterId: 1, ownerId: '202', marriageId: target.id }] } };
+    assert.equal(createItemAction(db, { ...request, now: 2000 }).status, 'invalid');
+    const action = createItemAction(db, { ...request, now: 1999 });
+    recoverItemActions(db, 2001);
+    assert.equal(activateItemAction(db, { actionId: action.id, guildId: '1', actorId: '101', now: 2001 }).status, 'resolved');
+    assert.equal(getMarriage(db, '1', 1), null);
+    assert.equal(getInventory(db, '1', '101', 1999)[0].charges, 1);
+    assert.deepEqual(getInventory(db, '1', '101', 2001), []);
+    assert.equal(createItemAction(db, { ...request, now: 2001 }).status, 'invalid');
+    assert.equal(activateItemAction(db, { actionId: action.id, guildId: '1', actorId: '101', now: 2002 }).status, 'resolved');
+    assert.equal(getInventory(db, '1', '101', 1999)[0].charges, 1);
+  } finally { db.close(); }
+});
+
+for (const ending of ['cancel', 'timeout', 'invalid']) test(`expired confirmation ${ending} never revives leftover charges`, () => {
+  const db = openCatalog(':memory:');
+  try {
+    const source = expiryFixture(db, 'severed_fate');
+    const request = { guildId: '1', actorId: '101', channelId: '10', inventoryId: source.id, now: 1999 };
+    const action = createItemAction(db, request);
+    if (ending === 'cancel') cancelItemAction(db, action.id, '1', '101');
+    else if (ending === 'timeout') recoverItemActions(db, action.expires_at);
+    else assert.equal(activateItemAction(db, { actionId: action.id, guildId: '1', actorId: '101', now: 2001 }).status, 'invalid');
+    assert.deepEqual(getInventory(db, '1', '101', 2001), []);
+    assert.equal(createItemAction(db, { ...request, now: 2001 }).status, 'invalid');
+  } finally { db.close(); }
+});
+
+for (const delivered of [false, true]) test(`Hostage reserved before expiry settles delivery=${delivered} after expiry`, () => {
+  const db = openCatalog(':memory:');
+  try {
+    db.exec("INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,50,1,'Own'),(2,100,1,'Target')");
+    const own = marryCharacter(db, '1', 1, '101').marriage;
+    const target = marryCharacter(db, '1', 2, '202').marriage;
+    const source = expiryFixture(db, 'hostage_note');
+    const action = createItemAction(db, { guildId: '1', actorId: '101', channelId: '10', inventoryId: source.id, now: 1999,
+      selections: { own: { characterId: 1, ownerId: '101', marriageId: own.id }, targets: [{ characterId: 2, ownerId: '202', marriageId: target.id }] } });
+    assert.equal(activateItemAction(db, { actionId: action.id, guildId: '1', actorId: '101', now: 2001 }).status, 'awaiting_delivery');
+    if (delivered) {
+      assert.equal(confirmHostageDelivery(db, action.id, 'message', 2002), true);
+      assert.equal(confirmHostageDelivery(db, action.id, 'message', 2003), false);
+      assert.equal(resolveHostage(db, { actionId: action.id, guildId: '1', userId: '202', choice: 'exchange', now: 2004 }).status, 'resolved');
+    } else assert.equal(cancelUndeliveredHostage(db, action.id), true);
+    assert.deepEqual(getInventory(db, '1', '101', 2004), []);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally { db.close(); }
+});
+
+test('Alchemist continuation cannot grandfather expired additional materials', () => {
+  const db = openCatalog(':memory:');
+  try {
+    const source = expiryFixture(db, 'alchemist');
+    const costs = Array.from({ length: 3 }, () => expiryFixture(db, 'hourglass_of_haste').id);
+    const action = createItemAction(db, { guildId: '1', actorId: '101', channelId: '10', inventoryId: source.id,
+      selections: { inventoryIds: costs }, now: 1999 });
+    assert.equal(activateItemAction(db, { actionId: action.id, guildId: '1', actorId: '101', now: 2001 }).status, 'invalid');
+    assert.deepEqual(getInventory(db, '1', '101', 2001), []);
+  } finally { db.close(); }
+});
 
 test('Masquerade rolls back defenses, costs, and all transfers when persistence fails', () => {
   const db = openCatalog(':memory:');
@@ -187,10 +273,10 @@ test('Alchemist confirmation consumes exact entries once and awards one item', (
     assert.equal(getInventory(db, '1', '101').length, 4);
     const result = activateItemAction(db, { actionId: action.id, guildId: '1', actorId: '101', now: 1001, random: () => 0 });
     assert.equal(result.status, 'resolved');
-    const inventory = getInventory(db, '1', '101');
+    const inventory = getInventory(db, '1', '101', 1001);
     assert.equal(inventory.length, 1);
     assert.equal(costs.includes(inventory[0].id), false);
     activateItemAction(db, { actionId: action.id, guildId: '1', actorId: '101', now: 1002, random: () => { throw Error('reroll'); } });
-    assert.deepEqual(getInventory(db, '1', '101'), inventory);
+    assert.deepEqual(getInventory(db, '1', '101', 1002), inventory);
   } finally { db.close(); }
 });

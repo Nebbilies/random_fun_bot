@@ -12,7 +12,7 @@ const at = (object, key) => key.split('.').reduce((value, part) => value?.[part]
 const pretty = (value) => JSON.stringify(value, null, 2);
 const title = (key) => key.replaceAll('_', ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('.', ' / ');
 const probability = (field) => field.max === 1 && /Rate$|Chance$/.test(field.key);
-const unit = (field) => probability(field) ? '%' : /Ms$/.test(field.key) ? 'milliseconds' : /Minutes$/.test(field.key) ? 'UTC offset minutes' : /weight/i.test(field.key) ? 'relative weight' : '';
+const unit = (field) => field.section === 'itemExpiryDays' ? 'days' : probability(field) ? '%' : /Ms$/.test(field.key) ? 'milliseconds' : /Minutes$/.test(field.key) ? 'UTC offset minutes' : /weight/i.test(field.key) ? 'relative weight' : '';
 function node(tag, text, className) {
   const element = document.createElement(tag);
   if (text !== undefined) element.textContent = text;
@@ -49,14 +49,17 @@ function render() {
     const fields = Object.values(view.registry).filter((field) => field.section === section);
     const form = node('form', undefined, 'panel config-section');
     const fieldset = node('fieldset');
-    fieldset.append(node('legend', title(section)));
+    fieldset.append(node('legend', section === 'itemExpiryDays' ? 'Item lifetimes' : title(section)));
+    if (section === 'itemExpiryDays') fieldset.append(node('p', 'Applies to newly acquired items only.', 'notice'));
     const grid = node('div', undefined, 'config-fields');
     const inputs = new Map();
     for (const field of fields) {
       const value = at(view.effective, field.key);
       const structured = field.type === 'array';
       const wrapper = node('div', undefined, `config-field${structured ? ' structured' : ''}`);
-      const label = node('label', `${title(field.key)}${unit(field) ? ` (${unit(field)})` : ''}`);
+      const fieldTitle = field.section === 'itemExpiryDays'
+        ? field.key.split('.').at(-1).replace(/^./, letter => letter.toUpperCase()) : title(field.key);
+      const label = node('label', `${fieldTitle}${unit(field) ? ` (${unit(field)})` : ''}`);
       const input = node(structured ? 'textarea' : 'input');
       input.id = `field-${field.key}`;
       label.htmlFor = input.id;
@@ -122,7 +125,7 @@ function review(section, values, reset) {
   if (!keys.length) { feedback(status, 'This section has no explicit overrides to reset.'); return; }
   pending = { guildId: view.guildId, section, values, reset: Array.isArray(reset) ? reset : reset ? true : [], expectedRevision: view.revision };
   $('#reviewTitle').textContent = reset ? 'Confirm settings reset' : 'Review changes';
-  $('#reviewScope').textContent = `${view.guildId ? `Server ${view.guildId}` : 'Global defaults'} · ${title(section)} · revision ${view.revision}. ${reset ? 'Remove explicit settings and restore inheritance.' : 'Only these changed fields will be saved atomically. Other unsaved sections will be discarded when settings reload.'}${section === 'schedules' ? ' WARNING: this activates a fresh affected allowance cycle.' : ''}`;
+  $('#reviewScope').textContent = `${view.guildId ? `Server ${view.guildId}` : 'Global defaults'} · ${title(section)} · revision ${view.revision}. ${reset ? 'Remove explicit settings and restore inheritance.' : 'Only these changed fields will be saved atomically. Other unsaved sections will be discarded when settings reload.'}${section === 'schedules' ? ' WARNING: this activates a fresh affected allowance cycle.' : section === 'itemExpiryDays' ? ' Applies to newly acquired items only. Units: days.' : ''}`;
   const changes = $('#reviewChanges'); changes.replaceChildren();
   for (const key of keys) {
     const row = node('div', undefined, 'config-change');

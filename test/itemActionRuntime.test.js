@@ -56,6 +56,30 @@ async function nominate(f, action, own, target) {
   assert.equal(updateItemSelection(f.db, action.id, '1', '101', selections), true);
 }
 
+test('failed confirmation presentation releases its durable source for a later valid start', async (t) => {
+  const f = fixture(t);
+  const source = f.grant('kaimetsu');
+  const reply = f.message.reply;
+  f.message.reply = async () => { throw Error('prompt unavailable'); };
+  await assert.rejects(startItemAction({ db: f.db, message: f.message, inventoryId: source }), /prompt unavailable/);
+  f.message.reply = reply;
+  const action = await startItemAction({ db: f.db, message: f.message, inventoryId: source });
+  assert.equal(action.state, 'confirming');
+  const runtime = await recoverItemActionRuntime(f.db, f.client); t.after(runtime.stop);
+});
+
+test('reconciliation releases timed-out confirming reservations without reviving expired inventory', async (t) => {
+  const f = fixture(t);
+  const source = f.grant('kaimetsu');
+  const action = await startItemAction({ db: f.db, message: f.message, inventoryId: source });
+  f.db.prepare('UPDATE user_inventory SET expires_at=1 WHERE id=?').run(source);
+  f.db.prepare('UPDATE item_actions SET expires_at=1 WHERE id=?').run(action.id);
+  const runtime = await recoverItemActionRuntime(f.db, f.client); t.after(runtime.stop);
+  assert.equal(getItemAction(f.db, action.id).state, 'expired');
+  assert.deepEqual(getInventory(f.db, '1', '101'), []);
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM item_use_reservations').get().n, 0);
+});
+
 test('Blood Pact opens a V2 sacrifice select instead of requiring typed names', async (t) => {
   const f = fixture(t);
   for (let id = 1; id <= 3; id++) marry(f, id, '101', id, `Multiword Name ${id}`);
