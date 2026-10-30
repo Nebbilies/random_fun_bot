@@ -23,6 +23,12 @@ Deploy schema/deadline stamping, live-inventory checks, started-use reservations
 
 ## Verification record
 
-Implementation uses focused storage/schema, configuration, action/Fortune, passive consumer, mystery, and presentation tests with controlled clocks. Final full-suite/typecheck results are recorded in the delivery summary.
+Implementation uses focused storage/schema, configuration, action/Fortune, passive consumer, mystery, and presentation tests with controlled clocks.
+
+- Final `npm test`: 1,263 tests; 1,262 passed, 0 failed, 1 skipped.
+- `npm run typecheck:catalog`: passed.
+- `git diff --check`: passed.
+- Independent standards review: no documented-standard violations; three structural observations addressed.
+- Independent spec/correctness review: legacy duplicate-confirmation migration, acknowledgement ordering, and Binoculars recovery findings addressed with regression coverage.
 
 The portal presentation has automated browser coverage. No production database upgrade, live bot deployment, or real Discord interaction has been performed as part of this implementation. Those operational checks remain deployment steps.

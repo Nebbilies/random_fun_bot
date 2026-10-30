@@ -1,6 +1,6 @@
 # Item expiry design
 
-Status: design accepted for implementation; implemented on `feat/item-expiry` (verification in progress).
+Status: implemented and verified on `feat/item-expiry`. See [rollout notes](./item-expiry-rollout.md).
 
 ## Confirmed behavior
 
