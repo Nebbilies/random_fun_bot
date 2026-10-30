@@ -41,7 +41,7 @@ function fixture(t) {
     INSERT INTO item_actions(id,kind,guild_id,actor_id,channel_id,inventory_id,state,selections_json,created_at,expires_at)
       VALUES('action','counterfeit_crown','guild','owner','channel',901,'resolved','{}',1,2);
     INSERT INTO active_user_buffs(guild_id,user_id,buff_id,data_json) VALUES('guild','owner','buff','{}');
-    INSERT INTO user_inventory VALUES(901,'guild','owner','item',3,'date');
+    INSERT INTO user_inventory VALUES(901,'guild','owner','item',3,'date',172800001);
     INSERT INTO stage_characters(id,favourites) VALUES(1001,999);
     INSERT INTO stage_anime(id,fetched_at) VALUES(1002,'date');
     INSERT INTO stage_character_anime VALUES(1001,1002);

@@ -16,7 +16,7 @@ import { revealVaultReward, decideVaultReward, markVaultRewardDelivered } from '
 const scope = { vaultId: 'synthetic-overflow', guildId: '1', userId: '101', channelId: '10', messageId: '501', sourceMessageId: '100' };
 const now = 1_800_000_000_000;
 const row = db => db.prepare('SELECT * FROM vault_rewards').get();
-const inventory = db => getInventory(db, scope.guildId, scope.userId);
+const inventory = db => getInventory(db, scope.guildId, scope.userId, now);
 const counts = db => Object.fromEntries(db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'").all()
   .map(({ name }) => [name, db.prepare(`SELECT count(*) n FROM "${name}"`).get().n]));
 function fixture(t, kind = 'kept', acknowledged = false) {
@@ -25,8 +25,8 @@ function fixture(t, kind = 'kept', acknowledged = false) {
   let db = new DatabaseSync(path);
   initializeLegacyCatalog(db);
   db.exec("INSERT INTO characters(id,rank,favourites,name_full) VALUES(12,1,50,'Synthetic'); INSERT INTO character_identities VALUES(12,'Synthetic',NULL)");
-  if (kind !== 'kept') addItemToInventory(db, scope.guildId, scope.userId, 'double_or_nothing', 2);
-  while (inventory(db).length < getInventoryCapacity(db, scope.guildId, scope.userId)) addItemToInventory(db, scope.guildId, scope.userId, 'hourglass_of_haste');
+  if (kind !== 'kept') addItemToInventory(db, scope.guildId, scope.userId, 'double_or_nothing', 2, { now });
+  while (inventory(db).length < getInventoryCapacity(db, scope.guildId, scope.userId)) addItemToInventory(db, scope.guildId, scope.userId, 'hourglass_of_haste', undefined, { now });
   const item = getResolvedItemDefinition(db, scope.guildId, 'hourglass_of_haste');
   revealVaultReward(db, { ...scope, outcome: { tier: 'common', tierData: ITEM_TIERS.common, item }, now });
   if (kind !== 'kept') decideVaultReward(db, { ...scope, action: kind === 'won' ? 'gamble' : 'keep', now: now + 1, random: () => 0 });

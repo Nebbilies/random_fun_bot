@@ -25,6 +25,15 @@ test('built-in fallback is complete, immutable internally, and valid', () => {
   assert.equal(Object.isFrozen(GAME_CONFIG_DEFAULTS.items), true);
 });
 
+test('item lifetimes are whole days for all five tiers, independent of timer limits', () => {
+  assert.deepEqual(getGameConfig().itemExpiryDays, { common: 2, rare: 4, epic: 7, legendary: 14, '???': 30 });
+  for (const tier of ['common', 'rare', 'epic', 'legendary', '???']) {
+    const key = `itemExpiryDays.${tier}`;
+    for (const days of [1, 30, 365]) assert.equal(validateConfigValue(key, days), days);
+    for (const days of [0, 1.5, 366, '2']) assert.throws(() => validateConfigValue(key, days));
+  }
+});
+
 test('timer durations reject values that Node would execute immediately', () => {
   assert.throws(() => validateConfigValue('controls.lifetimeMs', 2_147_483_648));
   assert.equal(validateConfigValue('controls.lifetimeMs', 2_147_483_647), 2_147_483_647);
@@ -48,6 +57,27 @@ test('global/guild precedence, origins, partial saves and resets', (t) => {
   assert.deepEqual(reset.overrides, {});
   save(db, 'rolls', {}, { reset: true });
   assert.equal(getGameConfig(db, '123').rolls.maxRolls, 7);
+});
+
+test('item lifetime saves inherit and reset atomically without accepting stale revisions', t => {
+  const db = memory(t);
+  save(db, 'itemExpiryDays', { 'itemExpiryDays.???': 365, 'itemExpiryDays.common': 1 });
+  const inherited = getConfigView(db, '123');
+  assert.equal(inherited.effective.itemExpiryDays['???'], 365);
+  assert.equal(inherited.sources['itemExpiryDays.???'], 'global');
+  save(db, 'itemExpiryDays', { 'itemExpiryDays.???': 30 }, { guildId: '123' });
+  assert.equal(getGameConfig(db, '123').itemExpiryDays['???'], 30);
+  assert.equal(getGameConfig(db, '456').itemExpiryDays['???'], 365);
+  assert.throws(() => saveConfigSection(db, { section: 'itemExpiryDays', values: { 'itemExpiryDays.rare': 2 }, expectedRevision: inherited.revision }), { code: 'CONFIG_STALE' });
+  const revision = getConfigView(db).revision;
+  assert.throws(() => save(db, 'itemExpiryDays', { 'itemExpiryDays.epic': 10, 'itemExpiryDays.rare': 366 }), { code: 'CONFIG_VALIDATION' });
+  assert.equal(getConfigView(db).revision, revision);
+  assert.equal(getGameConfig(db).itemExpiryDays.epic, 7);
+  const reset = save(db, 'itemExpiryDays', {}, { guildId: '123', reset: ['itemExpiryDays.???'] });
+  assert.equal(reset.effective.itemExpiryDays['???'], 365);
+  assert.equal(reset.sources['itemExpiryDays.???'], 'global');
+  save(db, 'itemExpiryDays', {}, { reset: true });
+  assert.equal(getGameConfig(db, '123').itemExpiryDays['???'], 30);
 });
 
 test('optimistic revision rejects stale edits across sections and scopes', (t) => {

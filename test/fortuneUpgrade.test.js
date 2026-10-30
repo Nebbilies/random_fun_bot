@@ -48,13 +48,17 @@ for (const firstOpen of [openCatalog, openFinalCatalog]) {
     let db = new DatabaseSync(path);
     try {
       previous(db);
-      db.exec(`INSERT INTO user_inventory VALUES(42,'g','u','old-item',3,'old-date');
+      db.exec(`INSERT INTO user_inventory VALUES(42,'g','u','hourglass_of_haste',3,'old-date');
         INSERT INTO catalog_meta VALUES('keep','original');`);
       const captured = '{"rules":{"old":true},"rewardPools":{"epic":["old-item"]}}';
       db.prepare(`INSERT INTO vault_sessions(vault_id,guild_id,user_id,channel_id,remaining,captured_json,deadline,created_at)
         VALUES('old','g','u','c',0,?,100,0)`).run(captured);
       const tables = db.prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name").all();
-      const rows = connection => tables.map(({ name }) => connection.prepare(`SELECT * FROM "${name}"`).all());
+      const rows = connection => tables.map(({ name }) => connection.prepare(`SELECT * FROM "${name}"`).all().map(row => {
+        if (name !== 'user_inventory') return row;
+        const { expires_at, ...legacy } = row;
+        return legacy;
+      }));
       const original = rows(db);
       db.close(); db = firstOpen(path);
       assert.equal(validateFinalCatalogSchema(db), true);
