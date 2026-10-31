@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openCatalog } from '../lib/catalogDb.js';
+import { createFinalCatalog, openCatalog } from '../lib/catalogDb.js';
 import { claimRoll, getClaimStatus, getMysterySession } from '../lib/characterRolls.js';
 import { MYSTERY_ROSTER, reserveMysteryAwareRoll, setMysteryEventChannel } from '../lib/mysteryCoordinator.js';
 import { onRollReaction } from '../lib/characterRollRuntime.js';
@@ -62,15 +62,18 @@ function channel(id) {
   };
 }
 
-function fixture(t, eventDraw = 0, slotDraw = 0) {
+function fixture(t, eventDraw = 0, slotDraw = 0, final = false) {
   const dir = mkdtempSync(join(tmpdir(), 'mystery-runtime-'));
-  const db = openCatalog(join(dir, 'catalog.sqlite'));
+  const db = (final ? createFinalCatalog : openCatalog)(join(dir, 'catalog.sqlite'));
   t.after(() => { cancelMysteryRuntime(db); db.close(); rmSync(dir, { recursive: true, force: true }); });
-  db.exec(`INSERT INTO characters (id, rank, favourites, name_full, gender, anime_titles, image_url)
-    VALUES (1, 1, 1000, 'Hidden Prize', 'Female', '["Example Anime"]', 'https://example.com/prize.png')`);
+  const characterId = final ? '12345678-1234-4123-8123-000000000001' : 1;
+  if (final) db.prepare("INSERT INTO character_identities(id,creation_method) VALUES (?,'manual')").run(characterId);
+  db.prepare(`INSERT INTO characters (id, rank, favourites, name_full, gender, anime_titles, image_url${final ? ', likes_source, tie_order' : ''})
+    VALUES (?, 1, 1000, 'Hidden Prize', 'Female', '["Example Anime"]', 'https://example.com/prize.png'${final ? ", 'generated', 1" : ''})`).run(characterId);
   db.exec(`INSERT INTO anime (id, title_english, genres, tags, season_year, format, is_adult, fetched_at)
     VALUES (10, 'Example Anime', '["Adventure"]', '[{"name":"Space","rank":90}]', 2020, 'TV', 0, 'now');
-    INSERT INTO character_anime (character_id, anime_id) VALUES (1, 10)`);
+    `);
+  db.prepare('INSERT INTO character_anime (character_id, anime_id) VALUES (?, 10)').run(characterId);
   const origin = channel('10');
   const event = channel('20');
   setMysteryEventChannel(db, '1', '20');
@@ -245,3 +248,59 @@ test('corrupt saved paid Chit linkage blocks recovery instead of reactivating', 
   assert.match(report.blockers[0].reason,/provenance/);
   assert.deepEqual(getInventory(db,'1','101',7000),before);
 });
+
+for (const eventId of ['doors', 'clue_reveal']) for (const compensated of [false, true]) {
+  test(`${eventId} winner mentions respect reveal ordering: Chit=${compensated}`, async t => {
+    const { db, event, time, start } = fixture(t, eventId);
+    if (compensated) {
+      db.exec(`CREATE TABLE IF NOT EXISTS reward_sources(reward_id TEXT PRIMARY KEY REFERENCES vault_rewards(vault_id),
+        source_kind TEXT NOT NULL,source_id TEXT NOT NULL,metadata_json TEXT NOT NULL,UNIQUE(source_kind,source_id))`);
+      addItemToInventory(db, '1', '101', 'consolation_chit', 1, { now: 1000 });
+      db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1', '101', 2);
+    }
+    await start(); await time.advanceTo(6100);
+    if (eventId === 'doors') await onMysteryButton(db, doorInteraction(event.sent[1], '1'));
+    else await onMysteryAnswer(db, { guildId: '1', channelId: '20', author: { id: '101' },
+      content: JSON.parse(getMysterySession(db, 1).stateJson).title });
+    const pings = () => event.sent.filter(m => m.payload.allowedMentions?.users?.includes('101'));
+    assert.equal(pings().length, compensated ? 0 : 1, 'all intentional pre-reveal winner mentions');
+    assert.match(event.sent.at(-1).payload.content, eventId === 'doors' ? /has chosen/ : /won! Revealing/);
+    await time.advanceTo(getMysterySession(db, 1).nextAt);
+    const saved = JSON.parse(getMysterySession(db, 1).stateJson).runtime;
+    const prizeIndex = event.sent.findIndex(m => m.id === saved.prizeMessageId);
+    assert.ok(prizeIndex >= 0);
+    assert.equal(pings().length, 1, 'normal announcement or final Chit reward still pings');
+    if (compensated) {
+      assert.ok(event.sent.indexOf(pings()[0]) > prizeIndex);
+      assert.ok(pings()[0].payload.nonce);
+    }
+  });
+}
+
+for (const terminal of [false, true]) for (const ack of [undefined, false, true, null, 0, 1, 'true', {}, []]) {
+  for (const messageId of [undefined, '123', '', 123, null]) {
+    test(`Chit acknowledgement integrity: terminal=${terminal} ack=${JSON.stringify(ack)} message=${JSON.stringify(messageId)}`, async t => {
+      const { db, event, time, start } = fixture(t, 'doors', 0, true);
+      addItemToInventory(db, '1', '101', 'consolation_chit', 1, { now: 1000 });
+      db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1', '101', 2);
+      await start(); await time.advanceTo(6100);
+      await onMysteryButton(db, doorInteraction(event.sent[1], '1'));
+      cancelMysteryRuntime(db, { cancelPaidSessions: false });
+      const state = JSON.parse(getMysterySession(db, 1).stateJson);
+      if (ack !== undefined) state.runtime.consolationRevealAcknowledged = ack;
+      if (messageId !== undefined) state.runtime.prizeMessageId = messageId;
+      db.prepare('UPDATE mystery_sessions SET state_json=? WHERE id=1').run(JSON.stringify(state));
+      if (terminal) db.exec("UPDATE mystery_sessions SET state='completed',outcome='consolation',resolved_at=9100,next_at=NULL WHERE id=1");
+      const before = db.prepare('SELECT * FROM mystery_sessions').all();
+      const valid = (ack === undefined || typeof ack === 'boolean')
+        && (messageId === undefined || messageId === '123') && (ack !== true || messageId === '123');
+      const report = inspectMysteryRuntime(db);
+      assert.equal(report.safe, valid, JSON.stringify(report.blockers));
+      assert.equal(report.recoverable.length, valid && !(terminal && ack === true) ? 1 : 0);
+      const { inspectCatalogRuntimeRestart } = await import('../lib/catalogRuntimeRecovery.js');
+      const preflight = inspectCatalogRuntimeRestart(db);
+      assert.equal(preflight.ready, valid, JSON.stringify(preflight.blockers));
+      assert.deepEqual(db.prepare('SELECT * FROM mystery_sessions').all(), before);
+    });
+  }
+}
