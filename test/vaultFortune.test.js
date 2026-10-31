@@ -237,7 +237,9 @@ test('Recast gates delivery, consumes only on private presentation, persists alt
     const reward = revealVaultReward(db, { ...scope, outcome, now: 200 });
     assert.equal(reward.state, 'recast');
     const decision = getRecast(db, session.vaultId);
-    assert.equal(decision.alternatives.length, 2);
+    assert.equal(decision.alternatives.length, 3);
+    assert.equal(new Set(decision.alternatives.map(item => item.id)).size, 3);
+    assert.ok(decision.alternatives.every(item => item.id !== outcome.item.id));
     assert.equal(getInventory(db, 'guild', 'owner')[0].charges, 2);
     assert.equal(presentRecast(db, { ...scope, now: 300 }).status, 'presented');
     const deadline = getRecast(db, session.vaultId).deadline;

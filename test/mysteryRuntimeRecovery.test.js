@@ -183,3 +183,65 @@ test('overdue countdown cannot reset the original claim window', async (t) => {
   await time.advanceTo(100000);
   assert.equal(getMysterySession(db, 1).outcome, 'expired');
 });
+
+test('Chit reveals before intentionally pinged direct reward and recovers terminal delivery', async (t) => {
+  const {db,client,event,time,start}=fixture(t);
+  db.exec(`CREATE TABLE IF NOT EXISTS reward_sources(reward_id TEXT PRIMARY KEY REFERENCES vault_rewards(vault_id),
+    source_kind TEXT NOT NULL,source_id TEXT NOT NULL,metadata_json TEXT NOT NULL,UNIQUE(source_kind,source_id))`);
+  addItemToInventory(db,'1','101','consolation_chit',1,{now:1000});
+  db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1','101',2);
+  await start(); await time.advanceTo(6100);
+  await onMysteryButton(db,doorInteraction(event.sent[1],'1'));
+  assert.equal(JSON.parse(getMysterySession(db,1).stateJson).runtime.consolation.status,'activated');
+  const {recoverVaultRewards}=await import('../lib/vaultRuntime.js');
+  await recoverVaultRewards(db,client,{now:time.now});
+  assert.equal(event.sent.some(m=>m.payload.nonce && m.payload.allowedMentions?.users?.includes('101')),false);
+  await time.advanceTo(9100);
+  assert.equal(getMysterySession(db,1).outcome,'consolation');
+  const saved=JSON.parse(getMysterySession(db,1).stateJson).runtime;
+  assert.equal(saved.consolationRevealAcknowledged,true);
+  const prize=event.sent.findIndex(m=>m.id===saved.prizeMessageId);
+  const reward=event.sent.findIndex(m=>m.payload.nonce && m.payload.allowedMentions?.users?.includes('101'));
+  assert.ok(reward>prize);
+  assert.deepEqual(event.sent[prize].reactions,[]);
+  const count=event.sent.length;
+  await recoverMysteryRuntime({db,client,...time});
+  await recoverVaultRewards(db,client,{now:time.now});
+  assert.equal(event.sent.length,count);
+});
+
+test('terminal Chit without reveal acknowledgement recovers reveal before reward without reroll', async (t) => {
+  const {db,client,event,time,start}=fixture(t);
+  db.exec(`CREATE TABLE IF NOT EXISTS reward_sources(reward_id TEXT PRIMARY KEY REFERENCES vault_rewards(vault_id),
+    source_kind TEXT NOT NULL,source_id TEXT NOT NULL,metadata_json TEXT NOT NULL,UNIQUE(source_kind,source_id))`);
+  addItemToInventory(db,'1','101','consolation_chit',1,{now:1000});
+  db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1','101',2);
+  await start(); await time.advanceTo(6100);
+  await onMysteryButton(db,doorInteraction(event.sent[1],'1'));
+  cancelMysteryRuntime(db,{cancelPaidSessions:false});
+  db.prepare("UPDATE mystery_sessions SET state='completed',outcome='consolation',resolved_at=9100,next_at=NULL WHERE id=1").run();
+  const before=getInventory(db,'1','101',7000);
+  assert.equal(inspectMysteryRuntime(db).recoverable.length,1);
+  assert.equal((await recoverMysteryRuntime({db,client,...time,random:()=>{throw new Error('no reroll');}})).safe,true);
+  assert.equal(JSON.parse(getMysterySession(db,1).stateJson).runtime.consolationRevealAcknowledged,true);
+  assert.deepEqual(getInventory(db,'1','101',7000),before);
+  const state=JSON.parse(getMysterySession(db,1).stateJson);
+  assert.ok(event.sent.findIndex(m=>m.payload.nonce && m.payload.allowedMentions?.users?.includes('101'))>event.sent.findIndex(m=>m.id===state.runtime.prizeMessageId));
+});
+
+test('corrupt saved paid Chit linkage blocks recovery instead of reactivating', async (t) => {
+  const {db,event,time,start}=fixture(t);
+  db.exec(`CREATE TABLE IF NOT EXISTS reward_sources(reward_id TEXT PRIMARY KEY REFERENCES vault_rewards(vault_id),
+    source_kind TEXT NOT NULL,source_id TEXT NOT NULL,metadata_json TEXT NOT NULL,UNIQUE(source_kind,source_id))`);
+  addItemToInventory(db,'1','101','consolation_chit',2,{now:1000});
+  db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1','101',2);
+  await start(); await time.advanceTo(6100);
+  await onMysteryButton(db,doorInteraction(event.sent[1],'1'));
+  cancelMysteryRuntime(db,{cancelPaidSessions:false});
+  const before=getInventory(db,'1','101',7000);
+  db.prepare("UPDATE reward_sources SET source_kind='unknown'").run();
+  const report=inspectMysteryRuntime(db);
+  assert.equal(report.safe,false);
+  assert.match(report.blockers[0].reason,/provenance/);
+  assert.deepEqual(getInventory(db,'1','101',7000),before);
+});

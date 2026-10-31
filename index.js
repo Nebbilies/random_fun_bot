@@ -73,6 +73,8 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
     await recoverPendingRollDeliveries(yoshiko.catalogDb, yoshiko.client);
     await recoverForcedEscapes(yoshiko.catalogDb, yoshiko.client);
     await recoverOpenEscapes(yoshiko.catalogDb, yoshiko.client);
+    // Mystery recovery acknowledges the character reveal before direct Chit
+    // rewards may publish; vault recovery also enforces that durable gate.
     await recoverMysteryRuntime({ db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker });
     await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
     await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
@@ -87,6 +89,7 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
             await recoverPendingRollDeliveries(yoshiko.catalogDb, yoshiko.client);
             await recoverForcedEscapes(yoshiko.catalogDb, yoshiko.client);
             await recoverOpenEscapes(yoshiko.catalogDb, yoshiko.client);
+            // Include terminal mysteries with an outstanding compensated reveal.
             await recoverMysteryRuntime({ db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker });
             await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
             await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);

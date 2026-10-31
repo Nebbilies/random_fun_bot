@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { ITEM_ACTION_CONFIG } from '../lib/itemActionConfig.js';
 import { initItemStorage, addItemToInventory, getInventory, getInventoryCapacity, removeItemFromInventory } from '../lib/itemStorage.js';
 import { getItemsInTier, ITEM_TIERS } from '../lib/itemRoster.js';
-import { initVaultRewards, revealVaultReward, decideVaultReward, getVaultReward, reconcileVaultRewards } from '../lib/vaultRewards.js';
+import { initVaultRewards, createDirectItemRewardInTransaction, revealVaultReward, decideVaultReward, getVaultReward, reconcileVaultRewards } from '../lib/vaultRewards.js';
 
 function fixture(path = ':memory:') {
   const db = new DatabaseSync(path);
@@ -159,4 +159,24 @@ test('configured replacement tier partitions choose current roster members with 
     preceding += weight;
     db.close();
   }
+});
+
+test('direct reward is source-idempotent and bypasses gambling and overflow modifiers', () => {
+  const db = fixture();
+  db.exec(`CREATE TABLE reward_sources(reward_id TEXT PRIMARY KEY REFERENCES vault_rewards(vault_id),
+    source_kind TEXT NOT NULL,source_id TEXT NOT NULL,metadata_json TEXT NOT NULL,UNIQUE(source_kind,source_id))`);
+  addItemToInventory(db, scope.guildId, scope.userId, 'double_or_nothing');
+  fill(db);
+  const request = {rewardId:'chit-1',...scope,sourceKind:'mystery_consolation',sourceId:'1',
+    metadata:{version:1},outcome:{tier:'common',tierData:ITEM_TIERS.common,item:getItemsInTier('common')[0]},now:100};
+  db.exec('BEGIN IMMEDIATE');
+  const first = createDirectItemRewardInTransaction(db,request);
+  assert.equal(first.state,'overflow');
+  assert.deepEqual(createDirectItemRewardInTransaction(db,request),first);
+  db.exec('COMMIT');
+  db.prepare('UPDATE vault_rewards SET message_id=? WHERE vault_id=?').run(scope.messageId,'chit-1');
+  assert.equal(decideVaultReward(db,{vaultId:'chit-1',...scope,action:'gamble',now:101}).status,'invalid');
+  assert.equal(decideVaultReward(db,{vaultId:'chit-1',...scope,action:'decline',now:101}).reward.state,'declined');
+  assert.ok(getInventory(db,scope.guildId,scope.userId,101).some(i=>i.item_id==='double_or_nothing'));
+  db.close();
 });
