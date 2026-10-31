@@ -140,7 +140,7 @@ export async function run(ctx) {
         const current = getMarriage(ctx.yoshiko.catalogDb, guildId, selected.characterId);
         const canDivorce = stillAdmin && current?.id === selected.id && current.ownerId === targetId;
         const divorced = canDivorce && divorceCharacter(ctx.yoshiko.catalogDb,
-          guildId, selected.characterId, targetId, selected.id);
+          guildId, selected.characterId, targetId, selected.id, Date.now());
         finished = true;
         await reply.edit({ components: resultComponents(divorced
           ? `Divorced **${escapeMarkdown(selected.name_full)}**.`
