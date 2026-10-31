@@ -30,6 +30,16 @@ function fixture(t, { failSend = false, final = false } = {}) {
   return { db, sent, feedback, edits, message, interaction };
 }
 
+test('manual Consolation Chit explains its passive behavior without spending a charge', (t) => {
+  const x = fixture(t);
+  const source = addItemToInventory(x.db, '1', '101', 'love_letter', 2).item;
+  x.db.prepare("UPDATE user_inventory SET item_id='consolation_chit' WHERE id=?").run(source.id);
+  const result = executeItemUseById(x.db, '1', '101', source.id);
+  assert.equal(result.success, false);
+  assert.match(result.message, /automatic|passive/i);
+  assert.equal(getInventory(x.db, '1', '101')[0].charges, 2);
+});
+
 for (const kind of ['master_key', 'pickpockets_hook']) test(`${kind}: committed character delivery is durable and does not leak during anticipation`, async (t) => {
   const x = fixture(t);
   x.db.exec("INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,10,20,'Hidden Character'); INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES('1',1,'202','2026')");

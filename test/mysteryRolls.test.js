@@ -4,9 +4,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openCatalog } from '../lib/catalogDb.js';
+import { addItemToInventory, getInventory } from '../lib/itemStorage.js';
+import { getVaultReward } from '../lib/vaultRewards.js';
+import { assertUnboundLegacyVault } from '../lib/legacyVaultAbandonment.js';
 import {
   advanceMysterySession, cancelActiveMysteries, claimRoll, cleanupRolls, endMysterySession,
-  failRoll, getMysterySession, getRollStatus, openMysteryClaim,
+  failRoll, getMysterySession, getRollStatus, getClaimAvailability, openMysteryClaim,
   publishMysteryIntro, publishRoll, recoverRolls, reserveRoll,
 } from '../lib/characterRolls.js';
 
@@ -135,6 +138,7 @@ test('winner-only claim is atomic and ends the event', (t) => {
   assert.equal(won.status, 'advanced');
   assert.deepEqual(JSON.parse(won.session.stateJson).runtime, {
     version: 1, phase: 'countdown', resolved: { type: 'winner', winnerId: '102' },
+    consolation: { version: 1, status: 'claim_available' },
   });
   assert.equal(openMysteryClaim(db, { sessionId: picked.sessionId,
     messageId: '901', now: start + 11_999 }).status, 'early');
@@ -225,3 +229,109 @@ test('cleanup removes an unpublished terminal card but retains outcome history',
 });
 
 const HOUR = 3_600_000;
+
+for (const token of ['crown_of_the_sovereign', 'pinata_claim_token', 'double_date']) {
+  test(`claim availability reads ${token} without spending it`, (t) => {
+    const db = fixture(t);
+    const period = Math.floor((start + 7 * 3600000) / (3 * 3600000));
+    db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1', '102', period);
+    assert.equal(getClaimAvailability(db, '1', '102', start).canClaim, false);
+    db.prepare(`INSERT INTO active_user_buffs (guild_id,user_id,buff_id,remaining_rolls) VALUES (?,?,?,?)`)
+      .run('1','102',token,1);
+    const before = db.prepare('SELECT * FROM active_user_buffs').all();
+    assert.equal(getClaimAvailability(db, '1', '102', start).canClaim, true);
+    assert.deepEqual(db.prepare('SELECT * FROM active_user_buffs').all(), before);
+    addItemToInventory(db,'1','102','consolation_chit',1,{now:start});
+    const picked = mystery(db);
+    const running = startEvent(db, picked);
+    advanceMysterySession(db, {sessionId:picked.sessionId,expectedState:'running',
+      expectedStateJson:running.stateJson,state:'countdown',winnerId:'102',now:start+7000});
+    assert.equal(openMysteryClaim(db,{sessionId:picked.sessionId,messageId:'901',now:start+12000}).status,'open');
+    assert.deepEqual(db.prepare('SELECT * FROM active_user_buffs').all(),before);
+    assert.ok(getInventory(db,'1','102',start+12000).some(item=>item.item_id==='consolation_chit'));
+    assert.equal(claimRoll(db,{guildId:'1',channelId:'20',messageId:'901',userId:'102',now:start+12001}).status,'married');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM active_user_buffs').get().n,0);
+  });
+}
+
+test('genuine win spends Chit at resolution and never reopens a compensated claim', (t) => {
+  const db = fixture(t);
+  db.exec(`CREATE TABLE IF NOT EXISTS reward_sources(reward_id TEXT PRIMARY KEY REFERENCES vault_rewards(vault_id),
+    source_kind TEXT NOT NULL,source_id TEXT NOT NULL,metadata_json TEXT NOT NULL,UNIQUE(source_kind,source_id))`);
+  addItemToInventory(db,'1','102','consolation_chit',1,{now:start});
+  db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1','102',Math.floor((start+7*3600000)/(3*3600000)));
+  const picked=mystery(db), running=startEvent(db,picked);
+  const request={sessionId:picked.sessionId,expectedState:'running',expectedStateJson:running.stateJson,
+    state:'countdown',winnerId:'102',now:start+7000,random:()=>0};
+  const won=advanceMysterySession(db,request);
+  const decision=JSON.parse(won.session.stateJson).runtime.consolation;
+  assert.equal(decision.status,'activated');
+  assert.equal(getVaultReward(db,decision.rewardId).state,'delivered');
+  db.exec(`INSERT INTO character_rolls(id,guild_id,channel_id,command_message_id,character_id,character_name,state)
+    VALUES(16994,'1','10','999991',0,'Vault','vault')`);
+  assert.doesNotThrow(() => assertUnboundLegacyVault(db, db.prepare('SELECT * FROM character_rolls WHERE id=16994').get()));
+  assert.equal(getInventory(db,'1','102',start+7000).length,1);
+  assert.equal(advanceMysterySession(db,request).status,'stale');
+  db.prepare('DELETE FROM claim_allowances').run();
+  assert.deepEqual(openMysteryClaim(db,{sessionId:picked.sessionId,messageId:'901',now:start+12000}),
+    {status:'unclaimable',reason:'consolation'});
+  assert.equal(getMysterySession(db,picked.sessionId).state,'completed');
+});
+
+test('Chit SQL failure rolls win, debit, puzzle history and reward back together', (t) => {
+  const db=fixture(t);
+  addItemToInventory(db,'1','102','consolation_chit',1,{now:start});
+  db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1','102',Math.floor((start+7*3600000)/(3*3600000)));
+  const picked=mystery(db), running=startEvent(db,picked);
+  db.exec(`CREATE TABLE IF NOT EXISTS reward_sources(reward_id TEXT PRIMARY KEY REFERENCES vault_rewards(vault_id),
+    source_kind TEXT NOT NULL,source_id TEXT NOT NULL,metadata_json TEXT NOT NULL,UNIQUE(source_kind,source_id))`);
+  db.exec(`CREATE TRIGGER reject_chit_reward BEFORE INSERT ON vault_rewards BEGIN SELECT RAISE(ABORT,'injected'); END`);
+  assert.throws(()=>advanceMysterySession(db,{sessionId:picked.sessionId,expectedState:'running',
+    expectedStateJson:running.stateJson,state:'countdown',winnerId:'102',puzzleId:'test-puzzle',now:start+7000,random:()=>0}),/injected/);
+  assert.deepEqual(getMysterySession(db,picked.sessionId),running);
+  assert.equal(getInventory(db,'1','102',start+7000)[0].item_id,'consolation_chit');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM treasure_puzzle_wins').get().n,0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vault_rewards').get().n,0);
+});
+
+for (const held of [false,true]) test(`expired or held Chit never spends: held=${held}`, (t) => {
+  const db=fixture(t);
+  const item=addItemToInventory(db,'1','102','consolation_chit',1,{now:start}).item;
+  if (held) db.prepare('INSERT INTO item_action_costs(action_id,inventory_id,snapshot_json) VALUES(?,?,?)').run('hold',item.id,'{}');
+  else db.prepare('UPDATE user_inventory SET expires_at=? WHERE id=?').run(start+6000,item.id);
+  db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1','102',Math.floor((start+7*3600000)/(3*3600000)));
+  const picked=mystery(db), running=startEvent(db,picked);
+  const won=advanceMysterySession(db,{sessionId:picked.sessionId,expectedState:'running',expectedStateJson:running.stateJson,
+    state:'countdown',winnerId:'102',now:start+7000,random:()=>{throw new Error('no draw');}});
+  assert.equal(JSON.parse(won.session.stateJson).runtime.consolation.status,'no_chit');
+});
+
+test('availability ignores expired/future/exhausted tokens without pruning', (t) => {
+  const db=fixture(t);
+  db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1','102',Math.floor((start+7*3600000)/(3*3600000)));
+  const insert=db.prepare('INSERT INTO active_user_buffs(guild_id,user_id,buff_id,expires_at,starts_at,remaining_rolls) VALUES(?,?,?,?,?,?)');
+  insert.run('1','102','pinata_claim_token',start,null,1);
+  insert.run('1','102','crown_of_the_sovereign',null,start+1,1);
+  insert.run('1','102','pinata_claim_token',null,null,0);
+  insert.run('1','102','double_date',start,null,1);
+  const before=db.prepare('SELECT * FROM active_user_buffs').all();
+  assert.equal(getClaimAvailability(db,'1','102',start).canClaim,false);
+  assert.deepEqual(db.prepare('SELECT * FROM active_user_buffs').all(),before);
+  db.prepare('INSERT INTO claim_events VALUES (?,?,?)').run('1','102',start-5400000);
+  db.prepare('INSERT INTO active_user_buffs(guild_id,user_id,buff_id,data_json) VALUES(?,?,?,?)')
+    .run('1','102','engagement_ring',JSON.stringify({cooldownMultiplier:0.5}));
+  assert.equal(getClaimAvailability(db,'1','102',start).canClaim,true);
+});
+
+test('losing Doors with a roller winner ID never activates or evaluates Chit', (t) => {
+  const db=fixture(t);
+  addItemToInventory(db,'1','101','consolation_chit',1,{now:start});
+  db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1','101',Math.floor((start+7*3600000)/(3*3600000)));
+  const picked=mystery(db), running=startEvent(db,picked);
+  const state=JSON.parse(running.stateJson);
+  state.runtime={version:1,resolved:{type:'no_winner',winnerId:null}};
+  const result=advanceMysterySession(db,{sessionId:picked.sessionId,expectedState:'running',expectedStateJson:running.stateJson,
+    state:'countdown',stateJson:state,winnerId:'101',now:start+7000,random:()=>{throw new Error('no draw');}});
+  assert.equal(JSON.parse(result.session.stateJson).runtime.consolation,undefined);
+  assert.equal(getInventory(db,'1','101',start+7000)[0].item_id,'consolation_chit');
+});

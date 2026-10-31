@@ -12,7 +12,7 @@ Prepare durable, exclusive per-server character marriage before the roll flow ex
 - A marriage remains when its owner leaves the server. Only the owner or a server Administrator may divorce. An Administrator may target another owner with `!divorce @user <name>` or `!divorce <user ID> <name>`; without a target, the command searches the caller's marriages.
 - `!divorce <name>` searches the targeted owner's marriages by name. Ambiguous matches use a picker that identifies each character. Every divorce requires a confirmation button. Confirmation checks the marriage and permission again so a stale prompt cannot end a different ownership.
 - `!mm` and `!mymarry` are aliases listing marriages newest first, one character name per row. `!mmr` lists the same marriages by current catalog rank, lowest rank number first, as `#rank - character` per row. Each accepts an optional mentioned user to view; any server member may view any member's list. Long lists use pages.
-- Only current marriages are stored. Divorce removes the active association; no marriage history is retained. A divorced character can be married again when the future roll flow offers it.
+- Current marriages remain the ownership authority. Phase 2 supersedes the original history-free design: retain each former owner's latest loss per guild and stable character identity from deployment onward, without reconstructing old losses or retaining a full event ledger. Divorce removes the active association; Chronicle of Return may later create fresh ownership if its eligibility checks pass.
 
 ## Catalog decision
 
@@ -32,7 +32,7 @@ At design time, the existing local database is version 1 and contains 15,000 pub
 | Exclusivity | Database key on server and AniList character ID | A check in command code alone could lose a race. |
 | Catalog size | Grow the published set and recompute ranks | Keeping only the top 15,000 would leave some married characters without a current rank. |
 | Divorce lookup | Search the owner's marriages by name, then pick if ambiguous | Rank alone changes after imports; ID alone is hard to remember. |
-| Marriage history | Store current association and marriage time | An event log has no requested use in this phase. |
+| Marriage history | Current association plus post-Phase-2 latest-loss records | Chronicle eligibility needs a former owner's latest loss, not a complete event log or restored marriage metadata. |
 
 ## Data and command boundaries
 
@@ -52,4 +52,4 @@ At design time, the existing local database is version 1 and contains 15,000 pub
 
 ## Deferred
 
-Rolls, reaction or button acquisition, trade, battles, and permanent marriage history. The roll design will decide who may interact with a roll and how long its marry action stays open.
+The original design deferred rolls, reaction or button acquisition, trade, battles, and permanent marriage history. Later features implement rolls/trade and Phase 2 adds bounded latest-loss records, not full marriage history. The roll design will decide who may interact with a roll and how long its marry action stays open.

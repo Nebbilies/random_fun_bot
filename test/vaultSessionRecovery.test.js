@@ -224,3 +224,42 @@ test('transient fetch errors never replace a live vault or reset its timeout; de
   await onVaultInteraction(f.db, click(started.vaultId, started.message), { now: () => 6000 });
   assert.equal(getVaultReward(f.db, started.vaultId), null);
 });
+
+for (const sourceKind of ['mystery_consolation', 'unknown']) test(`cross-source vault ID collision fails before reconciliation: ${sourceKind}`, async t => {
+  const f = fixture(t), d = discord();
+  const reserved = reservePaidVaultSession(f.db, request({ vaultId: 'injected-id' }));
+  const unrelated = reservePaidVaultSession(f.db, request({ vaultId: 'unrelated', commandMessageId: 'other', now: 0, timeoutMs: 1 }));
+  f.db.prepare(`INSERT INTO vault_rewards(vault_id,guild_id,user_id,channel_id,original_json,state,created_at)
+    VALUES(?,?,?,?,?,'delivered',?)`).run(reserved.vaultId, reserved.guildId, reserved.rollerId, reserved.channelId, JSON.stringify(outcome()), 1000);
+  f.db.prepare('INSERT INTO reward_sources VALUES(?,?,?,?)').run(reserved.vaultId, sourceKind, '1', '{"version":1}');
+  const before = f.db.prepare('SELECT * FROM vault_sessions ORDER BY vault_id').all();
+  assert.throws(() => inspectVaultSessions(f.db, { now: 100000 }), /source.*collision/i);
+  await assert.rejects(recoverVaultSessions(f.db, d.client, { now: () => 100000 }), /source.*collision/i);
+  assert.deepEqual(f.db.prepare('SELECT * FROM vault_sessions ORDER BY vault_id').all(), before);
+  assert.equal(getVaultSession(f.db, unrelated.vaultId).state, 'unopened');
+  assert.equal(d.channel.sent, 0);
+});
+
+test('direct reward creation rejects a real vault session ID before any writes, including idempotent retry', async t => {
+  const f = fixture(t);
+  const { createDirectItemRewardInTransaction } = await import('../lib/vaultRewards.js');
+  const request = { rewardId: 'injected-id', guildId: '10001', userId: 'roller', channelId: 'channel',
+    sourceKind: 'mystery_consolation', sourceId: '1', metadata: { version: 1 }, outcome: outcome(), now: 1000 };
+  const snapshot = () => ['vault_sessions', 'vault_rewards', 'reward_sources', 'user_inventory'].map(table =>
+    f.db.prepare(`SELECT * FROM ${table}`).all());
+  const rejectWithoutMutation = () => {
+    const before = snapshot();
+    f.db.exec('BEGIN IMMEDIATE');
+    try {
+      assert.throws(() => createDirectItemRewardInTransaction(f.db, request), /source.*collision/i);
+      assert.deepEqual(snapshot(), before);
+    } finally { f.db.exec('ROLLBACK'); }
+  };
+  reservePaidVaultSession(f.db, { ...request, rollerId: request.userId, vaultId: request.rewardId });
+  rejectWithoutMutation();
+  f.db.exec('DELETE FROM vault_sessions; BEGIN IMMEDIATE');
+  createDirectItemRewardInTransaction(f.db, request);
+  f.db.exec('COMMIT');
+  reservePaidVaultSession(f.db, { ...request, rollerId: request.userId, vaultId: request.rewardId });
+  rejectWithoutMutation();
+});

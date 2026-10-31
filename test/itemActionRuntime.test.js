@@ -80,6 +80,61 @@ test('reconciliation releases timed-out confirming reservations without reviving
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM item_use_reservations').get().n, 0);
 });
 
+test('Chronicle uses a dedicated stable-identity former companion picker and rejects forged controls', async (t) => {
+  const f = fixture(t);
+  f.db.exec(`CREATE TABLE IF NOT EXISTS character_ownership_losses (
+    guild_id TEXT NOT NULL, former_owner_id TEXT NOT NULL, character_id INTEGER NOT NULL,
+    lost_at INTEGER NOT NULL, PRIMARY KEY(guild_id,former_owner_id,character_id));
+    INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,99999,0,'Former companion');`);
+  f.db.prepare('INSERT INTO character_ownership_losses VALUES(?,?,?,?)').run('1', '101', 1, Date.now());
+  const source = f.grant('chaos_exchange');
+  f.db.prepare("UPDATE user_inventory SET item_id='chronicle_of_return' WHERE id=?").run(source);
+  const action = await startItemAction({ db: f.db, message: f.message, inventoryId: source });
+  const menu = menus(f.sent[0])[0];
+  assert.ok(menu.custom_id.endsWith(':return-character'));
+  assert.equal(menu.options[0].value, '1');
+  await onItemActionInteraction(f.db, f.click(menu.custom_id, f.sent[0], '202', ['1']));
+  assert.equal(getItemAction(f.db, action.id).selections.returnTarget, undefined);
+  await onItemActionInteraction(f.db, f.click(menu.custom_id, f.sent[0], '101', ['forged']));
+  assert.equal(getItemAction(f.db, action.id).selections.returnTarget, undefined);
+  await onItemActionInteraction(f.db, f.click(menu.custom_id, f.sent[0], '101', ['1']));
+  assert.equal(getItemAction(f.db, action.id).selections.returnTarget.characterId, 1);
+  assert.match(JSON.stringify(components(f.sent[0])), /fresh ownership/i);
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'cancel')));
+  assert.equal(getInventory(f.db, '1', '101')[0].charges, 1);
+  const runtime = await recoverItemActionRuntime(f.db, f.client); t.after(runtime.stop);
+});
+
+test('Chronicle pages stable identities and retries a failed result announcement without another return or cost', async (t) => {
+  const f = fixture(t);
+  f.db.exec(`CREATE TABLE IF NOT EXISTS character_ownership_losses (
+    guild_id TEXT NOT NULL, former_owner_id TEXT NOT NULL, character_id INTEGER NOT NULL,
+    lost_at INTEGER NOT NULL, PRIMARY KEY(guild_id,former_owner_id,character_id));`);
+  for (let id = 1; id <= 26; id++) {
+    f.db.prepare('INSERT INTO characters(id,rank,favourites,name_full) VALUES(?,?,0,?)').run(id, id, `Former ${id}`);
+    f.db.prepare('INSERT INTO character_ownership_losses VALUES(?,?,?,?)').run('1', '101', id, Date.now());
+  }
+  const source = f.grant('chronicle_of_return');
+  const action = await startItemAction({ db: f.db, message: f.message, inventoryId: source });
+  assert.equal(menus(f.sent[0])[0].options.length, 25);
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'next')));
+  assert.equal(menus(f.sent[0])[0].options[0].value, '26');
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'return-character'), f.sent[0], '101', ['26']));
+  const edit = f.sent[0].edit;
+  f.sent[0].edit = async () => { throw Error('Discord unavailable'); };
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'confirm')));
+  assert.equal(getItemAction(f.db, action.id).state, 'resolved');
+  assert.equal(getItemAction(f.db, action.id).delivery_pending, 1);
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM marriages').get().n, 1);
+  assert.equal(getInventory(f.db, '1', '101').length, 0);
+  f.sent[0].edit = edit;
+  const runtime = await recoverItemActionRuntime(f.db, f.client); t.after(runtime.stop);
+  assert.equal(getItemAction(f.db, action.id).delivery_pending, 0);
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM marriages').get().n, 1);
+  assert.match(JSON.stringify(components(f.sent[0])), /Former 26/);
+  assert.equal(components(f.sent[0])[0].type, 10);
+});
+
 test('Blood Pact opens a V2 sacrifice select instead of requiring typed names', async (t) => {
   const f = fixture(t);
   for (let id = 1; id <= 3; id++) marry(f, id, '101', id, `Multiword Name ${id}`);
@@ -512,4 +567,73 @@ test('failed private Crown confirmation never blocks its public announcement and
   await runtime.reconcile();
   assert.match(JSON.stringify(privateMessages), /HIDDEN CROWN/);
   assert.equal(getItemAction(f.db, action.id).delivery_pending, 0);
+});
+
+
+for (const [kind, verb] of [['chaos_exchange', 'users'], ['blood_pact', 'users'],
+  ['alchemist', 'users'], ['counterfeit_crown', 'users'], ['severed_fate', 'slot-target1']]) {
+  test(`${kind} rejects foreign producer verb ${verb} without mutating its snapshot`, async (t) => {
+    const f = fixture(t);
+    const action = await launch(f, kind);
+    const before = f.db.prepare('SELECT selections_json FROM item_actions WHERE id=?').get(action.id).selections_json;
+    // Crown controls otherwise require the private canonical message.
+    const msg = kind === 'counterfeit_crown' ? { id: 'private', channelId: '10' } : f.sent[0];
+    if (kind === 'counterfeit_crown') {
+      const open = f.click(control(f.sent[0], 'private'));
+      await onItemActionInteraction(f.db, open);
+    }
+    const saved = f.db.prepare('SELECT selections_json FROM item_actions WHERE id=?').get(action.id).selections_json;
+    const click = f.click(`item:${action.id}:${verb}`, msg, '101', []);
+    await onItemActionInteraction(f.db, click);
+    assert.ok(click.replies.length);
+    assert.equal(click.deferred, undefined);
+    assert.equal(f.db.prepare('SELECT selections_json FROM item_actions WHERE id=?').get(action.id).selections_json, saved);
+    if (kind !== 'counterfeit_crown') assert.equal(saved, before);
+    const runtime = await recoverItemActionRuntime(f.db, f.client); t.after(runtime.stop);
+  });
+}
+
+test('Chronicle binds selection to owner, guild, channel and canonical message; stale target costs nothing', async (t) => {
+  const f = fixture(t);
+  f.db.exec(`CREATE TABLE character_ownership_losses (
+    guild_id TEXT, former_owner_id TEXT, character_id INTEGER, lost_at INTEGER,
+    PRIMARY KEY(guild_id,former_owner_id,character_id));
+    INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,1,0,'Former');`);
+  f.db.prepare('INSERT INTO character_ownership_losses VALUES(?,?,?,?)').run('1', '101', 1, Date.now());
+  const action = await launch(f, 'chronicle_of_return');
+  const menu = control(f.sent[0], 'return-character');
+  for (const mismatch of ['owner', 'guild', 'channel', 'message']) {
+    const click = f.click(menu, f.sent[0], '101', ['1']);
+    if (mismatch === 'owner') click.user.id = '202';
+    if (mismatch === 'guild') click.guildId = '2';
+    if (mismatch === 'channel') click.channelId = '20';
+    if (mismatch === 'message') click.message = { id: 'noncanonical', channelId: '10' };
+    await onItemActionInteraction(f.db, click);
+    assert.equal(click.deferred, undefined);
+    assert.equal(getItemAction(f.db, action.id).selections.returnTarget, undefined);
+  }
+  await onItemActionInteraction(f.db, f.click(menu, f.sent[0], '101', ['1']));
+  f.db.exec("INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES('1',1,'202','new')");
+  const stale = f.click(menu, f.sent[0], '101', ['1']);
+  await onItemActionInteraction(f.db, stale);
+  assert.match(stale.replies[0].content, /unavailable/);
+  await onItemActionInteraction(f.db, f.click(control(f.sent[0], 'confirm')));
+  assert.equal(getItemAction(f.db, action.id).state, 'canceled');
+  assert.equal(getInventory(f.db, '1', '101')[0].charges, 1);
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM item_use_reservations').get().n, 0);
+  const runtime = await recoverItemActionRuntime(f.db, f.client); t.after(runtime.stop);
+});
+
+test('Chronicle empty selector is terminal and never renders an empty select menu', async (t) => {
+  const f = fixture(t);
+  f.db.exec(`CREATE TABLE character_ownership_losses (
+    guild_id TEXT, former_owner_id TEXT, character_id INTEGER, lost_at INTEGER,
+    PRIMARY KEY(guild_id,former_owner_id,character_id));`);
+  const action = await launch(f, 'chronicle_of_return');
+  assert.equal(action.state, 'canceled');
+  assert.equal(menus(f.sent[0]).length, 0);
+  assert.deepEqual(ids(f.sent[0]), []);
+  assert.match(JSON.stringify(components(f.sent[0])), /No formerly owned/);
+  assert.equal(getInventory(f.db, '1', '101')[0].charges, 1);
+  const runtime = await recoverItemActionRuntime(f.db, f.client); t.after(runtime.stop);
 });

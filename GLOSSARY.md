@@ -144,6 +144,18 @@ _Avoid_: Spent Recast, inventory reroll
 A dated group of newly introduced item kinds announced together, with each name concealed until that item is discovered in the viewer's server.
 _Avoid_: Item discovery, inventory update
 
+**Consolation Chit**:
+A passive consumable that awards a random item to a mystery-event winner who has no claim available when the event resolves. It does not compensate for losing, missing the claim window, or an unavailable prize alone.
+_Avoid_: Extra claim, compensation vault
+
+**Chronicle return**:
+A former owner's fresh acquisition of a currently unowned character through Chronicle of Return. It is distinct from an escape reclaim, which retains existing ownership.
+_Avoid_: Escape reclaim, restored marriage
+
+**Ownership loss**:
+The end of a player's ownership of a character in one server, whether through divorce or transfer to another owner. An escape attempt without a change of owner is not an ownership loss.
+_Avoid_: Escape attempt, global history
+
 **Wish match**:
 A roll whose character appears on at least one wishlist in that server. A wish match is announced as one wish line naming every matching player and is presented with the wishlist accent color.
 _Avoid_: Wish alert, wish notification

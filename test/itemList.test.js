@@ -38,7 +38,7 @@ test('catalog tier controls show effective lifetimes without revealing unknown i
   let payload;
   await run({ yoshiko: { catalogDb: db }, message: { guildId: '123',
     reply: async value => { payload = value; } } });
-  const card = payload.components[0].toJSON();
+  const card = payload.components.find(component => component.toJSON().type === ComponentType.Container).toJSON();
   const options = card.components[1].components[0].options;
   assert.equal(options.find(option => option.value === 'common').description, 'Lifetime: 365 days · new acquisitions only');
   assert.equal(options.find(option => option.value === '???').description, 'Lifetime: 30 days · new acquisitions only');
@@ -65,8 +65,9 @@ test('catalog and release announcement share Discord message-wide text budget', 
   const changelog = 'Release '.repeat(300);
   const pages = itemListPages([...Array(20).fill('x'.repeat(349)), 'long description '.repeat(400)], 3800 - changelog.length);
   for (let page = 0; page < pages.length; page++) {
-    const card = itemListComponents(pages, page, 'all', false, changelog)[0].toJSON();
-    const total = card.components.reduce((sum, component) => sum + (component.content?.length ?? 0), 0);
+    const components = itemListComponents(pages, page, 'all', false, changelog).map(component => component.toJSON());
+    const total = components.reduce((sum, component) => sum + (component.content?.length ?? 0) +
+      (component.components ?? []).reduce((subtotal, child) => subtotal + (child.content?.length ?? 0), 0), 0);
     assert.ok(total <= 4000, `combined text ${total}`);
   }
 });
@@ -74,8 +75,11 @@ test('catalog and release announcement share Discord message-wide text budget', 
 test('release announcement remains visible on filtered and disabled catalog pages', () => {
   const changelog = '**Changelog 28/10/2026**: Added **two** new *Rare* items: **???** and **???**.';
   for (const disabled of [false, true]) {
-    const card = itemListComponents(itemListPages([]), 0, 'common', disabled, changelog)[0].toJSON();
-    assert.ok(card.components.some(component => component.content === changelog));
+    const components = itemListComponents(itemListPages([]), 0, 'common', disabled, changelog).map(component => component.toJSON());
+    assert.equal(components[0].type, ComponentType.TextDisplay);
+    assert.equal(components[0].content, changelog);
+    assert.equal(components[1].type, ComponentType.Container);
+    assert.ok(!components[1].components.some(component => component.content === changelog));
   }
 });
 
@@ -92,8 +96,8 @@ test('alias, shared select, page reset, refreshed discovery, and expiration', as
   assert.equal(payload.flags, MessageFlags.IsComponentsV2);
   assert.deepEqual(payload.allowedMentions.parse, []);
   assert.equal(typeof options.time, 'number');
-  const card = () => payload.components[0].toJSON();
-  assert.ok(card().components.some(component => component.content?.includes('**Changelog 28/10/2026**')));
+  const card = () => payload.components.find(component => component.toJSON().type === ComponentType.Container).toJSON();
+  assert.match(payload.components[0].toJSON().content, /^### Changelog — /);
   const collect = async (customId, values) => collector.listeners('collect')[0]({
     customId, values, user: { id: 'someone-else' }, deferUpdate: async () => {},
   });
@@ -101,7 +105,7 @@ test('alias, shared select, page reset, refreshed discovery, and expiration', as
   assert.match(card().components[3].content, /Page 2/);
   await collect('itemlist:tier', ['common']);
   assert.match(card().components[3].content, /Page 1 of 1/);
-  assert.equal(card().components[2].content.split('\n').length, 3);
+  assert.equal(card().components[2].content.split('\n').length, ITEM_ROSTER.filter(item => item.tier === 'common').length);
   assert.equal(card().components[1].components[0].options.find(option => option.default).value, 'common');
   addItemToInventory(db, '123', 'u', 'hourglass_of_haste');
   await collect('itemlist:tier', ['common']);
