@@ -84,6 +84,7 @@ test('buff snapshots preserve numeric franchise, thresholds, rules and historica
     ['adrenaline_rush', { durationMs: 12, allowanceMultiplier: 12 }],
     ['engagement_ring', { claims: 12, cooldownMultiplier: 0.5 }],
     ['double_date', { durationMs: 12 }],
+    ['double_date', { durationMs: 12, freeClaims: 2 }],
     ['crown_of_the_sovereign', { claimTokens: 12 }],
   ]) assert.deepEqual(adapt('active_user_buffs', 'data_json', value, { buff_id }).value, value);
 });

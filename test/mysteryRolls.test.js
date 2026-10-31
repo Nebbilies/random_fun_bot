@@ -230,7 +230,7 @@ test('cleanup removes an unpublished terminal card but retains outcome history',
 
 const HOUR = 3_600_000;
 
-for (const token of ['crown_of_the_sovereign', 'pinata_claim_token']) {
+for (const token of ['crown_of_the_sovereign', 'pinata_claim_token', 'double_date']) {
   test(`claim availability reads ${token} without spending it`, (t) => {
     const db = fixture(t);
     const period = Math.floor((start + 7 * 3600000) / (3 * 3600000));
@@ -241,11 +241,16 @@ for (const token of ['crown_of_the_sovereign', 'pinata_claim_token']) {
     const before = db.prepare('SELECT * FROM active_user_buffs').all();
     assert.equal(getClaimAvailability(db, '1', '102', start).canClaim, true);
     assert.deepEqual(db.prepare('SELECT * FROM active_user_buffs').all(), before);
+    addItemToInventory(db,'1','102','consolation_chit',1,{now:start});
     const picked = mystery(db);
     const running = startEvent(db, picked);
     advanceMysterySession(db, {sessionId:picked.sessionId,expectedState:'running',
       expectedStateJson:running.stateJson,state:'countdown',winnerId:'102',now:start+7000});
     assert.equal(openMysteryClaim(db,{sessionId:picked.sessionId,messageId:'901',now:start+12000}).status,'open');
+    assert.deepEqual(db.prepare('SELECT * FROM active_user_buffs').all(),before);
+    assert.ok(getInventory(db,'1','102',start+12000).some(item=>item.item_id==='consolation_chit'));
+    assert.equal(claimRoll(db,{guildId:'1',channelId:'20',messageId:'901',userId:'102',now:start+12001}).status,'married');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM active_user_buffs').get().n,0);
   });
 }
 
@@ -301,14 +306,14 @@ for (const held of [false,true]) test(`expired or held Chit never spends: held=$
   assert.equal(JSON.parse(won.session.stateJson).runtime.consolation.status,'no_chit');
 });
 
-test('availability ignores expired/future/exhausted tokens without pruning and Double Date does not bypass', (t) => {
+test('availability ignores expired/future/exhausted tokens without pruning', (t) => {
   const db=fixture(t);
   db.prepare('INSERT INTO claim_allowances VALUES (?,?,?)').run('1','102',Math.floor((start+7*3600000)/(3*3600000)));
   const insert=db.prepare('INSERT INTO active_user_buffs(guild_id,user_id,buff_id,expires_at,starts_at,remaining_rolls) VALUES(?,?,?,?,?,?)');
   insert.run('1','102','pinata_claim_token',start,null,1);
   insert.run('1','102','crown_of_the_sovereign',null,start+1,1);
   insert.run('1','102','pinata_claim_token',null,null,0);
-  insert.run('1','102','double_date',null,null,1);
+  insert.run('1','102','double_date',start,null,1);
   const before=db.prepare('SELECT * FROM active_user_buffs').all();
   assert.equal(getClaimAvailability(db,'1','102',start).canClaim,false);
   assert.deepEqual(db.prepare('SELECT * FROM active_user_buffs').all(),before);

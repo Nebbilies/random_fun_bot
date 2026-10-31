@@ -41,12 +41,13 @@ test('resolved Piñata description follows effective server settings', (t) => {
   assert.match(getResolvedItemDefinition(db, '2', 'pinata').description, /next 10 qualifying rolls/);
 });
 
-test('Double Date starts on use and does not promise to clear an existing cooldown', (t) => {
+test('Double Date describes two timed free claims and cooldown bypass', (t) => {
   const db = fixture(t);
   for (const item of [getItemDefinition('double_date'), getResolvedItemDefinition(db, '1', 'double_date')]) {
     assert.match(item.description, /10 minutes after activation/);
-    assert.match(item.description, /do not start.*cooldown/);
-    assert.match(item.description, /existing cooldown/);
+    assert.match(item.description, /2 free claims/);
+    assert.match(item.description, /even during your normal claim cooldown/);
+    assert.match(item.description, /do not spend or reset/);
     assert.doesNotMatch(item.description, /2nd claim|when you marry/i);
   }
 });
@@ -92,7 +93,7 @@ test('legacy help no longer promises unlimited rolls or guaranteed rank upgrades
   assert.doesNotMatch(getItemHelpBullet(getItemDefinition('golden_hour')), /unlimited|Happy Hour/);
   assert.match(getItemHelpBullet(getItemDefinition('golden_hour')), /everyone's hourly rolls in this server/);
   assert.match(getItemHelpBullet(getItemDefinition('blood_pact')), /rank upgrade is not guaranteed/);
-  assert.match(getItemHelpBullet(getItemDefinition('double_date')), /existing cooldown/);
+  assert.match(getItemHelpBullet(getItemDefinition('double_date')), /2 free claims/);
   assert.match(getItemHelpBullet(getItemDefinition('wish_upon_a_star')), /otherwise/);
 });
 

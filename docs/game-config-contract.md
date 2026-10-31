@@ -27,6 +27,10 @@ Schedules have a separate activation endpoint and confirmation warning. Roll and
 
 Validation rejects unknown keys, invalid inherited combinations, empty positive-weight reward/event pools, malformed mystery curves, and durations exceeding Node's timer range. Configuration revisions are concurrency tokens, not an audit log; no administrator attribution or change history is stored.
 
+## Double Date hotfix
+
+`itemEffects.double_date.durationMs` defaults to 600,000 (10 minutes); `itemEffects.double_date.freeClaims` defaults to 2, validated as an integer from 1 to 1,000,000. Both use the portal's normal global/guild inheritance and reset behavior. Activation captures the duration and count. Successful claims consume Double Date first, bypass existing cooldown and leave normal claim state, Ring and other claim tokens unchanged. Failed claims spend nothing; unused claims expire at the deadline. Existing buff stacking follows the shared timed/counted buff rules. A pre-hotfix active timed buff with a null counter is bounded to its saved `freeClaims` (or the historical hotfix entitlement of two) on its first successful claim, without extending its original deadline.
+
 ## Phase 2 item settings
 
 - `items.consolation_chit` and `items.chronicle_of_return`: reward-eligible by default, one starting charge per new entry. Existing entries retain their charges.
@@ -348,7 +352,8 @@ All settings use the existing global/guild inheritance, revision checks and rese
       "allowanceMultiplier": 2
     },
     "double_date": {
-      "durationMs": 600000
+      "durationMs": 600000,
+      "freeClaims": 2
     },
     "engagement_ring": {
       "claims": 1,
