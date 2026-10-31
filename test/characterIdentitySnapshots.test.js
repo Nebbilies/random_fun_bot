@@ -27,6 +27,7 @@ test('ownership selections keep marriage, rank, inventory, UI, item/config numbe
 for (const [kind, payload, paths] of [
   ['counterfeit_crown', { privateCharacter: own }, ['privateCharacter']],
   ['chaos_exchange', { character: { id: 12, name: 'Historical 12', rank: 12 } }, ['character']],
+  ['chronicle_of_return', { character: { id: 12, name: 'Historical 12', rank: 12 } }, ['character']],
   ['heart_for_a_heart', { originals: [own], targets: [own] }, ['originals', 'targets']],
   ['severed_fate', { originals: [own], targets: [own] }, ['originals', 'targets']],
   ['grand_masquerade', { originals: [own], targets: [own], assignment: [0, 1, 2, 3] }, ['originals', 'targets']],
@@ -46,6 +47,13 @@ for (const [kind, payload, paths] of [
     }
   }
   if (payload.assignment) assert.deepEqual(result.value.assignment, payload.assignment);
+});
+
+test('Chronicle selection maps only its stable target identity, never the loss timestamp', () => {
+  const target = { characterId: 12, name: 'Historical 12', rank: 12, lostAt: 12 };
+  const result = adapt('item_actions', 'selections_json', { returnTarget: target, historyWindowMs: 12 }, { kind: 'chronicle_of_return' });
+  assert.deepEqual(result.value, { returnTarget: { ...target, characterId: mapping.get(12) }, historyWindowMs: 12 });
+  assert.throws(() => adapt('item_actions', 'selections_json', { returnTarget: target }, { kind: 'alchemist' }));
 });
 
 test('noncharacter result variants and snake-case crown history', () => {
