@@ -66,6 +66,7 @@ test('reward source linkage enforces reward foreign key and unique event identit
   installEmptyFinalCatalog(db);
   const source = db.prepare('INSERT INTO reward_sources VALUES(?,?,?,?)');
   assert.throws(() => source.run('missing','mystery_consolation','event','{}'), /FOREIGN KEY/);
+  assert.throws(() => source.run(null,'mystery_consolation','null-event','{}'), /NOT NULL/);
   const reward = db.prepare("INSERT INTO vault_rewards(vault_id,guild_id,user_id,channel_id,original_json,state,created_at) VALUES(?,'1','2','3','{}','delivered',0)");
   reward.run('reward1'); reward.run('reward2');
   source.run('reward1','mystery_consolation','event','{}');

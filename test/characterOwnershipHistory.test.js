@@ -66,6 +66,20 @@ test('nested operation clocks restore context, and failed ownership writes roll 
   assert.throws(() => withOwnershipOperationClock(db, -1, () => {}), /time/);
   assert.throws(() => withOwnershipOperationClock(db, 1, async () => {}), /synchronous/);
 });
+test('caught failure in a joined scope cannot commit partial ownership or history', t => {
+  const db = fixture(t);
+  marryCharacter(db, '1', id, '2', 0);
+  db.exec('BEGIN IMMEDIATE');
+  assert.throws(() => withOwnershipOperationClock(db, 123, () => {
+    db.exec("UPDATE marriages SET owner_id='3'");
+    throw new Error('after mutation');
+  }), /after mutation/);
+  db.exec('COMMIT');
+  assert.equal(db.prepare('SELECT owner_id FROM marriages').get().owner_id, '2');
+  assert.equal(getLatestOwnershipLoss(db, '1', '2', id), null);
+  assert.equal(db.prepare('SELECT now_ms FROM ownership_operation_clock').get().now_ms, null);
+});
+
 test('raw SQL uses portable wall time and retained identity history survives unpublication', t => {
   const db = fixture(t);
   marryCharacter(db, '1', id, '2', 0);
