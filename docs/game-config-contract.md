@@ -27,6 +27,14 @@ Schedules have a separate activation endpoint and confirmation warning. Roll and
 
 Validation rejects unknown keys, invalid inherited combinations, empty positive-weight reward/event pools, malformed mystery curves, and durations exceeding Node's timer range. Configuration revisions are concurrency tokens, not an audit log; no administrator attribution or change history is stored.
 
+## Phase 2 item settings
+
+- `items.consolation_chit` and `items.chronicle_of_return`: reward-eligible by default, one starting charge per new entry. Existing entries retain their charges.
+- `itemEffects.consolation_chit.tierWeights.{common,rare,epic,legendary,???}`: relative weights defaulting to 69.9/17.5/10/2.5/0.1. Each is finite and between 0 and 1,000,000. Individual empty tiers are excluded at draw time; validation requires at least one eligible positive-weight tier overall. These do not change normal vault weights. Capture current effective terms at the genuine event win, not mystery reservation or later presentation.
+- `itemEffects.chronicle_of_return.historyWindowMs`: default 604,800,000 (seven days), integer 1–2,147,483,647 ms. A new confirmation captures the period; item descriptions use the current setting. Changing the period neither rewrites recorded losses nor changes already-open confirmation terms.
+
+All settings use the existing global/guild inheritance, revision checks and reset APIs. The registry automatically exposes them in the Configuration portal.
+
 ## Full built-in default map
 
 ```json
@@ -200,6 +208,8 @@ Validation rejects unknown keys, invalid inherited combinations, empty positive-
     "masqueradeTopRank": 100
   },
   "items": {
+    "consolation_chit": { "rewardEligible": true, "startingCharges": 1 },
+    "chronicle_of_return": { "rewardEligible": true, "startingCharges": 1 },
     "hourglass_of_haste": {
       "rewardEligible": true,
       "startingCharges": 1
@@ -318,6 +328,8 @@ Validation rejects unknown keys, invalid inherited combinations, empty positive-
     }
   },
   "itemEffects": {
+    "consolation_chit": { "tierWeights": { "common": 69.9, "rare": 17.5, "epic": 10, "legendary": 2.5, "???": 0.1 } },
+    "chronicle_of_return": { "historyWindowMs": 604800000 },
     "bag_of_holding": {
       "capacityIncrease": 1
     },

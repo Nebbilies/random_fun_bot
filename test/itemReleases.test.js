@@ -13,7 +13,7 @@ const release = { date: '2026-10-28', itemIds: ['lens', 'recast'] };
 
 test('release names follow permanent guild discovery independently', () => {
   assert.equal(formatItemRelease(release, definitions, new Set()),
-    '**Changelog 28/10/2026**: Added **two** new *Rare* items: **???** and **???**.');
+    '### Changelog — 28/10/2026\nAdded **two** new *Rare* items: **???** and **???**.');
   assert.match(formatItemRelease(release, definitions, new Set(['lens'])),
     /\*\*Fortune's Lens\*\* and \*\*\?\?\?\*\*/);
   assert.match(formatItemRelease(release, definitions, new Set(['lens', 'recast'])),
@@ -24,7 +24,7 @@ test('future releases support singular, mixed rarities, escaped names and actual
   const newer = { date: '2026-11-01', itemIds: ['clock', 'lens', 'recast'] };
   assert.equal(latestItemRelease([newer, release]), newer);
   const text = formatItemRelease(newer, definitions, new Set(['clock']));
-  assert.match(text, /^\*\*Changelog 01\/11\/2026\*\*: Added /);
+  assert.match(text, /^### Changelog — 01\/11\/2026\nAdded /);
   assert.ok(text.includes('**one** new *Common* item: **Clock \\*Prime\\***'));
   assert.ok(text.includes('**two** new *Rare* items: **???** and **???**'));
   assert.equal(latestItemRelease([]), null);
@@ -43,11 +43,13 @@ test('release records reject invalid dates, unknown items and repeated IDs', () 
 test('guild announcement reveals acquisitions permanently without leaking across guilds', t => {
   const db = openCatalog(':memory:');
   t.after(() => db.close());
-  assert.match(guildItemChangelog(db, 'guild'), /\*\*\?\?\?\*\* and \*\*\?\?\?\*\*/);
-  const acquired = addItemToInventory(db, 'guild', 'player', 'fortunes_lens');
+  const hidden = guildItemChangelog(db, 'guild');
+  assert.match(hidden, /new \*Common\* item: \*\*\?\?\?\*\*/);
+  assert.match(hidden, /new \*Epic\* item: \*\*\?\?\?\*\*/);
+  const acquired = addItemToInventory(db, 'guild', 'player', 'consolation_chit');
   decrementItemCharge(db, acquired.item.id);
-  assert.match(guildItemChangelog(db, 'guild'), /\*\*Fortune's Lens\*\* and \*\*\?\?\?\*\*/);
-  assert.match(guildItemChangelog(db, 'other'), /\*\*\?\?\?\*\* and \*\*\?\?\?\*\*/);
+  assert.match(guildItemChangelog(db, 'guild'), /\*\*Consolation Chit\*\*/);
+  assert.doesNotMatch(guildItemChangelog(db, 'other'), /Consolation Chit/);
 });
 
 test('large future release stays within a text-display budget without losing counts', () => {
