@@ -83,10 +83,13 @@ test('caught failure in a joined scope cannot commit partial ownership or histor
 test('raw SQL uses portable wall time and retained identity history survives unpublication', t => {
   const db = fixture(t);
   marryCharacter(db, '1', id, '2', 0);
-  const before = Date.now();
+  // SQLite and V8 can observe different Windows wall-clock precision. Bound
+  // the fallback against the same SQL clock used by the portable trigger.
+  const sqlNow = () => db.prepare("SELECT CAST(ROUND(unixepoch('subsec')*1000) AS INTEGER) AS now").get().now;
+  const before = sqlNow();
   db.exec('DELETE FROM marriages');
   const loss = getLatestOwnershipLoss(db, '1', '2', id);
-  assert.ok(loss.lostAt >= before && loss.lostAt <= Date.now());
+  assert.ok(loss.lostAt >= before && loss.lostAt <= sqlNow());
   db.exec('DELETE FROM characters');
   assert.equal(getLatestOwnershipLoss(db, '1', '2', id).lostAt, loss.lostAt);
   assert.equal(validateFinalCatalogSchema(db), true);
