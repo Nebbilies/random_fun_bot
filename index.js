@@ -343,7 +343,7 @@ yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
         }
         return;
     }
-    if (interaction.isButton() && interaction.customId === 'roll:report') {
+    if (interaction.isButton() && ['roll:report', 'roll:gender-report'].includes(interaction.customId)) {
         try {
             await onRollReport(yoshiko.catalogDb, interaction);
         } catch (error) {

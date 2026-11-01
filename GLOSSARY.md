@@ -1,6 +1,6 @@
 # Character Game
 
-Language for the character catalog, ownership, and tag review.
+Language for the character catalog, ownership, and character review.
 
 ## Language
 
@@ -64,8 +64,20 @@ _Avoid_: Character mapping, tag match
 A viewer's flag that a character's tag mapping may be wrong or missing. A report does not propose a replacement tag.
 _Avoid_: Correction, tag suggestion
 
+**Character gender report**:
+A viewer's flag that a character's catalog gender may be incorrect. A report does not propose a replacement gender.
+_Avoid_: Gender correction, gender suggestion
+
+**Gender override**:
+A reviewed catalog gender that takes precedence over a character's source-provided gender until explicitly removed.
+_Avoid_: Source gender, gender report
+
+**Gender review case**:
+A character's unresolved gender reports grouped into one review item, independent of its tag reports.
+_Avoid_: Tag review, gender suggestion
+
 **Reported character**:
-A character with one or more unresolved character tag reports, presented as one item for review.
+A character with one or more unresolved character tag reports, presented as one item for tag review.
 _Avoid_: Reported tag, duplicate report
 
 **Report resolution**:

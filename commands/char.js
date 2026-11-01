@@ -6,6 +6,7 @@ import {
   ModalBuilder, StringSelectMenuBuilder, TextDisplayBuilder, TextInputBuilder, TextInputStyle,
 } from 'discord.js';
 import { findCharacters } from '../lib/gameCharacterLookup.js';
+import { reportCharacterGender } from '../lib/characterGenderReviews.js';
 import { reportCharacterTag } from '../lib/catalogDb.js';
 import { getMarriage } from '../lib/characterMarriage.js';
 import { formatNumber } from '../lib/formatNumber.js';
@@ -85,7 +86,7 @@ function buildCardComponents(character, image, position, hasMoreImages, canGoBac
       `[Image source](https://safebooru.donmai.us/posts/${image.postId})`,
     ));
   }
-  const controls = [button('char:report', 'Report tag', disabled)];
+  const controls = [button('char:report', 'Report tag', disabled), button('char:gender-report', 'Report gender', disabled)];
   if (hasMoreImages) {
     controls.push(
       new ButtonBuilder().setCustomId('char:image:prev').setEmoji('⬅️')
@@ -204,10 +205,11 @@ export async function run(ctx) {
   collector.on('collect', async (interaction) => {
     try {
       const id = interaction.customId;
-      if (id === 'char:report' && selected && !expired) {
-        const created = reportCharacterTag(ctx.yoshiko.catalogDb, selected.id, interaction.user.id);
+      if (['char:report', 'char:gender-report'].includes(id) && selected && !expired) {
+        const gender = id === 'char:gender-report';
+        const created = (gender ? reportCharacterGender : reportCharacterTag)(ctx.yoshiko.catalogDb, selected.id, interaction.user.id);
         await interaction.reply({
-          content: created ? 'Tag report saved for review.' : 'You already reported this character, or it is no longer in the catalog.',
+          content: created ? `${gender ? 'Gender' : 'Tag'} report saved for review.` : 'You already reported this character, or it is no longer in the catalog.',
           flags: MessageFlags.Ephemeral,
         });
         return;

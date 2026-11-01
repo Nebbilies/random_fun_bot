@@ -7,6 +7,7 @@ const assets = new Map([
   ['login.js', 'text/javascript'],
   ['franchisePicker.js', 'text/javascript'],
   ['reviewCharacterTags.js', 'text/javascript'],
+  ['reviewCharacterGenders.js', 'text/javascript'],
   ['reviewFranchises.js', 'text/javascript'],
   ['reviewGame.js', 'text/javascript'],
   ['reviewConfig.js', 'text/javascript'],

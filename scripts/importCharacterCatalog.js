@@ -113,27 +113,51 @@ export async function hydrateOneBatch(db, api, log = () => {}, binding = assertS
     ? `SELECT 1 FROM character_sources AS source JOIN characters AS c ON c.id=source.character_id
        WHERE source.source='anilist' AND source.external_id=CAST(stage.id AS TEXT)`
     : 'SELECT 1 FROM characters WHERE characters.id = stage.id';
+  const hasGenderOverrides = sourceAware && Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='character_gender_overrides'").get());
+  const genderRefresh = hasGenderOverrides
+    ? `SELECT 1 FROM character_sources AS source
+       JOIN characters AS c ON c.id=source.character_id
+       JOIN character_identities AS identity ON identity.id=c.id
+       JOIN character_gender_overrides AS override ON override.character_id=c.id
+       WHERE source.source='anilist' AND source.external_id=CAST(stage.id AS TEXT)
+         AND identity.creation_method='imported'`
+    : 'SELECT 1 WHERE 0';
   const ids = db.prepare(`SELECT stage.id FROM stage_characters AS stage
-    WHERE stage.name_full IS NULL AND NOT EXISTS (${existing})
+    WHERE stage.name_full IS NULL AND (NOT EXISTS (${existing}) OR EXISTS (${genderRefresh}))
     ORDER BY stage.id LIMIT 25`).all().map((row) => row.id);
   if (!ids.length) return false;
   log(`==== Fetching character metadata for ${ids.length} finalists (IDs ${ids[0]}-${ids.at(-1)}) ====`);
   const details = await api.characterDetails(ids);
   const returnedIds = new Set(details.map((item) => item.id));
   const missingIds = ids.filter((id) => !returnedIds.has(id));
+  const genderRefreshIds = new Set(db.prepare(`SELECT stage.id FROM stage_characters AS stage
+    WHERE stage.name_full IS NULL AND EXISTS (${genderRefresh})`).all().map((row) => row.id));
   const prepared = [];
-  for (const character of details) prepared.push({ character, media: await qualifyingMedia(api, character) });
+  for (const character of details) prepared.push({ character,
+    media: genderRefreshIds.has(character.id) ? null : await qualifyingMedia(api, character) });
   transaction(db, () => {
     assertSourceCatalogStagingBinding(db, binding);
     const remove = db.prepare('DELETE FROM stage_characters WHERE id = ?');
     for (const id of missingIds) remove.run(id);
     for (const { character, media } of prepared) {
-      if (media.length) updateDetails(db, character, media);
+      if (media === null) {
+        // Existing imported overrides need fresh source gender, not a general
+        // metadata refresh or renewed anime eligibility validation. Copy the
+        // published metadata so publication changes only the source gender.
+        db.prepare(`UPDATE stage_characters AS stage SET
+          name_full=c.name_full, name_native=c.name_native, name_alternatives=c.name_alternatives,
+          gender=?, age=c.age, date_of_birth=c.date_of_birth, description=c.description,
+          image_url=c.image_url, site_url=c.site_url, anime_titles=c.anime_titles,
+          anime_ids=c.anime_ids, anime_adult=c.anime_adult
+          FROM characters AS c JOIN character_sources AS source ON source.character_id=c.id
+          WHERE source.source='anilist' AND source.external_id=CAST(stage.id AS TEXT) AND stage.id=?`)
+          .run(character.gender ?? null, character.id);
+      } else if (media.length) updateDetails(db, character, media);
       else remove.run(character.id);
     }
   });
   if (missingIds.length) log(`Removed missing AniList character IDs: ${missingIds.join(', ')}.`);
-  const kept = prepared.filter((item) => item.media.length).map((item) => item.character);
+  const kept = prepared.filter((item) => item.media === null || item.media.length).map((item) => item.character);
   log(`Saved character metadata: ${characterSummary(kept)}; excluded ${prepared.length - kept.length} without a qualifying anime.`);
   return true;
 }
