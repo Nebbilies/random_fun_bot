@@ -64,7 +64,8 @@ test('franchise summons describe availability and do not promise a Blood Pact ra
 
 test('action descriptions explain the stakes without internal terminology', () => {
   assert.match(getItemDefinition('double_or_nothing').description, /lose.*reward/);
-  assert.match(getItemDefinition('hostage_note').description, /one of the two.*divorced/);
+  assert.match(getItemDefinition('hostage_note').description, /their nominated character has a 50% chance of divorce/);
+  assert.match(getItemDefinition('hostage_note').description, /Your character is never at risk/);
   assert.match(getItemDefinition('counterfeit_crown').description, /redirect.*attack.*decoy/);
   assert.match(getItemDefinition('grand_masquerade').description, /nobody gets their own character back/);
   assert.doesNotMatch(getItemDefinition('chaos_exchange').description, /rank interval/);

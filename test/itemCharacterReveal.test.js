@@ -46,14 +46,26 @@ test('deleted completed reveal restores final card without suspense', async (t) 
 });
 test('Hostage Gamble reveals only the committed loser with divorce wording', async (t) => {
   const f = fixture(t, 'hostage_note');
-  f.action.result = { choice: 'gamble', loser: { characterId: 1, ownerId: '202' }, message: 'Secret Reward was divorced. The other stake remains owned.' };
+  f.action.result = { choice: 'gamble', loser: { characterId: 1, ownerId: '202' }, message: "Secret Reward was divorced. The item user's character remains owned." };
   await publishItemCharacterReveal(f);
   assert.ok(!f.events[0].includes('Secret Reward'));
-  assert.match(f.events[2], /loses their bond/);
+  assert.match(f.events[2], /victim’s nominated character keep their bond/);
+  assert.match(f.events[2], /item user’s character is safe/);
   assert.match(f.events[4], /Divorced from <@202>/);
   assert.ok(!f.events[4].includes('Married by'));
   f.action.result.choice = 'exchange';
   assert.equal(characterRevealPlan(f.action), null);
+});
+
+test('Hostage survival uses the same anticipation without promising a divorce', async (t) => {
+  const f = fixture(t, 'hostage_note');
+  f.action.result = { choice: 'gamble', loser: null, message: 'Secret Reward escaped divorce. Both characters remain with their owners.' };
+  await publishItemCharacterReveal(f);
+  assert.equal(f.events.length, 5);
+  assert.ok(!f.events[0].includes('Secret Reward'));
+  assert.match(f.events[2], /keep their bond/);
+  assert.match(f.events[4], /escaped divorce/);
+  assert.ok(!f.events[4].includes('Divorced from'));
 });
 
 test('Siren and deterministic activations have no staged reveal', () => {

@@ -357,7 +357,8 @@ test('Hostage delivers public stakes, binds target controls and resolves Exchang
   const active = getItemAction(f.db, action.id);
   assert.equal(active.state, 'active'); assert.ok(active.deadline_at > Date.now());
   const prompt = f.sent.find((m) => m.id === active.message_id);
-  assert.match(JSON.stringify(prompt.payload), /equal chances/);
+  assert.match(JSON.stringify(prompt.payload), /your nominated character a 50% chance of divorce/);
+  assert.match(JSON.stringify(prompt.payload), /item user's character is never at risk/);
   const attacker = f.click(control(prompt, 'exchange'), prompt);
   await onItemActionInteraction(f.db, attacker);
   assert.equal(getItemAction(f.db, action.id).state, 'active');

@@ -246,6 +246,42 @@ test('Hostage delivery failure restores exact Note and confirmed Exchange resolv
   } finally { db.close(); }
 });
 
+for (const timeout of [false, true]) for (const draw of [0, 0.499999, 0.5, 0.999999]) {
+  test(`Hostage ${timeout ? 'timeout' : 'decline'} draw ${draw} risks only the victim and settles once`, () => {
+    const db = openCatalog(':memory:');
+    try {
+      db.exec("INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,50,1,'Stake'),(2,100,1,'Victim')");
+      const own = marryCharacter(db, '1', 1, '101').marriage;
+      const victim = marryCharacter(db, '1', 2, '202').marriage;
+      const item = addItemToInventory(db, '1', '101', 'hostage_note').item;
+      const action = createItemAction(db, { guildId: '1', actorId: '101', channelId: '10', inventoryId: item.id,
+        selections: { own: { characterId: 1, ownerId: '101', marriageId: own.id },
+          targets: [{ characterId: 2, ownerId: '202', marriageId: victim.id }] }, now: 100 });
+      activateItemAction(db, { actionId: action.id, guildId: '1', actorId: '101', now: 101 });
+      confirmHostageDelivery(db, action.id, '999', 102);
+      const request = { actionId: action.id, guildId: '1', userId: '202', choice: timeout ? 'exchange' : 'gamble',
+        now: timeout ? 60102 : 103, random: () => draw };
+      const result = resolveHostage(db, request);
+      assert.equal(result.status, 'resolved');
+      assert.equal(result.choice, 'gamble');
+      assert.equal(getMarriage(db, '1', 1).id, own.id);
+      assert.equal(getMarriage(db, '1', 1).ownerId, '101');
+      assert.equal(result.loser?.characterId ?? null, draw < 0.5 ? 2 : null);
+      if (draw < 0.5) {
+        assert.equal(getMarriage(db, '1', 2), null);
+        assert.match(result.message, /Victim.*was divorced/);
+      } else {
+        assert.equal(getMarriage(db, '1', 2).id, victim.id);
+        assert.match(result.message, /Both characters remain/);
+      }
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM item_character_reservations').get().n, 0);
+      assert.equal(getInventory(db, '1', '101').length, 0);
+      resolveHostage(db, { ...request, random: () => { throw Error('reroll'); } });
+      assert.equal(getMarriage(db, '1', 1).id, own.id);
+    } finally { db.close(); }
+  });
+}
+
 test('Severed Fate divorces its target without an owned contribution', () => {
   const db = openCatalog(':memory:');
   try {

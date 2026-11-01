@@ -202,7 +202,7 @@ for (const kind of ['blood_pact', 'grand_masquerade', 'kaimetsu']) {
   });
 }
 
-for (const [choice, draw, loserIndex] of [['exchange', 0, null], ['gamble', 0, 0], ['gamble', 0.999999, 1]]) {
+for (const [choice, draw, loserIndex] of [['exchange', 0, null], ['gamble', 0, 1], ['gamble', 0.999999, null]]) {
   for (const fail of [false, true]) test(`Hostage ${choice} draw=${draw} records settlement time; failure=${fail}`, t => {
     const { db, own, create, activate } = fixture(t);
     const rows = [own(0), own(1, '202')];
@@ -223,12 +223,15 @@ for (const [choice, draw, loserIndex] of [['exchange', 0, null], ['gamble', 0, 0
       db.exec('DROP TRIGGER reject_finish');
     }
     assert.equal(settle(start + 30).status, 'resolved');
-    const lost = loserIndex === null ? rows : [rows[loserIndex]];
+    const lost = choice === 'exchange' ? rows : loserIndex === null ? [] : [rows[loserIndex]];
     lost.forEach(row => loss(db, row, start + 30));
     lossCount(db, lost.length);
-    if (loserIndex === null) {
+    if (choice === 'exchange') {
       assert.equal(getMarriage(db, '1', ids[0]).ownerId, '202');
       assert.equal(getMarriage(db, '1', ids[1]).ownerId, '101');
+    } else if (loserIndex === null) {
+      assert.deepEqual(rows.map(row => getMarriage(db, '1', row.characterId)), before);
+      noLoss(db);
     } else {
       assert.equal(getMarriage(db, '1', rows[loserIndex].characterId), null);
       assert.deepEqual(getMarriage(db, '1', rows[1 - loserIndex].characterId), before[1 - loserIndex]);

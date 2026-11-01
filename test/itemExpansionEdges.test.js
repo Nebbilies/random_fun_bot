@@ -113,8 +113,8 @@ test('restart resumes delivered Hostage then settles overdue Gamble exactly once
   assert.equal(draws, 1);
   const result = getItemAction(db, action.id).result;
   assert.equal(result.choice, 'gamble');
-  assert.equal(getMarriage(db, '1', 1), null);
-  assert.equal(getMarriage(db, '1', 2).id, target.marriageId);
+  assert.equal(getMarriage(db, '1', 1).id, stake.marriageId);
+  assert.equal(getMarriage(db, '1', 2), null);
   assert.deepEqual(getInventory(db, '1', '101'), []);
   assert.deepEqual(reservations(db), []);
   const settled = marriages(db);
