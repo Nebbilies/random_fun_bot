@@ -88,6 +88,14 @@ _Avoid_: Franchise harem, series list
 A marriage view (activated with the `i` modifier) that displays a player's married characters one full card at a time with Previous and Next navigation controls.
 _Avoid_: Single character view, harem carousel
 
+**Server leaderboard**:
+A ranking of current server members by their top-ten rank sum, with lower sums placed first. Equal sums are ordered by comparing each player's best character rank, then their next-best ranks in turn.
+_Avoid_: Catalog top list, global leaderboard
+
+**Top-ten rank sum**:
+The sum of the ten best current catalog ranks among a player's owned characters in one server. A player needs at least ten ranked owned characters to have this score; lower is better.
+_Avoid_: Total harem rank, popularity points
+
 **Catalog top list**:
 A paged view of the catalog's highest ranked characters, listed in rank order.
 _Avoid_: Leaderboard, popularity board
