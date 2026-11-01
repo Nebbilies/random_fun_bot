@@ -193,7 +193,7 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const gameCommand = args[0].startsWith(prefix) ? args[0].slice(prefix.length).toLowerCase() : '';
         const isMarriage = /^(mm|mymarry)([a-z]*)$/.test(gameCommand);
         const franchiseModifiers = parseFranchiseCommand(gameCommand);
-        if (isMarriage || franchiseModifiers || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'ts', 'topserv', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
+        if (isMarriage || franchiseModifiers || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'topo', 'ts', 'topserv', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
             args[0] = gameCommand;
             if (isCatalogDraining(client.catalogDb) && isNewGameActionCommand(gameCommand)) {
                 await message.reply('Character game is draining for maintenance. Existing actions may finish; new actions are paused.').catch(console.error);

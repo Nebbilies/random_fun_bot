@@ -7,12 +7,12 @@ import { topCharacters, topListComponents, topPageCount } from '../lib/topCharac
 
 /**
  * `!top` lists the highest ranked characters of the catalog, 15 per page.
- * `!top <page>` opens a specific page of the list.
+ * `!top <page>` opens a specific page; `!topo` also shows server owners.
  */
 export async function run(ctx) {
   const rows = topCharacters(ctx.yoshiko.catalogDb);
   const render = (disabled = false) => topListComponents(
-    markCharacterOwnership(ctx.yoshiko.catalogDb, ctx.message.guildId, rows), page, { disabled });
+    markCharacterOwnership(ctx.yoshiko.catalogDb, ctx.message.guildId, rows), page, { disabled, showOwner: ctx.args[0].toLowerCase() === 'topo' });
   const pages = topPageCount(rows);
   const requested = Number.parseInt(ctx.args[1] ?? '', 10);
   let page = Number.isInteger(requested) && requested > 0 ? Math.min(requested, pages) - 1 : 0;

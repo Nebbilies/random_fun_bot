@@ -8,6 +8,7 @@ import { ComponentType, MessageFlags } from 'discord.js';
 import { openCatalog } from '../lib/catalogDb.js';
 import { topCharacters, topPageCount } from '../lib/topCharacters.js';
 import { run as topCommand } from '../commands/top.js';
+import { run as topoCommand } from '../commands/topo.js';
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'top-command-'));
@@ -142,6 +143,24 @@ test('the top list never covers more than the top 1000 characters', async (t) =>
   assert.equal(topPageCount(rows), 67);
 });
 
+
+test('topo displays server-local owners without pinging and refreshes them on navigation', async (t) => {
+  const db = fixture(t);
+  seed(db, 20);
+  db.exec(`INSERT INTO marriages (guild_id, character_id, owner_id, married_at) VALUES
+    ('1', 1, '123', 'now'), ('2', 2, '456', 'now')`);
+  const harness = collectorFixture();
+  await topoCommand({ args: ['topo'], message: { guildId: '1',
+    reply: async (value) => { harness.state.payload = value; return harness.sent; } },
+    yoshiko: { catalogDb: db } });
+  const text = container(harness.state.payload).components[1].content;
+  assert.match(text, /Character 1 💞\*\* - Anime 1 => <@123>/);
+  assert.doesNotMatch(text, /<@456>/);
+  assert.deepEqual(harness.state.payload.allowedMentions, { parse: [], repliedUser: false });
+  db.exec(`INSERT INTO marriages (guild_id, character_id, owner_id, married_at) VALUES ('1', 16, '789', 'now')`);
+  await harness.collector.listeners('collect')[0]({ customId: 'top:next', deferUpdate: async () => {} });
+  assert.match(container(harness.state.payload).components[1].content, /Character 16 💞\*\* - Anime 16 => <@789>/);
+});
 
 test('top markers use current server ownership and refresh on navigation', async (t) => {
   const db = fixture(t);
