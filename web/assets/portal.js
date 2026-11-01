@@ -29,6 +29,16 @@ window.fetch = async (input, init = {}) => {
   return response;
 };
 
+if (document.body.dataset.standalone !== 'true') {
+  const nav = document.querySelector('nav[aria-label="Management portal"]');
+  if (nav) {
+    const link = document.createElement('a'); link.href = '/gender';
+    link.textContent = 'Gender review';
+    if (location.pathname === '/gender') link.setAttribute('aria-current', 'page');
+    nav.append(link);
+  }
+}
+
 // The standalone franchise server exposes only its own workspace.
 if (document.body.dataset.standalone === 'true') {
   document.querySelector('nav[aria-label="Management portal"] a[aria-current]').href = '/';

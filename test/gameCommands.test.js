@@ -147,11 +147,12 @@ test('rank lookup uses the V2 card and shared image navigation', async () => {
   assert.equal(payload.flags, MessageFlags.IsComponentsV2);
   assert.equal(card().components[2].items[0].media.url, 'https://cdn.donmai.us/1.jpg');
   const imageButtons = card().components.at(-1).components;
-  assert.deepEqual(imageButtons.slice(1).map((button) => button.emoji.name), ['⬅️', '➡️']);
-  assert.deepEqual(imageButtons.slice(1).map((button) => button.style), [ButtonStyle.Primary, ButtonStyle.Success]);
+  assert.deepEqual(imageButtons.slice(2).map((button) => button.emoji.name), ['⬅️', '➡️']);
+  assert.deepEqual(imageButtons.slice(2).map((button) => button.style), [ButtonStyle.Primary, ButtonStyle.Success]);
   assert.equal(imageButtons[0].disabled, false);
-  assert.equal(imageButtons[1].disabled, true);
-  assert.equal(imageButtons[2].disabled, false);
+  assert.equal(imageButtons[1].custom_id, 'char:gender-report');
+  assert.equal(imageButtons[2].disabled, true);
+  assert.equal(imageButtons[3].disabled, false);
   const collect = async (id) => collector.listeners('collect')[0]({
     customId: id, user: { id: 'other-user' }, deferUpdate: async () => {},
   });

@@ -1,3 +1,4 @@
+import { handleGenderReviewRequest } from './reviewCharacterGenders.js';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { previewCatalogMutation, confirmCatalogMutation } from '../lib/catalogMutations.js';
@@ -136,6 +137,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
       const url = new URL(request.url, requestOrigin);
       if (await auth.handle(request, response, url, requestOrigin)) return;
       if (await handleCatalogRequest({ db, request, response, url, origin: requestOrigin, sourcePermissionConfirmed, verifySource, verifyTag: tag => verifiedTag(tag) })) return;
+      if (await handleGenderReviewRequest({ db, request, response, url, origin: requestOrigin })) return;
       if (serveAssets(request, response, url)) return;
       if (await handleConfigRequest({ db, request, response, url, origin: requestOrigin })) return;
       if (await handleFranchiseReviewRequest({ db, request, response, url, origin: requestOrigin })) return;

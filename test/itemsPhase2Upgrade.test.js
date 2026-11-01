@@ -7,6 +7,7 @@ import { openCatalog } from '../lib/catalogDb.js';
 import { convertLegacyCatalogToFinal } from '../lib/characterIdentityMigration.js';
 import { DatabaseSync } from 'node:sqlite';
 import { FINAL_CATALOG_DDL, installEmptyFinalCatalog, validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
+import { CHARACTER_GENDER_DDL } from '../lib/characterGenderSchema.js';
 import { OWNERSHIP_HISTORY_DDL } from '../lib/ownershipHistorySchema.js';
 import { ITEM_REWARD_SOURCE_DDL } from '../lib/itemRewardSourceSchema.js';
 import { upgradeFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
@@ -14,7 +15,7 @@ import { upgradeFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
 function previous(t) {
   const db = new DatabaseSync(':memory:');
   t.after(() => db.close());
-  db.exec(FINAL_CATALOG_DDL.replace(OWNERSHIP_HISTORY_DDL, '').replace(ITEM_REWARD_SOURCE_DDL, ''));
+  db.exec(FINAL_CATALOG_DDL.replace(CHARACTER_GENDER_DDL, '').replace(OWNERSHIP_HISTORY_DDL, '').replace(ITEM_REWARD_SOURCE_DDL, ''));
   db.exec("INSERT INTO item_expiry_schema VALUES(1,0); INSERT INTO catalog_state VALUES(1,0,0,0); INSERT INTO game_config_state VALUES(1,0); PRAGMA user_version=12");
   return db;
 }
