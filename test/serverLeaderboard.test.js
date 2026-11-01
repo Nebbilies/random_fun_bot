@@ -62,14 +62,14 @@ test('membership excludes departed users but propagates lookup failures', async 
 test('view has ten rows, sequential positions, escaped usernames and overall leader avatar', () => {
   const rows = Array.from({ length: 12 }, (_, i) => ({ username: `user_${i}`, score: i + 55, avatarUrl: `https://example.com/${i}.png` }));
   const first = serverLeaderboardComponents(rows)[0].toJSON();
-  assert.equal(first.components[0].components[0].content, '## 🏆SERVER TOP 10');
+  assert.equal(first.components[0].components[0].content, '## 🏆 SERVER TOP 10');
   assert.equal(first.components[0].components[1].content, 'Sum of the top 10 lowest ranked characters');
   assert.equal(first.components[2].content, 'Page 1 of 2');
   assert.equal(first.components[1].content.split('\n').length, 10);
   const second = serverLeaderboardComponents(rows, 1, true)[0].toJSON();
   assert.equal(second.components[0].accessory.media.url, rows[0].avatarUrl);
   assert.equal(second.components[1].content.split('\n').length, 2);
-  assert.match(second.components[1].content, /^\*\*11\. user\\_10\*\* - 65/);
+  assert.match(second.components[1].content, /^\*\*11\. user\\_10\*\*\u00a0-\u00a065/);
   assert.ok(second.components[3].components.every((button) => button.disabled));
   assert.match(serverLeaderboardComponents([])[0].toJSON().components[2].content, /No eligible members/);
 });
