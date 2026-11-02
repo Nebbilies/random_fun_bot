@@ -125,10 +125,12 @@ test('trade shows the harem, both players pick and the swap happens', async (t) 
   assert.equal((await say(db, channel, '102', 'Twelve')).handled, true);
   const confirmation = text(channel.sent[1].payload);
   assert.match(confirmation, /<@101> trades \*\*Eleven\*\* for \*\*Twelve\*\*/);
-  assert.match(confirmation, /confirm\?/);
+  assert.match(confirmation, /<@101>, confirm\?/);
   assert.ok(!confirmation.includes('💞'));
 
-  assert.equal((await say(db, channel, '102', 'yes')).handled, true);
+  assert.equal((await say(db, channel, '102', 'yes')).handled, false);
+  assert.equal(getMarriage(db, '1', 11)?.ownerId, '101');
+  assert.equal((await say(db, channel, '101', 'yes')).handled, true);
   assert.equal(getMarriage(db, '1', 11)?.ownerId, '102');
   assert.equal(getMarriage(db, '1', 12)?.ownerId, '101');
   assert.match(text(channel.sent[1].edits[0]), /traded \*\*Eleven\*\* for \*\*Twelve\*\*/);
@@ -145,7 +147,7 @@ test('trade is also reachable under the !trade alias', async (t) => {
   assert.match(text(ctx.message.replies[0].payload), /Trade with <@102>/);
 });
 
-test('the recipient can decline a trade and nothing moves', async (t) => {
+test('the initiator can decline the final trade and nothing moves', async (t) => {
   const db = fixture(t);
   marryCharacter(db, '1', 11, '101');
   marryCharacter(db, '1', 12, '102');
@@ -155,7 +157,7 @@ test('the recipient can decline a trade and nothing moves', async (t) => {
   await trade(ctx);
   await say(db, channel, '101', 'Eleven');
   await say(db, channel, '102', 'Twelve');
-  assert.equal((await say(db, channel, '102', 'no')).handled, true);
+  assert.equal((await say(db, channel, '101', 'no')).handled, true);
   assert.equal(getMarriage(db, '1', 11)?.ownerId, '101');
   assert.equal(getMarriage(db, '1', 12)?.ownerId, '102');
   assert.match(text(channel.sent[1].edits[0]), /declined the trade/);
@@ -175,6 +177,7 @@ test('gift hands the character over after the recipient confirms', async (t) => 
   const confirmation = text(channel.sent[0].payload);
   assert.match(confirmation, /<@102>: <@101> wants to give you \*\*Eleven\*\*, confirm\?/);
 
+  assert.equal((await say(db, channel, '101', 'y')).handled, false);
   await say(db, channel, '102', 'y');
   assert.equal(getMarriage(db, '1', 11)?.ownerId, '102');
   assert.match(text(channel.sent[0].edits[0]), /gave \*\*Eleven\*\* to <@102>/);
@@ -192,9 +195,14 @@ test('the confirm buttons accept the trade as well', async (t) => {
   await say(db, channel, '102', 'Twelve');
 
   const interaction = {
-    customId: 'xfer:confirm', user: { id: '102' }, guildId: '1',
+    customId: 'xfer:confirm', user: { id: '101' }, guildId: '1',
     values: [], deferUpdate: async () => {}, reply: async () => {},
   };
+  const rejected = [];
+  await channel.sent[1].collector.listeners('collect')[0]({ ...interaction, user: { id: '102' },
+    reply: async payload => rejected.push(payload) });
+  assert.match(rejected[0].content, /Only <@101>/);
+  assert.equal(getMarriage(db, '1', 11)?.ownerId, '101');
   await channel.sent[1].collector.listeners('collect')[0](interaction);
   assert.equal(getMarriage(db, '1', 11)?.ownerId, '102');
   assert.equal(getMarriage(db, '1', 12)?.ownerId, '101');
