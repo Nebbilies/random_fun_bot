@@ -140,6 +140,10 @@ _Avoid_: Favorite, target, wanted character
 A player's bounded set of wishes in one Discord server, holding at most seven. It is a target list, so wishing for an already owned character is allowed and changes nothing about ownership.
 _Avoid_: Harem wishlist, global wishlist
 
+**Unbinding**:
+To remove a character's soulbind while leaving their current ownership unchanged. Unbinding is neither a divorce nor an ownership transfer.
+_Avoid_: Forced divorce, steal
+
 **Item lifetime**:
 The real-world duration an inventory entry remains available for starting uses, determined by its rarity tier when acquired. Time continues to pass while its owner is offline.
 _Avoid_: Effect duration, inactivity timeout
