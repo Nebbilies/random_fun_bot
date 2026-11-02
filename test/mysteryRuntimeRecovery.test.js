@@ -118,6 +118,35 @@ async function beginContest({ db, time, start }) {
   return { close, open: (round) => round === 1 ? startedAt : close(round - 1) + RESULT_DURATION_MS };
 }
 
+test('Glass Bridge public lists, final result recovery, and protected claim use the shared runtime', async t => {
+  const { db, event, time, start, client } = fixture(t, 'glass_bridge', 0, true);
+  await start();
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  const first = event.sent.at(-1);
+  await onMysteryButton(db, roundInteraction(first, 1, 'left'));
+  await onMysteryButton(db, roundInteraction(first, 1, 'left', '102'));
+  assert.match(JSON.stringify(first.components), /### Left[\s\S]*<@101>[\s\S]*<@102>/);
+  assert.deepEqual(first.edits.at(-1).allowedMentions.parse, []);
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  assert.match(JSON.stringify(first.components), /Safe side:/);
+  assert.doesNotMatch(JSON.stringify(first.components), /mystery:1:choice/);
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  const second = event.sent.at(-1);
+  assert.match(JSON.stringify(second.components), /Unpicked[\s\S]*<@101>[\s\S]*<@102>/);
+  await onMysteryButton(db, roundInteraction(second, 2, 'left'));
+  await onMysteryButton(db, roundInteraction(second, 2, 'right', '102'));
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  cancelMysteryRuntime(db, { cancelPaidSessions: false });
+  const recovered = await recoverMysteryRuntime({ db, client, ...time,
+    random: () => { throw new Error('result recovery must not draw again'); } });
+  assert.equal(recovered.safe, true);
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  assert.equal(getMysterySession(db, 1).state, 'claim_open');
+  assert.equal(getMysterySession(db, 1).winnerId, '101');
+  assert.ok(event.sent.at(-1).reactions.includes('❤️'));
+});
+
 
 for (const phase of ['reserved', 'running', 'countdown', 'loss_reveal', 'claim_open']) {
   test(`file-backed recovery preserves ${phase} without reroll or charge`, async (t) => {
