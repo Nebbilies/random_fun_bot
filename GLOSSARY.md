@@ -128,6 +128,10 @@ _Avoid_: Banked score, winnings
 A mystery event where players secretly choose a number each round and earn its value only when nobody else chose the same number. Round scores accumulate toward the event result.
 _Avoid_: Highest unique bid, auction
 
+**Glass Bridge**:
+A mystery event where players cross a shared bridge by choosing between two paths at each step; a wrong or missed choice ends their run.
+_Avoid_: Lucky Chain
+
 **Wish**:
 One player's declared intent to obtain one character in one Discord server. Its character identity is fixed when the wish is made, so a later rank change does not move the wish to another character.
 _Avoid_: Favorite, target, wanted character
