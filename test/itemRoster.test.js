@@ -27,11 +27,11 @@ test('every item in the approved roster has valid tier and properties', () => {
     // Common
     'hourglass_of_haste', 'four_leaf_clover', 'binoculars',
     // Rare
-    'love_letter', 'golden_whistle', 'sirens_call', 'rolling_fever', 'adrenaline_rush', 'pinata', 'engagement_ring',
+    'cupids_misfire', 'love_letter', 'golden_whistle', 'sirens_call', 'rolling_fever', 'adrenaline_rush', 'pinata', 'engagement_ring',
     // Epic
     'pickpockets_hook', 'mirror_shield', 'bag_of_holding', 'double_date', 'franchise_passport', 'golden_hour', 'blood_pact',
     // Legendary
-    'master_key', 'wish_upon_a_star', 'aegis_of_fidelity', 'crown_of_the_sovereign',
+    'shackles_of_liberation', 'master_key', 'wish_upon_a_star', 'aegis_of_fidelity', 'crown_of_the_sovereign',
     // ???
     'kaimetsu',
   ];
