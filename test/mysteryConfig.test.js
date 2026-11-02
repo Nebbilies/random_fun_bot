@@ -34,7 +34,7 @@ function move(db, roll, input, now, random = () => 0.9) {
 }
 function only(db, id, extra = {}) {
   save(db, 'mysteryEvents', Object.assign(Object.fromEntries(
-    ['doors', 'clue_reveal', 'treasure_hunt', 'greed_chamber', 'deadlock']
+    ['doors', 'clue_reveal', 'treasure_hunt', 'greed_chamber', 'deadlock', 'glass_bridge']
       .map((name) => [`mysteryEvents.${name}.enabled`, name === id])), extra));
 }
 

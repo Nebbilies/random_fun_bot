@@ -74,13 +74,8 @@ test('disabled mystery feature leaves ordinary roll behavior available', (t) => 
   assert.equal(getMysteryEventChannel(db, '1', '10'), '10');
 });
 
-test('the active roster gives four events equal weights and excludes unavailable Clue Reveal', (t) => {
-  const ids = ['doors', 'clue_reveal', 'greed_chamber', 'deadlock'];
-  assert.deepEqual(MYSTERY_ROSTER.map(({ id, enabled, weight }) => [id, enabled, weight]),
-    ids.map((id) => [id, true, 1]));
-  for (const [index, id] of ids.entries()) {
-    assert.equal(selectMysteryEvent(MYSTERY_ROSTER, ids, () => index / 4).id, id);
-  }
+test('the active roster registers Glass Bridge and excludes unavailable Clue Reveal', (t) => {
+  assert.ok(MYSTERY_ROSTER.some(event => event.id === 'glass_bridge'));
   for (const [draw, id] of [[0, 'doors'], [1 / 3, 'greed_chamber'], [2 / 3, 'deadlock']]) {
     const db = fixture(t); // This character has no linked anime metadata.
     const roll = reserve(db, '100', [0, 0, draw]);

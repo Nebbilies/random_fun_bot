@@ -117,7 +117,7 @@ test('global changes and resets validate inherited guild combinations', (t) => {
 
 test('mystery availability and array/range invariants', (t) => {
   const db = memory(t);
-  const disable = Object.fromEntries(['doors', 'clue_reveal', 'greed_chamber', 'deadlock'].map((id) => [`mysteryEvents.${id}.enabled`, false]));
+  const disable = Object.fromEntries(['doors', 'clue_reveal', 'greed_chamber', 'deadlock', 'glass_bridge'].map((id) => [`mysteryEvents.${id}.enabled`, false]));
   assert.throws(() => save(db, 'mysteryEvents', disable), { code: 'CONFIG_VALIDATION' });
   save(db, 'mystery', { 'mystery.enabled': false });
   save(db, 'mysteryEvents', disable);

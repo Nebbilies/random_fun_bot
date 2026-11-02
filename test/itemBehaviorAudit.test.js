@@ -101,7 +101,7 @@ function mysteryRuntimeFixture({ dmFails = false } = {}) {
     } }) } };
   const imagePicker = { pick: async () => ({ url: 'https://example.com/a.png' }) };
   return { timers, setTimer, clockTime, now, sent, dms, channel, message, client, imagePicker,
-    random: seq([0, 0, 0.3]) };
+    random: seq([0, 0, 0.24]) };
 }
 
 async function startMysteryRuntime(db, runtime, { id = '800' } = {}) {
