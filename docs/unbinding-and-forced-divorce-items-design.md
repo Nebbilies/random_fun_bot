@@ -1,6 +1,6 @@
 # Unbinding and next-married-roll items
 
-Status: implementation plan completed following the design interview. All design decisions below are confirmed. No implementation changes are included in this document.
+Status: implemented on `feat/unbinding-and-cupids-misfire`, based on updated `main` at `870d5ac`. The rules below capture the confirmed design; implementation and verification notes follow.
 
 ## Confirmed rules
 
@@ -141,12 +141,32 @@ Locate and extend the repository's existing test files and use its established r
 
 Run focused tests first, then the normal full test/lint checks where available. Update item descriptions and relevant documentation to match the tested behavior.
 
+## Notification delivery limitation
+
+Discord publication and local acknowledgement cannot be committed atomically. Persist an owner-notification attempt marker before sending. The first attempt allows the owner ping; ambiguous retries suppress that owner's mention even if they also match a wish or an escape notice. This prevents repeat notifications after an accepted send whose response was lost, including outside Discord's nonce window. A genuinely failed first attempt can therefore result in a silently delivered retry rather than a guaranteed ping. Ownership and item effects remain exactly-once; Discord message delivery itself is best effort.
+
 ## Completion criteria
 
 - Both items are fully integrated and their behavior matches the confirmed rules above.
 - The former owner is pinged once on initial publication, without repeat pings on updates or recovery of an already-published card.
 - Tests demonstrate atomic, replay-safe effects and correct claim/escape distinctions.
 - No unrelated protection-lifecycle changes or slash commands are introduced.
+
+## Implementation notes
+
+- Item IDs are `shackles_of_liberation` and `cupids_misfire`.
+- Shackles uses the existing durable item-action picker and confirmation with exact marriage snapshots.
+- Cupid's Misfire uses the existing persisted user-buff storage. Its roll outcome and owner-notification attempt marker extend existing `rules_json`; no new schema migration is required.
+- Both items are registered in configuration, rewards, discovery, and the 02/11/2026 item release.
+- Existing unrelated glossary edits and untracked local files are intentionally not included in feature commits.
+
+## Verification
+
+- `npm test`: 1,528 tests, 1,527 passing, 1 skipped, 0 failures.
+- `npm run typecheck:catalog`: passed.
+- `git diff --check` and syntax checks for the changed effect/action modules: passed.
+- Focused tests cover exact unbinding selection and revalidation, defense bypass, self-divorce, opposing Shield interception, ordinary claim costs, buff persistence, atomic rollback, durable delivery, discovery/config/expiry integration, and ambiguous-send notification suppression.
+- Read-only review identified the send-before-ack notification edge case; the persisted at-most-once notification-attempt marker and regression test address it, subject to the delivery limitation above.
 
 ## Existing mechanics relevant to the design
 
