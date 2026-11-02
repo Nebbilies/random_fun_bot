@@ -1,18 +1,21 @@
 import { markCharacterOwnership } from '../lib/characterOwnershipDisplay.js';
 import { getGameConfig } from '../lib/gameConfig.js';
 import { MessageFlags } from 'discord.js';
-import { topCharacters, topListComponents, topPageCount } from '../lib/topCharacters.js';
+import { topCharacters, topListComponents, topPageCount, TOP_LIMIT } from '../lib/topCharacters.js';
+import { parseTopCommand } from '../lib/topModifiers.js';
 
 
 
 /**
  * `!top` lists the highest ranked characters of the catalog, 15 per page.
- * `!top <page>` opens a specific page; `!topo` also shows server owners.
+ * `!top <page>` opens a specific page; `o` shows owners, `w`/`h` filter gender.
  */
 export async function run(ctx) {
-  const rows = topCharacters(ctx.yoshiko.catalogDb);
+  const modifiers = parseTopCommand(ctx.args[0]);
+  if (!modifiers) return;
+  const rows = topCharacters(ctx.yoshiko.catalogDb, TOP_LIMIT, modifiers.gender);
   const render = (disabled = false) => topListComponents(
-    markCharacterOwnership(ctx.yoshiko.catalogDb, ctx.message.guildId, rows), page, { disabled, showOwner: ctx.args[0].toLowerCase() === 'topo' });
+    markCharacterOwnership(ctx.yoshiko.catalogDb, ctx.message.guildId, rows), page, { disabled, ...modifiers });
   const pages = topPageCount(rows);
   const requested = Number.parseInt(ctx.args[1] ?? '', 10);
   let page = Number.isInteger(requested) && requested > 0 ? Math.min(requested, pages) - 1 : 0;

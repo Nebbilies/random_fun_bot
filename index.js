@@ -24,6 +24,7 @@ import {onInventoryButton} from "./commands/inv.js";
 import {cleanupExpiredItems} from './lib/itemExpiryCleanup.js';
 import {recoverBinocularsUses} from './lib/binocularsUse.js';
 import {parseFranchiseCommand} from "./lib/franchiseModifiers.js";
+import {parseTopCommand} from "./lib/topModifiers.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
 
@@ -193,7 +194,8 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const gameCommand = args[0].startsWith(prefix) ? args[0].slice(prefix.length).toLowerCase() : '';
         const isMarriage = /^(mm|mymarry)([a-z]*)$/.test(gameCommand);
         const franchiseModifiers = parseFranchiseCommand(gameCommand);
-        if (isMarriage || franchiseModifiers || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'topo', 'ts', 'topserv', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
+        const topModifiers = parseTopCommand(gameCommand);
+        if (isMarriage || franchiseModifiers || topModifiers || ['char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'topo', 'ts', 'topserv', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
             args[0] = gameCommand;
             if (isCatalogDraining(client.catalogDb) && isNewGameActionCommand(gameCommand)) {
                 await message.reply('Character game is draining for maintenance. Existing actions may finish; new actions are paused.').catch(console.error);
@@ -201,7 +203,8 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
             }
             try {
                 const commandModule = isMarriage ? './commands/mm.js'
-                    : franchiseModifiers ? './commands/ima.js' : `./commands/${gameCommand}.js`;
+                    : franchiseModifiers ? './commands/ima.js'
+                    : topModifiers ? './commands/top.js' : `./commands/${gameCommand}.js`;
                 const command = await import(commandModule);
                 await command.run({ yoshiko, message, args, prefix });
             } catch (error) {
