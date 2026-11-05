@@ -164,6 +164,9 @@ test('settled maintenance history passes UUID preflight and converts without los
   const db = fixture(t);
   const { action } = hostage(db);
   confirming(db);
+  assert.equal(db.prepare("SELECT 1 FROM sqlite_schema WHERE name='affection_schema'").get(), undefined);
+  const selections = JSON.parse(db.prepare('SELECT selections_json FROM item_actions WHERE id=?').get(action.id).selections_json);
+  assert.equal(Object.hasOwn(selections, '_affectionItemUse'), false);
   settleCharacterMigration(db, options);
   assert.deepEqual(inventoryCharacterIdentities(db).blockers, []);
   const before = db.prepare('SELECT result_json FROM item_actions WHERE id=?').get(action.id).result_json;
@@ -226,6 +229,9 @@ test('delivered Hostage lacks refund journal and blocks other safe cancellations
   const { action } = hostage(db);
   const confirmation = confirming(db);
   assert.equal(confirmHostageDelivery(db, action.id, '999', 200), true);
+  const selections = JSON.parse(db.prepare('SELECT selections_json FROM item_actions WHERE id=?').get(action.id).selections_json);
+  assert.equal(Object.hasOwn(selections, '_affectionItemUse'), false);
+  assert.equal(Object.hasOwn(selections, '_affectionPayment'), false);
   assert.deepEqual(rows(db, 'item_action_costs').map(row => row.action_id), [confirmation.id]);
   const before = snapshot(db);
   assert.throws(() => settleCharacterMigration(db, options), error => error instanceof CharacterMigrationSettlementError
