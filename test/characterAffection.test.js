@@ -9,6 +9,7 @@ import { hasAffection, getAffectionTotal, getAffectionBenefits, getSoulmateState
   earnReclaimInTransaction, getAffectionOverview, getAffectionDetail, selectOwedAffectionRewardsInTransaction } from '../lib/characterAffection.js';
 import { resolveAffectionDecisionInTransaction, getAffectionDecision, captureCurrentPerks } from '../lib/affectionPerks.js';
 import { registerPendingTransfer } from '../lib/characterAvailability.js';
+import { validateAffectionState } from '../lib/affectionSchema.js';
 const a='11111111-1111-4111-8111-111111111111', b='22222222-2222-4222-8222-222222222222';
 const scope={guildId:'g',userId:'u',channelId:'c'};
 function fixture(t) {
@@ -201,6 +202,135 @@ test('source and pair receipts survive presentation cleanup, reconnect, and owne
   assert.equal(getAffectionDetail(db,{...scope,characterId:a}).pending.length,3);
   assert.throws(()=>capture(db,'permanent',b),/scope conflict/);
   assert.throws(()=>complete(db,'unknown'),/Missing.*capture/);
+});
+
+test('large overview pages lightweight relationships and shares one benefits projection',t=>{
+  const db=fixture(t);
+  transaction(db,()=>{
+    const identity=db.prepare('INSERT INTO character_identities(id,name_full) VALUES(?,?)');
+    const marriage=db.prepare("INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES('g',?,'u','d')");
+    const affection=db.prepare("INSERT INTO character_affection VALUES('g','u',?,?,0)");
+    for (let n=3;n<=1000;n++) {
+      const id=`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+      identity.run(id,`Name ${String(1001-n).padStart(4,'0')}`);
+      marriage.run(id);affection.run(id,700);
+    }
+    affection.run(a,700);
+  });
+  confirmSoulmate(db,{...scope,characterId:a,now:1});
+  capture(db,'pending',a);complete(db,'pending');
+  db.prepare('DELETE FROM marriages WHERE character_id=?').run(b); // Zero-progress former history.
+  const before=db.prepare('SELECT total_changes() n').get().n;
+  const view=getAffectionOverview(db,{...scope,page:1,pageSize:5,now:300});
+  assert.equal(view.total,999);assert.equal(view.pages,200);assert.equal(view.rows.length,5);
+  assert.deepEqual(view.rows.map(row=>row.name),['Name 0005','Name 0006','Name 0007','Name 0008','Name 0009']);
+  assert.equal(view.hasFormer,true);assert.equal(view.pending.length,1);
+  assert.equal(view.benefits.rollBonus,5);assert.equal(view.benefits.claimReductionMs,3600000);
+  for (const row of view.rows) {
+    assert.equal(row.benefits,view.benefits,'paged details share the single harem benefits calculation');
+    assert.deepEqual(row.pending,[]);assert.equal(row.isOwned,true);assert.equal(row.isFormer,false);
+  }
+  const former=getAffectionOverview(db,{...scope,former:true,pageSize:5});
+  assert.equal(former.total,1);assert.equal(former.hasFormer,true);
+  assert.equal(former.rows[0].characterId,b);assert.equal(former.rows[0].total,0);
+  assert.equal(former.rows[0].isFormer,true);assert.equal(former.pending.length,1);
+  const other=getAffectionOverview(db,{...scope,userId:'other'});
+  assert.equal(other.hasFormer,false);assert.equal(other.total,0);assert.deepEqual(other.pending,[]);
+  assert.equal(db.prepare('SELECT total_changes() n').get().n,before);
+});
+
+const corruptSnapshots = [
+  ['unowned direct', s=>{s.owned=false;}],
+  ['wrong direct target', s=>{s.awards[0].characterId=a;s.awards.pop();}],
+  ['different candidate user', s=>{s.awards[0].userId='other';}],
+  ['wrong indirect target', s=>{s.awards[1].characterId=b;s.awards.shift();}],
+  ['wrong related score', s=>{s.awards[1].base=12;}],
+  ['missing candidate', s=>{s.awards.pop();}],
+  ['duplicate candidate', s=>{s.awards[1]={...s.awards[0]};}],
+  ['third candidate', s=>{s.awards.push({...s.awards[0]});}],
+  ['missing ownership', s=>{delete s.owned;}],
+  ['wrong ownership type', s=>{s.owned=1;}],
+  ['unknown snapshot field', s=>{s.userId='other';}],
+  ['unknown candidate field', s=>{s.awards[0].guildId='other';}],
+  ['invalid soulmate total', s=>{s.soulmate.total=2101;}],
+  ['missing matching facts', s=>{s.matching=null;}],
+  ['invalid genre fact', s=>{s.matching.soulmateGenres=[42];}],
+  ['duplicate genre fact', s=>{s.matching.rolledGenres=['Action','Action'];}],
+  ['invalid franchise size', s=>{s.matching.sharedFranchises=[{franchise_id:1,size:0}];}],
+  ['impossible shared pair size', s=>{s.matching.sharedFranchises=[{franchise_id:1,size:1}];s.awards[1].base=12;}],
+  ['invalid franchise identity', s=>{s.matching.sharedFranchises=[{franchise_id:0,size:2}];s.awards[1].base=12;}],
+  ['no genre match', s=>{s.matching.soulmateGenres=['Action'];s.matching.rolledGenres=['Comedy'];}],
+  ['null candidate', s=>{s.awards[0]=null;}],
+  ['null snapshot soulmate fields', s=>{s.soulmate={characterId:null,total:0};}],
+  ['duplicate franchise fact', s=>{s.matching.sharedFranchises=[{franchise_id:1,size:2},{franchise_id:1,size:2}];}],
+  ['impossible bond trigger', s=>{s.awards[0].bond=true;}],
+  ['impossible saved bond chance', s=>{s.awards[0].bondChance=.08;}],
+  ['inconsistent candidate bond chance', s=>{s.soulmate.total=600;s.awards[0].bondChance=.16;}],
+  ['unexpected matching without soulmate', s=>{s.soulmate=null;s.awards.pop();}],
+];
+for (const [label, corrupt] of corruptSnapshots) {
+  test(`saved context rejects ${label} at inspection, capture replay and completion without effects`,t=>{
+    const db=fixture(t);
+    confirmSoulmate(db,{...scope,characterId:a,now:1});
+    const snapshot=capture(db,'corrupt',b);
+    validateAffectionState(db); // Corruption can also arrive after startup inspection.
+    corrupt(snapshot);
+    db.prepare('UPDATE affection_contexts SET snapshot_json=? WHERE source_key=?').run(JSON.stringify(snapshot),'corrupt');
+    const before=db.prepare('SELECT total_changes() n').get().n;
+    assert.throws(()=>validateAffectionState(db),/context snapshot/);
+    assert.throws(()=>capture(db,'corrupt',b),/context snapshot/);
+    assert.throws(()=>complete(db,'corrupt'),/context snapshot/);
+    assert.equal(db.prepare('SELECT total_changes() n').get().n,before);
+    assert.equal(db.prepare('SELECT count(*) n FROM affection_awards').get().n,0);
+    assert.equal(db.prepare('SELECT count(*) n FROM affection_entitlements').get().n,0);
+    assert.equal(db.prepare('SELECT count(*) n FROM character_affection').get().n,0);
+    assert.equal(db.prepare('SELECT count(*) n FROM affection_decisions').get().n,0);
+    assert.equal(db.prepare('SELECT state FROM affection_contexts').get().state,'captured');
+  });
+}
+
+test('completed and canceled contexts validate before replay, even after startup',t=>{
+  const db=fixture(t);
+  for (const state of ['completed','canceled']) {
+    const snapshot=capture(db,state);
+    if (state==='completed') complete(db,state);
+    else transaction(db,()=>cancelAppearanceInTransaction(db,state,101));
+    validateAffectionState(db);
+    snapshot.awards[0].characterId=b;
+    db.prepare('UPDATE affection_contexts SET snapshot_json=? WHERE source_key=?').run(JSON.stringify(snapshot),state);
+    const before=db.prepare('SELECT total_changes() n').get().n;
+    assert.throws(()=>complete(db,state),/context snapshot/);
+    assert.throws(()=>capture(db,state),/context snapshot/);
+    assert.equal(db.prepare('SELECT total_changes() n').get().n,before);
+    db.prepare('DELETE FROM affection_contexts WHERE source_key=?').run(state);
+  }
+});
+
+test('saved matching and pre-event Bond survive live metadata, ownership and selection changes',t=>{
+  const db=fixture(t);
+  db.prepare("INSERT INTO character_affection VALUES('g','u',?,600,0)").run(a);
+  confirmSoulmate(db,{...scope,characterId:a,now:1});
+  db.exec("INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Saved','d')");
+  for (const id of [a,b]) db.prepare('INSERT INTO character_franchise_memberships VALUES(?,1)').run(id);
+  const saved=capture(db,'frozen',b,100,()=>0);
+  assert.deepEqual(saved.awards.map(x=>[x.base,x.bondChance,x.bond]),[[100,.16,true],[12,.16,true]]);
+  db.exec('DELETE FROM character_franchise_memberships; DELETE FROM marriages; UPDATE character_affection SET total=0');
+  validateAffectionState(db);
+  assert.deepEqual(capture(db,'frozen',b),JSON.parse(JSON.stringify(saved)));
+  const result=complete(db,'frozen');
+  assert.deepEqual(result.awards.map(x=>[x.characterId,x.amount]),[[b,200],[a,24]]);
+  validateAffectionState(db);
+  assert.deepEqual(complete(db,'frozen'),result);
+});
+
+test('soulmate domain confirmation rechecks maintenance at commit without writes',t=>{
+  const db=fixture(t);
+  db.prepare("INSERT INTO catalog_meta(key,value) VALUES('game_maintenance','drain') ON CONFLICT(key) DO UPDATE SET value='drain'").run();
+  const before=db.prepare('SELECT total_changes() n').get().n;
+  assert.throws(()=>confirmSoulmate(db,{...scope,characterId:a,now:1}),/draining/);
+  assert.equal(db.prepare('SELECT total_changes() n').get().n,before);
+  assert.equal(db.isTransaction,false);
+  assert.equal(getSoulmateState(db,'g','u').characterId,null);
 });
 
 test('legacy v10 detection is pure and preserves old behavior',()=>{

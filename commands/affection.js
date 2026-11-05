@@ -15,11 +15,11 @@ export function normalizedDetail(detail) {
 }
 export function overviewProjection(db, args) {
   const view = getAffectionOverview(db, args);
-  const other = getAffectionOverview(db, { ...args, former: true, page: 0, pageSize: 1 });
   const soulmate = view.benefits?.soulmate;
-  const name = soulmate ? getAffectionDetail(db, { ...args, characterId: soulmate.characterId })?.name : null;
+  const name = soulmate ? db.prepare(`SELECT COALESCE(c.name_full,i.name_full) name
+    FROM character_identities i LEFT JOIN characters c ON c.id=i.id WHERE i.id=?`).get(soulmate.characterId)?.name : null;
   return { ...view, ...normalizedDetail(view), former: Boolean(args.former),
-    pages: Math.max(1, Math.ceil(view.total / (args.pageSize ?? 5))), hasFormer: other.total > 0,
+    pages: view.pages, hasFormer: view.hasFormer,
     benefits: { ...view.benefits, soulmate: soulmate ? { ...soulmate, name } : null } };
 }
 export function scopeMatches(interaction, ctx, reply) {

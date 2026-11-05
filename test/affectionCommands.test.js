@@ -4,11 +4,11 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { captureAppearanceInTransaction, completeAppearanceInTransaction, getAffectionDetail } from '../lib/characterAffection.js';
+import { captureAppearanceInTransaction, completeAppearanceInTransaction, getAffectionDetail, confirmSoulmate } from '../lib/characterAffection.js';
 import { transaction } from '../lib/catalogDb.js';
 import { createFinalCatalog } from '../lib/catalogDb.js';
 import { loadCharacterIndex } from '../lib/gameCharacterLookup.js';
-import { run } from '../commands/affection.js';
+import { run, overviewProjection } from '../commands/affection.js';
 
 const ids = Array.from({ length: 7 }, (_, i) => `${String(i + 1).repeat(8)}-1111-4111-8111-111111111111`);
 /** @returns {any} */
@@ -125,6 +125,42 @@ test('public views cannot select owed items; only the initial own profile retrie
   await click(own, 'affection:prev');
   assert.equal(db.prepare('SELECT total_changes() n').get().n, after);
   assert.equal(own.payload().components.length, 1, 'only read-only navigation, no new claim control');
+});
+
+test('public overview projection keeps five-row alphabetical pages, scoped pending and former flags for a large collection', t => {
+  const db = fixture(t);
+  transaction(db, () => {
+    const identity = db.prepare('INSERT INTO character_identities(id,name_full) VALUES(?,?)');
+    const marriage = db.prepare("INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES('1',?,'101','d')");
+    for (let n = 10; n < 1010; n++) {
+      const id = `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+      identity.run(id, `Zero ${String(1010 - n).padStart(4, '0')}`); marriage.run(id);
+    }
+    captureAppearanceInTransaction(db, { sourceKey: 'profile', guildId: '1', userId: '101', channelId: '10', characterId: ids[0], now: 1 });
+    completeAppearanceInTransaction(db, { sourceKey: 'profile', now: 2, rewardRoster: [] });
+  });
+  confirmSoulmate(db, { guildId: '1', userId: '101', characterId: ids[0], now: 3 });
+  db.prepare('DELETE FROM marriages WHERE character_id=?').run(ids[1]);
+  const args = { guildId: '1', userId: '101', pageSize: 5, now: 4 };
+  const before = db.prepare('SELECT total_changes() n').get().n;
+  const view = overviewProjection(db, args);
+  assert.equal(view.total, 1006); assert.equal(view.pages, 202); assert.equal(view.rows.length, 5);
+  assert.deepEqual(view.rows.map(row => row.name), ['Shared 0', 'Character 2', 'Character 3', 'Character 4', 'Character 5']);
+  assert.equal(view.benefits.soulmate.name, 'Shared 0');
+  assert.equal(view.hasFormer, true); assert.deepEqual(view.pending, { owed: 3, pending: 0 });
+  assert.equal(view.rows[0].pending.length, 3);
+  const former = overviewProjection(db, { ...args, former: true });
+  assert.equal(former.total, 1); assert.equal(former.rows[0].characterId, ids[1]);
+  assert.equal(former.rows[0].isFormer, true); assert.equal(former.hasFormer, true);
+  assert.deepEqual(former.pending, { owed: 3, pending: 0 });
+  const next = overviewProjection(db, { ...args, page: 1 });
+  assert.deepEqual(next.rows.map(row => row.name), ['Character 6', 'Zero 0001', 'Zero 0002', 'Zero 0003', 'Zero 0004']);
+  for (const scope of [{ userId: '202' }, { guildId: '2' }]) {
+    const other = overviewProjection(db, { ...args, ...scope });
+    assert.equal(other.total, 0); assert.equal(other.hasFormer, false);
+    assert.deepEqual(other.pending, { owed: 0, pending: 0 });
+  }
+  assert.equal(db.prepare('SELECT total_changes() n').get().n, before);
 });
 
 test('unknown names get lookup guidance without retrying owed items', async t => {
