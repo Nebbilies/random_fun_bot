@@ -1,6 +1,6 @@
 # Affection and soulmate — phase-3 implementation plan
 
-Status: approved for implementation and verification by the user; implementation in progress on `feat/character-affection`. The user requested `/plan` after accepting the design/display direction, including the gold soulmate accent. The user authorized feature commits and a pull request. Production database operations, deployment and live service actions remain outside scope.
+Status: approved by the user, implemented and locally verified on `feat/character-affection`; see [affection-validation.md](./affection-validation.md). The user requested `/plan` after accepting the design/display direction, including the gold soulmate accent. The user authorized feature commits and a pull request. Production database operations, deployment and live service actions remain outside scope.
 
 Design authority: [affection-design.md](./affection-design.md), the final interview record [affection-brainstorm.md](./affection-brainstorm.md), and subsequent presentation decisions. Preserve pre-existing work, including the unrelated glossary additions, promotion manifests, item-expansion documents and Kaimetsu report. Repository inspection during planning found branch `main`, local HEAD `337174d`; recheck the actual checkout before implementation rather than assuming it remains unchanged.
 
@@ -32,9 +32,9 @@ Design authority: [affection-design.md](./affection-design.md), the final interv
 - Overview omits the visible sort-order explanation and cap values; caps still apply mechanically. No paged reward path or separate level system. Current pending-item dialogs remain unchanged in purpose.
 - A meter uses progress within the applicable last-to-next reward interval. For active soulmate, take the union of both tracks; show all rewards tied at the next threshold. Non-soulmates use normal milestones. At cap, show all current rewards unlocked, not a zero denominator or invented target.
 
-### Plan defaults requiring acceptance with this plan
+### Overview defaults accepted with implementation approval
 
-These remain defaults proposed by the overview mock, not already-approved product mechanics: **five relationships per page**, owned characters by descending affection with deterministic ties and zero-progress entries last, and a read-only Owned/Former filter. Plan approval can accept these defaults; otherwise adjust this slice before coding. Do not turn display refinements into implied approval of unrelated navigation.
+The user's approval to execute this plan accepted its stated overview defaults: **five relationships per page**, owned characters by descending affection with deterministic name/identity ties and zero-progress entries last, and a read-only Owned/Former filter. Sorting/cap explanatory text remains hidden as requested.
 
 ## 2. Agreed engineering seams to exercise
 
@@ -324,7 +324,7 @@ Maintain a concise eventual `docs/affection-validation.md` with actual baseline/
 - No production actions during implementation/verification by default. Future rollout requires explicit authorization, a fresh consistent SQLite backup including WAL, coordinated bot/portal code, rehearsed upgrade and runtime/Discord acceptance. Preserve compatible code+DB rollback pairs; old exact-schema binaries may refuse the extended DB. Never drop feature tables to manufacture a downgrade.
 - No commits unless explicitly requested; if requested later, follow repository commit convention without co-author metadata.
 
-## 7. Plan self-review and authorization gate
+## 7. Plan self-review and authorization gate — implementation subsequently approved
 
 **Author self-review complete; self-approved as a plan, not implementation authorization.** Reviewed the complete plan against the accepted design, final Ring override, both reward tables, gold/shortened-card decisions, current source, existing test structure and operational constraints. Three bounded read-only implementation inventories informed the task map; an independent read-only execution review found no material unresolved execution issue. That review is not gameplay verification or user approval.
 
@@ -342,4 +342,4 @@ Self-review refinements captured in the final plan:
 
 Documentation checks passed: local Markdown links resolve; all **47 existing test-suite names** referenced by the task inventory exist in this checkout; proposed new suites are labeled; accepted normal/soulmate threshold sequences and display exclusions are covered by the task/acceptance map; `git diff --check` is clean. No gameplay tests, typecheck, schema operation, production DB access, network/SSH action, bot startup, or service action was performed during planning. No commits created.
 
-Plan approval, when explicitly given, can authorize implementation and verification of these slices on disposable fixtures, including the stated test seams and overview defaults. **Writing this plan does not.** Commits, deployment, production DB/service operations, or unrelated changes remain separately unauthorized. Stop after presenting the reviewed plan and ask for approval before execution.
+The user explicitly approved execution, disposable-fixture verification, split feature commits without co-author metadata, and creation of a PR. Implementation follows these slices; actual results are in [affection-validation.md](./affection-validation.md). No live deployment, production database/service operations, or unrelated changes are authorized. The original planning phase remained documentation-only.
