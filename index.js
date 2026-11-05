@@ -23,6 +23,7 @@ import {onItemActionInteraction, recoverItemActionRuntime} from "./lib/itemActio
 import {onInventoryButton} from "./commands/inv.js";
 import {cleanupExpiredItems} from './lib/itemExpiryCleanup.js';
 import {recoverBinocularsUses} from './lib/binocularsUse.js';
+import {recoverSelectedAffectionRewards} from './lib/affectionRewards.js';
 import {parseFranchiseCommand} from "./lib/franchiseModifiers.js";
 import {parseTopCommand} from "./lib/topModifiers.js";
 
@@ -78,6 +79,7 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
     // rewards may publish; vault recovery also enforces that durable gate.
     await recoverMysteryRuntime({ db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker });
     await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
+    recoverSelectedAffectionRewards(yoshiko.catalogDb);
     await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
     cleanupExpiredItems(yoshiko.catalogDb);
     gameRuntimeReady = true;
@@ -93,6 +95,7 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
             // Include terminal mysteries with an outstanding compensated reveal.
             await recoverMysteryRuntime({ db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker });
             await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
+            recoverSelectedAffectionRewards(yoshiko.catalogDb);
             await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
             cleanupExpiredItems(yoshiko.catalogDb);
         }
@@ -195,7 +198,7 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const isMarriage = /^(mm|mymarry)([a-z]*)$/.test(gameCommand);
         const franchiseModifiers = parseFranchiseCommand(gameCommand);
         const topModifiers = parseTopCommand(gameCommand);
-        if (isMarriage || franchiseModifiers || topModifiers || ['help', 'char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'topo', 'ts', 'tsl', 'topserv', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
+        if (isMarriage || franchiseModifiers || topModifiers || ['affection', 'aff', 'soulmate', 'sm', 'help', 'char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'topo', 'ts', 'tsl', 'topserv', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
             args[0] = gameCommand;
             if (isCatalogDraining(client.catalogDb) && isNewGameActionCommand(gameCommand)) {
                 await message.reply('Character game is draining for maintenance. Existing actions may finish; new actions are paused.').catch(console.error);
@@ -204,7 +207,9 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
             try {
                 const commandModule = isMarriage ? './commands/mm.js'
                     : franchiseModifiers ? './commands/ima.js'
-                    : topModifiers ? './commands/top.js' : `./commands/${gameCommand}.js`;
+                    : topModifiers ? './commands/top.js'
+                    : ['affection','aff'].includes(gameCommand) ? './commands/affection.js'
+                    : ['soulmate','sm'].includes(gameCommand) ? './commands/soulmate.js' : `./commands/${gameCommand}.js`;
                 const command = await import(commandModule);
                 await command.run({ yoshiko, message, args, prefix });
             } catch (error) {
@@ -303,7 +308,7 @@ yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
     if (!gameRuntimeReady) return;
     // Collector-only dialogs are process-local. The collector handles live ones;
     // after restart/cutover provide an explicit expired response, never replay.
-    if (/^(?:char|wish|divorce|xfer):/.test(interaction.customId ?? '')) {
+    if (/^(?:char|wish|divorce|xfer|affection|soulmate):/.test(interaction.customId ?? '')) {
         const timer = setTimeout(() => {
             if (!interaction.replied && !interaction.deferred) interaction.reply({ content: 'This character-game dialog expired. Run the command again.', ephemeral: true }).catch(console.error);
         }, 500);
