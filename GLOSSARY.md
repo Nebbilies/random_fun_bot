@@ -187,3 +187,47 @@ _Avoid_: Escape attempt, global history
 **Wish match**:
 A roll whose character appears on at least one wishlist in that server. A wish match is announced as one wish line naming every matching player and is presented with the wishlist accent color.
 _Avoid_: Wish alert, wish notification
+
+**Affection**:
+A player's cumulative relationship progress with one character in one server, shared by normal affection milestones and soulmate checkpoints. It remains saved after ownership loss; each player has their own progress with that character.
+_Avoid_: Transferable character level, shared affection
+
+**Soulmate**:
+A player's selected, currently owned character whose affection can grow through qualifying rolls of related characters. Losing ownership permits a replacement selection regardless of the switching cooldown.
+_Avoid_: Soulbound character, wish
+
+**Normal affection milestone**:
+An affection milestone shared by all characters, including the soulmate, that grants a one-time reward or contributes a capped player-wide passive. Its passive contribution requires current ownership.
+_Avoid_: Soulmate perk, random character perk
+
+**Soulmate checkpoint**:
+An affection milestone that unlocks or upgrades a soulmate-exclusive player-wide passive perk. Only the selected, currently owned soulmate supplies these perks.
+_Avoid_: Perk loadout, soulbind level
+
+**Windfall**:
+A soulmate perk that can make a qualifying player-requested roll cost no roll allowance. It does not grant or start an additional roll.
+_Avoid_: Bonus roll, automatic reroll
+
+**Negation**:
+A soulmate perk that can block an eligible targeted hostile action against its owner's harem before defensive items act. It does not protect against ordinary escape marriages, mass attacks, or unbinding.
+_Avoid_: Soulbind, universal attack immunity
+
+**Item Conservation**:
+A soulmate perk that can preserve the inventory charge normally spent using an item. It does not preserve ingredients, sacrificed characters, expiry, or later expenditures of an already-funded effect.
+_Avoid_: Item duplication, effect conservation
+
+**Fortune's Favor**:
+A soulmate perk that can replace an eligible random item reward with an item from the next rarity tier, up to Legendary. It does not upgrade Legendary or ??? rewards.
+_Avoid_: Item-use upgrade, rarity reroll
+
+**Echo**:
+A soulmate perk that can grant one additional copy of an eligible item reward after any Fortune's Favor upgrade. Each copy is a separate item; the bonus copy cannot trigger another reward chain.
+_Avoid_: Extra charge, recursive duplication
+
+**Unbroken Bond**:
+A soulmate perk that can double a qualifying affection award once, including an award to another character its player owns.
+_Avoid_: Extra affection event, recursive multiplier
+
+**Claim Conservation**:
+A soulmate perk that can preserve the claim resource a successful marriage would otherwise spend and, when needed to enable that normal claim, Engagement Ring's prepared early-claim use. It does not grant another claim, refund the Ring's activation charge, or refresh expiry.
+_Avoid_: Claim reset, free reclaim
