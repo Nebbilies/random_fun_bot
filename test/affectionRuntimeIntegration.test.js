@@ -6,9 +6,9 @@ import { join } from 'node:path';
 import { createFinalCatalog } from '../lib/catalogDb.js';
 import { reserveRoll, getMysterySession, cleanupRolls, endMysterySession } from '../lib/characterRolls.js';
 import { confirmSoulmate, getAffectionTotal } from '../lib/characterAffection.js';
-import { deliverReservedRoll } from '../lib/rollDelivery.js';
+import { deliverReservedRoll, acknowledgeRollDelivery } from '../lib/rollDelivery.js';
 import { inspectCatalogRuntimeRestart } from '../lib/catalogRuntimeRecovery.js';
-import { cancelMysteryRuntime, recoverMysteryRuntime } from '../lib/mysteryRuntime.js';
+import { cancelMysteryRuntime, recoverMysteryRuntime, startMysteryRoll } from '../lib/mysteryRuntime.js';
 import { getGameConfig } from '../lib/gameConfig.js';
 
 const now=Date.parse('2026-11-04T02:00:00Z');
@@ -66,6 +66,56 @@ test('a terminal unclaimable mystery retains and recovers its character affectio
  const again=await recoverMysteryRuntime({db,client:{channels:{fetch:async()=>channel}},now:()=>now+1200,setTimer:()=>0,clearTimer:()=>{}});
  assert.equal(again.deferred.length,0);
  assert.equal(sends,1);
+});
+
+test('live delivery refuses missing new capture metadata before sending a card',async t=>{
+ const {db,r}=fixture(t);
+ const row=db.prepare('SELECT rules_json FROM character_rolls WHERE id=?').get(r.rollId);
+ const terms=JSON.parse(row.rules_json);delete terms.affectionVersion;delete terms.affectionSourceKey;
+ db.prepare('UPDATE character_rolls SET rules_json=? WHERE id=?').run(JSON.stringify(terms),r.rollId);
+ let sent=0;
+ await assert.rejects(()=>deliverReservedRoll(db,{channels:{fetch:async()=>({id:'10',guildId:'1',send:async()=>{sent++;return{id:'500'};}})}},{rollId:r.rollId,now:()=>now+1}),/capture binding/);
+ assert.equal(sent,0);
+ assert.equal(db.prepare('SELECT state FROM character_rolls WHERE id=?').get(r.rollId).state,'pending');
+});
+
+test('present but wrong-actor paid request binding blocks startup and live publication',async t=>{
+ const {db,r}=fixture(t);
+ db.prepare("UPDATE affection_requests SET user_id='999'").run();
+ assert.equal(inspectCatalogRuntimeRestart(db).ready,false);
+ await assert.rejects(()=>deliverReservedRoll(db,{channels:{fetch:async()=>assert.fail('must not send')}},{rollId:r.rollId,now:()=>now+1}),/capture binding/);
+});
+
+test('delayed publication starts milestone item lifetimes at actual inventory insertion',async t=>{
+ const {db,r}=fixture(t);
+ acknowledgeRollDelivery(db,r.rollId,'500',now+1);
+ const later=now+7*86_400_000;
+ const message={id:'500',components:[],edit:async()=>{},react:async()=>{}};
+ const channel={id:'10',guildId:'1',messages:{fetch:async()=>message}};
+ await deliverReservedRoll(db,{channels:{fetch:async()=>channel}},{rollId:r.rollId,channel,now:()=>later});
+ const inventory=db.prepare('SELECT acquired_at,expires_at FROM user_inventory').all();
+ assert.equal(inventory.length,3);
+ for(const item of inventory){assert.equal(Date.parse(item.acquired_at),later);assert.ok(item.expires_at>later);}
+});
+
+test('Doors timeout acknowledgement earns affection without a second recovery reveal',async t=>{
+ const {db,own,r}=fixture(t,{mystery:true});
+ const sent=[],timers=[];let time=now;
+ const channel={id:'10',guildId:'1',messages:{fetch:async id=>sent.find(m=>m.id===id)??null},send:async payload=>{
+   const m={id:String(500+sent.length),channelId:'10',payload,edit:async()=>{},react:async()=>{}};sent.push(m);return m;}};
+ const client={channels:{fetch:async()=>channel}};
+ const setTimer=(fn,delay)=>{const id=timers.length+1;timers.push({id,fn,at:time+delay});return id;};
+ const clearTimer=id=>{const timer=timers.find(t=>t.id===id);if(timer)timer.done=true;};
+ await startMysteryRoll({db,client,message:{guildId:'1',channelId:'10',channel,author:{id:'101'}},reservation:r,
+  imagePicker:null,now:()=>time,setTimer,clearTimer,random:()=>0.99});
+ const advanceTo=async target=>{while(true){const next=timers.filter(x=>!x.done&&x.at<=target).sort((a,b)=>a.at-b.at)[0];if(!next)break;next.done=true;time=next.at;await next.fn();}time=target;};
+ await advanceTo(now+40000);
+ assert.equal(getAffectionTotal(db,'1','101',own),1);
+ assert.equal(JSON.parse(getMysterySession(db,r.sessionId).stateJson).runtime.affectionRevealAcknowledged,true);
+ const before=sent.length;
+ cancelMysteryRuntime(db);
+ await recoverMysteryRuntime({db,client,now:()=>time,setTimer,clearTimer});
+ assert.equal(sent.length,before);
 });
 
 test('new paid roll missing its selection capture blocks restart rather than being treated as legacy',t=>{
