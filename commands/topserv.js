@@ -1,16 +1,18 @@
 import { MessageFlags } from 'discord.js';
 import { getGameConfig } from '../lib/gameConfig.js';
-import { resolveServerLeaderboard, serverLeaderboard } from '../lib/serverLeaderboard.js';
+import { resolveServerLeaderboard, serverLeaderboard, totalMarriedLeaderboard } from '../lib/serverLeaderboard.js';
 import { serverLeaderboardComponents, serverTopPageCount } from '../lib/serverLeaderboardView.js';
 
 /** Server-local user leaderboard; scores and membership are captured when opened. */
 export async function run(ctx) {
+  const totalMarried = ctx.args[0] === 'tsl';
+  const leaderboard = totalMarried ? totalMarriedLeaderboard : serverLeaderboard;
   const rows = await resolveServerLeaderboard(ctx.message.guild,
-    serverLeaderboard(ctx.yoshiko.catalogDb, ctx.message.guildId));
+    leaderboard(ctx.yoshiko.catalogDb, ctx.message.guildId));
   const pages = serverTopPageCount(rows);
   const requested = Number(ctx.args[1]);
   let page = Number.isSafeInteger(requested) && requested > 0 ? Math.min(requested, pages) - 1 : 0;
-  const render = (disabled = false) => serverLeaderboardComponents(rows, page, disabled);
+  const render = (disabled = false) => serverLeaderboardComponents(rows, page, disabled, { totalMarried });
   const reply = await ctx.message.reply({
     flags: MessageFlags.IsComponentsV2, components: render(),
     allowedMentions: { parse: [], repliedUser: false },
