@@ -10,6 +10,7 @@ import { deliverReservedRoll, acknowledgeRollDelivery } from '../lib/rollDeliver
 import { inspectCatalogRuntimeRestart } from '../lib/catalogRuntimeRecovery.js';
 import { cancelMysteryRuntime, recoverMysteryRuntime, startMysteryRoll } from '../lib/mysteryRuntime.js';
 import { getGameConfig } from '../lib/gameConfig.js';
+import { recoverVaultRewards } from '../lib/vaultRuntime.js';
 
 const now=Date.parse('2026-11-04T02:00:00Z');
 function fixture(t,{mystery=false}={}) {
@@ -28,19 +29,75 @@ function fixture(t,{mystery=false}={}) {
  return {db,own,other,r};
 }
 
+test('own-character milestone rewards are announced live without waiting for recovery', async t => {
+ const {db,own,r}=fixture(t);
+ const sent=[],messages=new Map();
+ const channel={id:'10',guildId:'1',messages:{fetch:async id=>messages.get(id)},send:async payload=>{
+  const message={id:String(500+sent.length),components:payload.components,
+   edit:async function(change){if(change.components)this.components=change.components;return this;},
+   react:async()=>assert.fail('own appearances do not need a claim reaction')};
+  sent.push(message);messages.set(message.id,message);return message;
+ }};
+ const client={channels:{fetch:async()=>channel}};
+ const result=await deliverReservedRoll(db,client,{rollId:r.rollId,channel,now:()=>now+1});
+ assert.equal(result.status,'published');
+ assert.equal(getAffectionTotal(db,'1','101',own),100);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,3);
+ assert.equal(sent.length,4,'character card and all three reward cards should be sent live');
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM vault_rewards WHERE message_id IS NOT NULL AND delivered_at IS NOT NULL').get().n,3);
+ await deliverReservedRoll(db,client,{rollId:r.rollId,channel,now:()=>now+2});
+ await recoverVaultRewards(db,client,{now:()=>now+3});
+ assert.equal(sent.length,4,'recovery must not send duplicate reward cards');
+ assert.equal(getAffectionTotal(db,'1','101',own),100);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,3);
+});
+
+test('failed live milestone announcement remains recoverable without replaying affection or items', async t => {
+ const {db,own,r}=fixture(t);
+ const sent=[],messages=new Map();let failReward=true;
+ const channel={id:'10',guildId:'1',messages:{fetch:async id=>messages.get(id)},send:async payload=>{
+  if(sent.length===1 && failReward){failReward=false;throw Error('transient reward transport');}
+  const message={id:String(500+sent.length),components:payload.components,
+   edit:async function(change){if(change.components)this.components=change.components;return this;},react:async()=>{}};
+  sent.push(message);messages.set(message.id,message);return message;
+ }};
+ const client={channels:{fetch:async()=>channel}};
+ assert.equal((await deliverReservedRoll(db,client,{rollId:r.rollId,channel,now:()=>now+1})).status,'published');
+ assert.equal(sent.length,3,'one failed reward must not prevent the other two announcements');
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,3);
+ await recoverVaultRewards(db,client,{now:()=>now+2});
+ assert.equal(sent.length,4);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM vault_rewards WHERE delivered_at IS NOT NULL').get().n,3);
+ assert.equal(getAffectionTotal(db,'1','101',own),100);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,3);
+});
+
 test('durable own-character card has no seeded claim heart and credits one saved appearance',async t=>{
  const {db,own,r}=fixture(t);
  let reactions=0,sends=0;
  let payload;
- const message={id:'500',components:[],react:async()=>{reactions++;},edit:async()=>{}};
- const channel={id:'10',guildId:'1',send:async value=>{sends++;payload=value;message.components=value.components;return message;},messages:{fetch:async()=>message}};
+ const messages=new Map();
+ const channel={id:'10',guildId:'1',send:async value=>{
+  if(sends===0)payload=value;
+  const message={id:String(500+sends++),components:value.components,react:async()=>{reactions++;},edit:async change=>{
+   if(change.components)message.components=change.components;
+   if(message.id==='500')payload={...payload,...change};
+   return message;
+  }};
+  messages.set(message.id,message);return message;
+ },messages:{fetch:async id=>messages.get(id)}};
  const client={channels:{fetch:async()=>channel}};
  assert.equal((await deliverReservedRoll(db,client,{rollId:r.rollId,channel,now:()=>now+1})).status,'published');
  assert.equal(reactions,0);
  assert.equal(getAffectionTotal(db,'1','101',own),100);
- assert.match(JSON.stringify(payload),/No claim needed/);
+ const card = payload.components.map(component=>component.toJSON?component.toJSON():component).find(component=>component.type===17);
+ const texts=card.components.filter(component=>component.type===10).map(component=>component.content);
+ assert.ok(texts.includes('❤️ An appearance from your harem'));
+ assert.ok(texts.includes('❤️ **+100** affection\n**3** normal milestones **unlocked**'));
+ assert.equal(texts.filter(text=>text.includes('Character 1')).length,1,'only the title repeats the character name');
+ assert.doesNotMatch(texts.join('\n'),/No claim needed|100 total/);
  await deliverReservedRoll(db,client,{rollId:r.rollId,channel,now:()=>now+2});
- assert.equal(sends,1);
+ assert.equal(sends,4);
  assert.equal(reactions,0);
 });
 
