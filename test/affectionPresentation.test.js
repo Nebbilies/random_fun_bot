@@ -11,6 +11,28 @@ const detail = { characterId: 'a', name: 'Marin Kitagawa', franchises: ['My Dres
   benefits: { perks: { windfall: 10, itemConservation: 16, unbrokenBond: 16,
     claimConservation: 8, fortunesFavor: 8, negation: 0, echo: 0 } } };
 
+test('roll feedback groups actual gains by player and character without inventing Bond or duplicate unlocks', () => {
+  const milestone={key:'normal_25',itemId:'four_leaf_clover'};
+  const text=affectionFeedback([
+    {userId:'101',characterId:'soul',name:'Marin',amount:5,base:5,milestones:[milestone]},
+    {userId:'202',characterId:'rolled',amount:20,base:20,milestones:[]},
+    {userId:'101',characterId:'soul',name:'Marin',amount:8,base:8,milestones:[milestone]},
+  ],'rolled',{showPlayer:true});
+  assert.equal(text,'<@101> · **Marin**\n❤️ **+13** affection\n🔓 **1 item reward** unlocked\n\n<@202>\n❤️ **+20** affection');
+});
+
+test('feedback keeps different characters and users separate and retains genuine Bond labels',()=>{
+  const text=affectionFeedback([
+    {userId:'101',characterId:'a',name:'Old soulmate',amount:5,base:5,milestones:[]},
+    {userId:'101',characterId:'b',name:'New *soulmate* @everyone',amount:16,base:8,milestones:[]},
+    {userId:'202',characterId:'a',name:'Old soulmate',amount:3,base:8,milestones:[]},
+  ],'rolled',{showPlayer:true});
+  assert.match(text,/\+5/);assert.match(text,/\+16/);assert.match(text,/\+3/);
+  assert.equal((text.match(/Unbroken Bond/g)||[]).length,1);
+  assert.match(text,/<@202>/);assert.doesNotMatch(text,/@everyone/);
+  assert.ok(text.indexOf('Old soulmate')<text.indexOf('New'));
+});
+
 test('earning feedback separates item rewards, normal passives and soulmate checkpoint upgrades', () => {
   const text = affectionFeedback([{userId:'101',characterId:'a',amount:100,base:100,
     milestones:[{tier:'rare'},{rollBonus:1},{claimReductionMs:360000}],

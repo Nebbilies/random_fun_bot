@@ -49,11 +49,14 @@ Switching or ownership loss changes current benefits immediately without resetti
 | Player rolls a character they own | Roller and that character | 100 |
 | Successful owner reclaim on another player's roll | Owner and reclaimed character | 20 |
 | Successful reclaim of a Siren's Call escape, including Whistle | Owner and reclaimed character | 20 |
+| Successful manual or Whistle reclaim on a newly marked ordinary roll | Original roller and their current, owned soulmate at reclaim | 8 |
 | Roller and selected soulmate share a qualifying franchise with the rolled character | Roller and selected soulmate | 12 / 10 / 5 below |
 
 Only the roller's own requests grant indirect soulmate affection. Someone else's related roll does not. Siren activation is an item action, not a character roll for its instigator; it grants neither indirect affection nor a Windfall opportunity. Acquiring, trading, gifting, or directly marrying a character is not an additional affection source.
 
-For a single source roll and player–character pair, do not add award categories. First resolve the franchise category, then use the highest qualifying category. Distinct pairs remain distinct: rolling an owned non-soulmate can award 100 to that character and a qualifying related award to the selected soulmate. If the rolled character is the soulmate, the direct 100 supersedes its smaller related award.
+For appearance awards from a single source roll and player–character pair, do not add award categories. First resolve the franchise category, then use the highest qualifying category. Distinct pairs remain distinct: rolling an owned non-soulmate can award 100 to that character and a qualifying related award to the selected soulmate. If the rolled character is the soulmate, the direct 100 supersedes its smaller related award. The later 8-point roller reclaim bonus is a separate earning event and explicitly stacks with appearance affection.
+
+The roller reclaim bonus requires `soulmateReclaimVersion: 1` in both the ordinary roll's saved terms and permanent request outcome. Only newly reserved ordinary rolls carry this marker; existing rolls, including pending ones, are not retroactively marked. Resolve the recipient and Unbroken Bond from the roller's current selected, owned soulmate when the owner successfully reclaims. Initial selection after the roll can qualify; switching does not move earlier appearance affection. Missing eligibility grants no bonus and cannot be reconsidered after the reclaim commits. Siren's Call has no paid roller envelope and does not grant this bonus. See [soulmate-reclaim-affection-design.md](soulmate-reclaim-affection-design.md) for migration, receipt, delivery, and feedback details.
 
 There is no daily affection cap or repeat-character penalty. Separate legitimate rolls may each earn full awards; retries of one roll may not. Item-filtered rolls qualify normally.
 
@@ -73,7 +76,7 @@ Snapshot the relevant matching inputs and counts at selection. Use bounded index
 
 ### Genre metadata and saved rules
 
-As of the 2026-11-06 hotfix, shared genres and missing soulmate genre metadata grant no affection. Indirect soulmate affection requires a shared franchise; direct own-character appearances and reclaims retain their existing awards.
+As of the 2026-11-06 hotfix, shared genres and missing soulmate genre metadata grant no affection. Indirect appearance affection requires a shared franchise; the separately earned roller reclaim bonus does not. Direct own-character appearances and owner reclaims retain their existing awards.
 
 New rolls save snapshot version 2 with franchise-only indirect awards. Previously captured version 1 rolls retain their original rules during validation and recovery, including any captured one-point award. Existing affection and rewards are retained. This changes the JSON rule version without changing the database schema or capture envelope version.
 
@@ -83,6 +86,7 @@ After version 2 rolls have been captured, a rollback binary must also accept ver
 
 - At character selection, capture roller, own-character ownership, selected-and-owned soulmate, matching facts, candidate base awards, and the applicable pre-event Unbroken Bond chance.
 - At successful reclaim, capture the retaining owner's active perks before applying the reclaim award. Manual and Whistle reclaims share the same committed outcome.
+- For newly marked ordinary rolls, also capture the original roller's current selected, owned soulmate and pre-award Bond chance at that successful reclaim. Commit both recipients' awards and milestone entitlements in the same transaction.
 - Appearance affection is earned only after successful character presentation and a noncanceled appearance. A hidden mystery intro is insufficient. The eventual selected-character reveal qualifies even for a losing/unclaimable result. A prank/vault has no character appearance affection.
 - A saved award stays assigned to the original relationship despite a later switch or ownership loss, unless the appearance is canceled. It cannot restore lost passives.
 - Newly crossed perks cannot boost the event that unlocked them. In particular, a 100-point own-character appearance can unlock Windfall from zero but cannot make that same request free retroactively.
@@ -301,7 +305,7 @@ Within the caller's synchronous SQLite write transaction:
 5. For earned affection, group by relationship and apply the highest qualifying category without category addition; record the receipt, clamp progress, and create all newly crossed item entitlements atomically.
 6. Commit, then perform Discord I/O. Follow-up acknowledgements/recovery may finalize the saved presentation/award/delivery, never reselect or reroll.
 
-Resolve all simultaneous appearance qualifiers before creating the source/pair award receipt. Own-character terminal appearances cannot later be escape reclaims; reclaims belong to the original owner, whereas indirect appearances belong only to the roller. Under the accepted outcome rules, one pair therefore has one appearance award or one reclaim award from a source, not a later stream of added categories. Enforce that invariant and uniqueness in the module; duplicate/lower qualifiers cannot add points or a Bond check. If implementation finds a reachable counterexample, surface the conflicting source lifecycle before changing payout timing or introducing another random check.
+Resolve all simultaneous appearance qualifiers before creating the appearance source/pair award receipt. Own-character terminal appearances cannot later be escape reclaims. Owner reclaims award the retaining owner; a newly marked ordinary roll also awards the roller's current eligible soulmate. Each relationship can receive at most one appearance award and one separately keyed reclaim award from an originating roll. The owner and roller share the canonical reclaim source but have distinct user/character pairs. Duplicate reactions cannot reopen the successful transition or add another Bond check. Presentation may combine these permanent receipts without merging their earning identities.
 
 No Discord call runs while holding the write transaction. Propagate transaction-neutral operations to automatic paths, including Whistle and Chit, rather than duplicating award logic in command/render handlers.
 
