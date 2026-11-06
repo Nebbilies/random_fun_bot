@@ -65,3 +65,43 @@ A party able to rewrite both SQLite data and evidence is outside this trust
 boundary. Keep external evidence independently protected. No schema change,
 startup repair, network activity, generic ledger, undo or recovery redesign is
 part of this operation.
+
+## Retiring the final-schema exceptions
+
+The separate `scripts/retireLegacyVaults.js` operation retires the two reviewed
+final-schema exceptions, 17317 and 17358. The original v10 abandonment operation
+and its validator remain unchanged. Normal command cleanup immediately returns
+from legacy validation when the abandonment contract no longer exists.
+
+Dry-run is read-only and requires explicit paths and both reviewed IDs:
+
+```sh
+node scripts/retireLegacyVaults.js --database /explicit/catalog.sqlite --roll-ids 17317,17358
+```
+
+First rehearse against a fresh SQLite backup. For production, drain new game
+actions, let active dialogs/actions finish, and stop all bot and portal writers.
+Apply to the current database, never promote an old rehearsal snapshot:
+
+```sh
+node scripts/retireLegacyVaults.js --database /explicit/catalog.sqlite \
+  --roll-ids 17317,17358 --apply --writers-stopped \
+  --backup /protected/new-before-retirement.sqlite \
+  --archive /protected/new-retirement.jsonl \
+  --operator reviewed-operator --reason "Retire reviewed obsolete vault exceptions"
+```
+
+Backup/archive paths must not exist or alias the database or its sidecars.
+The operation validates the final schema, exact abandonment evidence, absence of
+bindings and restart readiness. It takes a write transaction, repeats inspection,
+creates a consistent SQLite backup, and durably archives the original contract,
+rolls, notices and backup checksum before deleting anything. Only the two roll
+records, their notices and the contract are deleted. Affection legacy markers,
+player resources and modern rewards are retained. Schema/integrity and restart
+checks run again before commit. No automatic refunds or startup migration run.
+
+An absent contract with both reviewed rows absent returns `not-applicable` without
+writing files; partial/malformed retirement fails. Inspect uncertain outcomes
+read-only against the preserved backup and archive; never assume rollback or
+retry with overwritten evidence. Before resuming writers, verify startup and
+recovery. Once players resume, do not restore an older database over new progress.

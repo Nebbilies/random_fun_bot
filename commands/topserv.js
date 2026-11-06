@@ -7,8 +7,15 @@ import { serverLeaderboardComponents, serverTopPageCount } from '../lib/serverLe
 export async function run(ctx) {
   const totalMarried = ctx.args[0] === 'tsl';
   const leaderboard = totalMarried ? totalMarriedLeaderboard : serverLeaderboard;
-  const rows = await resolveServerLeaderboard(ctx.message.guild,
-    leaderboard(ctx.yoshiko.catalogDb, ctx.message.guildId));
+  let rows;
+  try {
+    rows = await resolveServerLeaderboard(ctx.message.guild,
+      leaderboard(ctx.yoshiko.catalogDb, ctx.message.guildId));
+  } catch (error) {
+    if (error.code !== 'LEADERBOARD_MEMBERS_UNAVAILABLE') throw error;
+    await ctx.message.reply({ content: error.message, allowedMentions: { parse: [], repliedUser: false } });
+    return;
+  }
   const pages = serverTopPageCount(rows);
   const requested = Number(ctx.args[1]);
   let page = Number.isSafeInteger(requested) && requested > 0 ? Math.min(requested, pages) - 1 : 0;

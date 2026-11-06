@@ -13,6 +13,7 @@ import { migrateCharacterIdentities } from '../lib/characterIdentityMigration.js
 import { initializeCatalogReleaseSchema } from '../lib/catalogReleaseSchema.js';
 import { previewManualCharacterCreation, confirmManualCharacterCreation } from '../lib/manualCharacterMutations.js';
 import { isFranchiseCatalogCurrent } from '../lib/franchiseLookup.js';
+import { createCatalogCache } from '../lib/catalogCache.js';
 
 function staleManualCatalog(t) {
   const db = setup(t);
@@ -41,6 +42,22 @@ function staleManualCatalog(t) {
   assert.equal(isFranchiseCatalogCurrent(db), false);
   return { db, ids };
 }
+
+test('franchise commands consume the coherent prepared snapshot without reloading aliases', async t => {
+  const db = setup(t), snapshot = createCatalogCache(db).get();
+  let payload;
+  const guarded = new Proxy(db, { get(target, key) {
+    if (key === 'prepare') return sql => {
+      if (sql.includes('FROM franchise_aliases')) throw Error('Unexpected index reload');
+      return target.prepare(sql);
+    };
+    const value = target[key];return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  await runFranchiseCommand({ args: ['ima', 'Sword Art Online'], prefix: '!',
+    yoshiko: { catalogDb: guarded, catalogSnapshot: snapshot },
+    message: { guildId: '1', author: { id: 'owner' }, reply: async value => { payload = value; } } });
+  assert.match(JSON.stringify(payload), /Kirito/);
+});
 
 async function command(db, query, options = {}) {
   const collector = new EventEmitter();
