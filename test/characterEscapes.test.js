@@ -397,6 +397,7 @@ test('public-card edit in flight cannot overwrite a later marriage result', asyn
   await editing;
   const marrying = onRollReaction(x.yoshiko, x.reaction, { id: '103', bot: false });
   assert.equal(getMarriage(x.db, '1', 1)?.ownerId, '103');
+  assert.match(x.sent.at(-1).content, /<@103> has married/);
   assert.ok(release);
   release();
   await Promise.all([advancing, marrying]);

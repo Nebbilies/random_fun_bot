@@ -156,6 +156,64 @@ test('roll publishes before reacting; heart claims immediately and report stays 
   assert.match(replies[0].content, /saved/);
 });
 
+for (const cached of [true, false]) test(`marriage announces before a blocked card edit (${cached ? 'cached V2' : 'uncached'} card)`, async (t) => {
+  const x = fixture(t);
+  await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w', () => 0.5);
+  const components = x.sent[0].components;
+  let fetches = 0;
+  /** @type {any} */
+  let edited;
+  let release = () => {};
+  const blocked = new Promise((resolve) => { release = () => resolve(undefined); });
+  const card = { id: '500', guildId: '1', channelId: '10', channel: x.channel,
+    embeds: [], components: cached ? components : [],
+    fetch: async () => { fetches++; return { ...card, components }; },
+    edit: async (payload) => { edited = payload; await blocked; } };
+  const claiming = onRollReaction(x.yoshiko, { emoji: { name: '❤️' }, message: card }, { id: '102', bot: false });
+  try {
+    // Flush promise continuations without letting a blocked cosmetic edit finish.
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(x.sent.at(-1).content, /<@102> has married/);
+    assert.equal(fetches, cached ? 0 : 1);
+    assert.equal(edited.components.find((c) => c.toJSON().type === 17).toJSON().accent_color, 0x8b4513);
+    assert.match(JSON.stringify(edited.components), /Report tag/);
+    assert.deepEqual(edited.allowedMentions, { parse: [], repliedUser: false });
+    assert.equal(x.db.prepare('SELECT owner_id FROM marriages WHERE character_id=1').get()?.owner_id, '102');
+  } finally { release(); await claiming; }
+});
+
+test('marriage announces while an uncached card fetch is still pending', async (t) => {
+  const x = fixture(t);
+  await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w', () => 0.5);
+  let release = () => {};
+  const blocked = new Promise((resolve) => { release = () => resolve(undefined); });
+  const card = { id: '500', guildId: '1', channelId: '10', channel: x.channel,
+    embeds: [], components: [], fetch: async () => { await blocked; return card; } };
+  const claiming = onRollReaction(x.yoshiko, { emoji: { name: '❤️' }, message: card }, { id: '102', bot: false });
+  try {
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(x.sent.at(-1).content, /<@102> has married/);
+  } finally { release(); await claiming; }
+});
+
+for (const failure of ['fetch', 'edit', 'announcement']) test(`marriage retains ownership and attempts independent feedback after ${failure} failure`, async (t) => {
+  const x = fixture(t);
+  await runRoll({ message: x.message, yoshiko: x.yoshiko }, 'w', () => 0.5);
+  t.mock.method(console, 'error', () => {});
+  let announced = 0;
+  let edited = 0;
+  const components = x.sent[0].components;
+  x.channel.send = async () => { announced++; if (failure === 'announcement') throw new Error('Send failed'); };
+  const card = { id: '500', guildId: '1', channelId: '10', channel: x.channel,
+    embeds: [], components: failure === 'fetch' ? [] : components,
+    fetch: async () => { throw new Error('Fetch failed'); },
+    edit: async () => { edited++; if (failure === 'edit') throw new Error('Edit failed'); } };
+  await onRollReaction(x.yoshiko, { emoji: { name: '❤️' }, message: card }, { id: '102', bot: false });
+  assert.equal(announced, 1);
+  assert.equal(edited, failure === 'fetch' ? 0 : 1);
+  assert.equal(x.db.prepare('SELECT owner_id FROM marriages WHERE character_id=1').get()?.owner_id, '102');
+});
+
 test('failed heart closes card but consumes roll', async (t) => {
   const x = fixture(t);
   x.card.react = async () => { throw new Error('Missing permissions'); };
