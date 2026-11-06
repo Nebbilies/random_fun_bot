@@ -11,6 +11,7 @@ import { inspectCatalogRuntimeRestart } from '../lib/catalogRuntimeRecovery.js';
 import { cancelMysteryRuntime, recoverMysteryRuntime, startMysteryRoll } from '../lib/mysteryRuntime.js';
 import { getGameConfig } from '../lib/gameConfig.js';
 import { recoverVaultRewards } from '../lib/vaultRuntime.js';
+import { addWish } from '../lib/characterWishlist.js';
 
 const now=Date.parse('2026-11-04T02:00:00Z');
 function fixture(t,{mystery=false}={}) {
@@ -74,11 +75,12 @@ test('failed live milestone announcement remains recoverable without replaying a
 
 test('durable own-character card has no seeded claim heart and credits one saved appearance',async t=>{
  const {db,own,r}=fixture(t);
+ addWish(db,{guildId:'1',userId:'202',characterId:own,now});
  let reactions=0,sends=0;
  let payload;
  const messages=new Map();
  const channel={id:'10',guildId:'1',send:async value=>{
-  if(sends===0)payload=value;
+  if(sends===0){payload=value;assert.deepEqual(value.allowedMentions.users,[]);}
   const message={id:String(500+sends++),components:value.components,react:async()=>{reactions++;},edit:async change=>{
    if(change.components)message.components=change.components;
    if(message.id==='500')payload={...payload,...change};
@@ -92,6 +94,9 @@ test('durable own-character card has no seeded claim heart and credits one saved
  assert.equal(getAffectionTotal(db,'1','101',own),100);
  const card = payload.components.map(component=>component.toJSON?component.toJSON():component).find(component=>component.type===17);
  const texts=card.components.filter(component=>component.type===10).map(component=>component.content);
+ assert.equal(card.accent_color,0xE91E63);
+ assert.doesNotMatch(JSON.stringify(payload),/Wish|<@202>/);
+ assert.deepEqual(payload.allowedMentions.parse,[]);
  assert.ok(texts.includes('❤️ An appearance from your harem'));
  assert.ok(texts.includes('❤️ **+100** affection\n**3** normal milestones **unlocked**'));
  assert.equal(texts.filter(text=>text.includes('Character 1')).length,1,'only the title repeats the character name');

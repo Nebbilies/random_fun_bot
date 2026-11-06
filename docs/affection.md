@@ -20,6 +20,8 @@ Each heart amount is that character relationship’s affection, not a spendable 
 
 Active soulmate cards are gold with always-visible active perk descriptions. Regular cards are pink and omit inactive soulmate perk details. Both use the original portrait thumbnail when available; Discord determines its displayed dimensions. Former relationships retain progress but grant no active normal benefits. A never-owned relationship is labeled “Not in your harem,” not former ownership.
 
+Own-character roll appearances stay pink and omit wishlist announcements and mentions. Affection profiles omit zero-value normal bonuses and empty pending-reward sections; progress shows one meter and the next reward without a repeated remaining amount.
+
 The overview’s normal harem bonuses are your effective whole-harem benefits, not the sum of the visible page. A detail card’s normal contribution belongs only to that character. Normal contributions require current ownership; their mechanical limits remain +5 hourly rolls and 60 minutes of claim-wait reduction across your harem.
 
 ## Selection and safety

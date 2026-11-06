@@ -87,6 +87,7 @@ node --input-type=module -e '
   import { assertCatalogRuntimeRestartReady } from "./lib/catalogRuntimeRecovery.js";
   const db = new DatabaseSync("data/bot.sqlite", { readOnly: true });
   try {
+    db.exec("PRAGMA busy_timeout=5000");
     if (db.prepare("PRAGMA user_version").get().user_version === 12) assertCatalogRuntimeRestartReady(db);
   } finally { db.close(); }
 '

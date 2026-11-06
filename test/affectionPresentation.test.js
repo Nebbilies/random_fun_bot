@@ -19,7 +19,8 @@ test('active soulmate uses gold, original portrait, interval meter and expanded 
   assert.equal(embed.thumbnail.url, 'https://example.com/portrait.png');
   assert.match(text, /40 \/ 100/);
   assert.match(text, /Negation 8% \+ six-minute claim-wait contribution/);
-  assert.match(text, /Windfall · 10% — make a qualifying roll free/);
+  assert.match(text, /Windfall · 10% — free qualifying roll/);
+  assert.doesNotMatch(text, /to go|to next reward|0 min/);
   assert.match(embed.footer.text, /\?aff/);
   assert.doesNotMatch(text, /Currently owned|perks active|level|reward path/i);
   assert.equal(payload.flags, undefined);
@@ -56,7 +57,7 @@ test('regular, former, public and capped cards hide inactive soulmate details', 
   assert.equal(former.thumbnail, undefined);
   const cap = detailPayload({ ...regular, total: 2100, interval: { next: null } },
     { ownerName: 'Neb', prefix: '?' }).embeds[0].toJSON();
-  assert.match(JSON.stringify(cap), /♥ 2,100 · All current rewards unlocked/);
+  assert.match(cap.fields.find(field=>field.name==='Affection').value, /♥ 2,100\nAll current rewards unlocked/);
   assert.ok(!cap.fields.some(field => field.name.startsWith('Next')));
   assert.doesNotMatch(JSON.stringify(cap), /0 \/ 0/);
 });
@@ -74,6 +75,7 @@ test('overview separates whole-harem benefits from five compact relationships an
   assert.equal(embed.fields.filter(field => /Name \d/.test(field.name)).length, 5);
   assert.match(embed.footer.text, /Page 1 of 2 · 8 owned · \?aff/);
   assert.doesNotMatch(JSON.stringify(embed), /highest affection first|cap|level/i);
+  assert.doesNotMatch(JSON.stringify(embed), /to go|Pending item rewards/);
   const buttons = result.components[0].toJSON().components;
   assert.equal(buttons[0].disabled, true);
   assert.equal(buttons[1].disabled, false);
@@ -82,6 +84,10 @@ test('overview separates whole-harem benefits from five compact relationships an
 });
 
 test('empty states and confirmation use dynamic prefix and no invented progress', () => {
+  const emptyOverview=overviewPayload({rows:[],benefits:{},pending:{}},{ownerName:'Neb',prefix:'~'}).embeds[0].toJSON();
+  assert.ok(!emptyOverview.fields.some(field=>['Normal harem bonuses','Pending item rewards'].includes(field.name)));
+  const emptyDetail=detailPayload({...detail,isSoulmate:false,normalContribution:{}},{ownerName:'Neb',prefix:'~'}).embeds[0].toJSON();
+  assert.ok(!emptyDetail.fields.some(field=>field.name==='Normal bonuses'));
   const none = noSoulmatePayload({ ownerName: 'Neb', prefix: '~', isSelf: true });
   assert.match(JSON.stringify(none), /No soulmate selected/);
   assert.match(JSON.stringify(none), /~soulmate/);
@@ -89,6 +95,7 @@ test('empty states and confirmation use dynamic prefix and no invented progress'
   const confirmation = confirmationPayload(detail);
   assert.match(JSON.stringify(confirmation), /12-hour/);
   assert.match(JSON.stringify(confirmation), /640/);
+  assert.doesNotMatch(JSON.stringify(confirmation), /checked again|availability/);
   assert.equal(confirmation.components[0].toJSON().components[0].custom_id, 'soulmate:confirm');
 });
 
