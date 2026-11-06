@@ -102,7 +102,9 @@ for (const source of ['ordinary-pending', 'ordinary-open', 'siren-pending', 'sir
     if (source.startsWith('siren')) assert.deepEqual(getInventory(f.db, '1', '101'), []);
     else assert.equal(f.db.prepare('SELECT used FROM roll_allowances').get().used, 1);
     const committed = rows(f.db), sends = f.sent.length;
-    assert.equal(f.sent.filter(c => typeof c.payload === 'string' && c.payload.includes('Golden Whistle')).length, 1);
+    assert.equal(f.sent.filter(c => (typeof c.payload === 'string' ? c.payload : c.payload?.content)?.includes('Golden Whistle')).length, 1);
+    if (!source.startsWith('siren')) assert.ok(f.sent.some(card=>card.edits.some(edit=>JSON.stringify(edit).includes('Reclaimed'))),
+      'recovered ordinary escapes must refresh even across interrupted delivery acknowledgement');
     await recover(f); f.reopen(); await recover(f);
     assert.deepEqual(rows(f.db), committed); assert.equal(f.sent.length, sends);
   });

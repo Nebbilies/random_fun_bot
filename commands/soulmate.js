@@ -1,15 +1,18 @@
 import { MessageFlags } from 'discord.js';
 import { hasAffection, getSoulmateState, getAffectionDetail, confirmSoulmate } from '../lib/characterAffection.js';
 import { getPerks } from '../lib/affectionRules.js';
+import { isCharacterBusy } from '../lib/characterAvailability.js';
 import { requireNewGameAction } from '../lib/catalogMaintenance.js';
 import { findCharacters } from '../lib/gameCharacterLookup.js';
 import { resolveTargetUsername } from '../lib/userTarget.js';
 import { detailPayload, noSoulmatePayload, confirmationPayload, pickerPayload } from '../lib/affectionPresentation.js';
 import { scopeMatches, rejectControl, controlsLifetime, retryOwnRewards, noMentions, normalizedDetail } from './affection.js';
 
-function refusal(status) {
+/** @param {string} status @param {any} [state] */
+function refusal(status, state = null) {
   const messages = { not_owned: 'You must currently own that character.', busy: 'That character is busy. Try again when they are available.',
-    cooldown: 'You cannot switch soulmates yet. Check your soulmate status for the switching time.',
+    cooldown: state?.switchAvailableAt ? `You can switch soulmates <t:${Math.floor(state.switchAvailableAt / 1000)}:R>.`
+      : 'You cannot switch soulmates yet. Check your soulmate status for the switching time.',
     stale: 'Your soulmate selection changed. Run the command again to confirm the current choice.' };
   return messages[status] ?? 'The selection could not be confirmed. Ownership, availability or selection changed. Please try again.';
 }
@@ -57,7 +60,13 @@ export async function run(ctx) {
     if (selected == null) return pickerPayload(matches, { namespace: 'soulmate', page, disabled });
     const detail = getAffectionDetail(db, { guildId, userId, characterId: selected });
     if (!detail) throw new Error('Character no longer available');
-    return confirmationPayload({ ...detail, benefits: { ...detail.benefits, perks: getPerks(detail.total) } }, { disabled });
+    const current = getSoulmateState(db, guildId, userId);
+    const status = !detail.isOwned ? 'not_owned' : isCharacterBusy(db,guildId,selected,Date.now()) ? 'busy'
+      : current.characterId && current.characterId!==selected && Date.now()<current.switchAvailableAt ? 'cooldown' : null;
+    const currentName = current.characterId && current.characterId!==selected
+      ? getAffectionDetail(db,{guildId,userId,characterId:current.characterId})?.name : '';
+    return confirmationPayload({ ...detail, benefits: { ...detail.benefits, perks: getPerks(detail.total) } },
+      { disabled, reason: status ? refusal(status,current) : '', currentName });
   };
   const reply = await ctx.message.reply(render());
   if (!reply?.createMessageComponentCollector) return;
@@ -96,7 +105,7 @@ export async function run(ctx) {
         expectedRevision: state.revision, now: Date.now() });
       finished = true;
       if (['selected', 'same', 'unchanged'].includes(result.status)) await reply.edit(profile());
-      else await reply.edit({ content: refusal(result.status), embeds: [], components: [], allowedMentions: noMentions });
+      else await reply.edit({ content: refusal(result.status,result.state), embeds: [], components: [], allowedMentions: noMentions });
       collector.stop('confirmed');
     } catch (error) {
       console.error('Soulmate confirmation failed:', error);

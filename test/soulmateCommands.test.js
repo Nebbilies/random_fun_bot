@@ -40,6 +40,32 @@ async function click(mock, customId, extras = {}) {
 }
 const text = value => JSON.stringify(value);
 
+test('unowned and busy candidates explain blockers before confirmation', async t => {
+  const db=fixture(t);
+  db.prepare("DELETE FROM marriages WHERE character_id=?").run(b);
+  const unowned=transport(db,['sm','#2']); await run(unowned.ctx);
+  assert.match(text(unowned.payload()),/must currently own/);
+  assert.equal(unowned.payload().components[0].toJSON().components[0].disabled,true);
+  db.prepare("INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES('1',?,'101','date')").run(b);
+  registerPendingTransfer(db,'test','1',[b]);
+  const busy=transport(db,['sm','#2']); await run(busy.ctx);
+  assert.match(text(busy.payload()),/character is busy/);
+  assert.equal(busy.payload().components[0].toJSON().components[0].disabled,true);
+  confirmSoulmate(db,{guildId:'1',userId:'101',characterId:a,now:Date.now()});
+  const locked=transport(db,['sm','#1']); await run(locked.ctx);
+  assert.match(text(locked.payload()),/Active soulmate perks/);
+});
+
+test('switch preview names the replaced soulmate and disables confirm during cooldown', async t => {
+  const db=fixture(t);
+  confirmSoulmate(db,{guildId:'1',userId:'101',characterId:a,now:Date.now()});
+  const mock=transport(db,['sm','#2']); await run(mock.ctx);
+  assert.match(text(mock.payload()),/Replaces.*Shared 1.*active soulmate perks/);
+  assert.match(text(mock.payload()),/can switch soulmates <t:/);
+  assert.equal(mock.payload().components[0].toJSON().components[0].disabled,true);
+  assert.equal(mock.payload().components[0].toJSON().components[1].disabled,false);
+});
+
 test('no selection gives dynamic-prefix guidance, not an invented meter', async t => {
   const db = fixture(t), mock = transport(db, ['sm']);
   await run(mock.ctx);
@@ -61,7 +87,8 @@ test('selection requires explicit confirmation scoped to actor, guild, channel a
   assert.equal(getSoulmateState(db, '1', '101').characterId, a);
   assert.equal(mock.payload().embeds[0].toJSON().color, 0xF2C66D);
   assert.equal(mock.payload().components.length, 0);
-  assert.match(text(mock.payload()), /Switch available <t:/);
+  assert.match(text(mock.payload()), /Available <t:/);
+  assert.doesNotMatch(mock.payload().embeds[0].toJSON().footer.text, /<t:/);
   const state = getSoulmateState(db, '1', '101');
   await click(mock, 'soulmate:confirm');
   assert.deepEqual(getSoulmateState(db, '1', '101'), state);
@@ -104,7 +131,7 @@ test('switch cooldown refuses a different candidate without resetting the saved 
   const before = getSoulmateState(db, '1', '101');
   const mock = transport(db, ['sm', '#2']);
   await run(mock.ctx); await click(mock, 'soulmate:confirm');
-  assert.match(text(mock.payload()), /cannot switch soulmates yet/);
+  assert.match(text(mock.payload()), /can switch soulmates <t:/);
   assert.deepEqual(getSoulmateState(db, '1', '101'), before);
 });
 
