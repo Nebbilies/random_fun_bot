@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { installEmptyFinalCatalog } from '../lib/catalogFinalSchema.js';
 import { reserveRoll, publishRoll, claimRoll, getRollAffectionFeedback } from '../lib/characterRolls.js';
-import { confirmSoulmate, getAffectionTotal } from '../lib/characterAffection.js';
+import { confirmSoulmate, getAffectionTotal, earnRollerReclaimInTransaction } from '../lib/characterAffection.js';
 import { acknowledgeRollDelivery } from '../lib/rollDelivery.js';
 
 const now = Date.parse('2026-11-06T08:00:00Z');
@@ -36,16 +36,46 @@ function publish(db,rolled) {
   publishRoll(db,rolled.rollId,'500',now+1);
 }
 
-test('successful owner reclaim awards eight to the roller soulmate without a franchise match', t=>{
+test('successful owner reclaim awards five to the roller soulmate without a franchise match', t=>{
   const db=fixture(t), rolled=reserve(db);
   publish(db,rolled);
   const result=reclaim(db);
   assert.equal(result.status,'reclaimed');
   assert.equal(getAffectionTotal(db,'1','202',foreign),20);
-  assert.equal(getAffectionTotal(db,'1','101',first),8);
+  assert.equal(getAffectionTotal(db,'1','101',first),5);
   assert.deepEqual(result.affection.awards.map(a=>[a.userId,a.characterId,a.base,a.amount]),[
-    ['202',foreign,20,20],['101',first,8,8],
+    ['202',foreign,20,20],['101',first,5,5],
   ]);
+});
+
+for (const base of [8,5]) test(`stored base-${base} roller reclaim replays verbatim after soulmate selection changes`,t=>{
+  const db=fixture(t);
+  const options={sourceKey:'reclaim:historical',guildId:'1',channelId:'10',userId:'101',now};
+  db.exec('BEGIN');
+  let original;
+  if (base===8) {
+    // Historical Bond receipt: preserve its doubled amount and saved unlocks, not today's base.
+    const milestones=[{key:'historical',threshold:25,itemId:'four_leaf_clover'}];
+    db.prepare("INSERT INTO character_affection VALUES('1','101',?,36,?)").run(first,now);
+    db.prepare("INSERT INTO affection_awards VALUES(?,'1','101',?,8,16,36,?,?)")
+      .run(options.sourceKey,first,JSON.stringify(milestones),now);
+    original=earnRollerReclaimInTransaction(db,options);
+    assert.equal(original.awards[0].amount,16);
+    assert.deepEqual(original.awards[0].milestones,milestones);
+  } else {
+    original=earnRollerReclaimInTransaction(db,options);
+    assert.equal(original.awards[0].base,5);
+    assert.equal(original.awards[0].amount,5);
+  }
+  db.exec('COMMIT');
+  assert.equal(confirmSoulmate(db,{guildId:'1',userId:'101',characterId:second,now:now+1}).status,'selected');
+  const before=Object.fromEntries(['affection_awards','character_affection','affection_decisions','affection_entitlements']
+    .map(table=>[table,db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
+  db.exec('BEGIN');
+  assert.deepEqual(earnRollerReclaimInTransaction(db,{...options,now:now+2,random:()=>{throw new Error('must not draw');}}),original);
+  db.exec('COMMIT');
+  for (const [table,rows] of Object.entries(before)) assert.deepEqual(db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),rows);
+  assert.equal(getAffectionTotal(db,'1','101',second),0);
 });
 
 test('appearance franchise affection and reclaim bonus are independent permanent awards', t=>{
@@ -57,8 +87,8 @@ test('appearance franchise affection and reclaim bonus are independent permanent
   publish(db,rolled);
   assert.equal(getAffectionTotal(db,'1','101',first),12);
   reclaim(db);
-  assert.equal(getAffectionTotal(db,'1','101',first),20);
-  assert.deepEqual(getRollAffectionFeedback(db,rolled.rollId).filter(a=>a.userId==='101').map(a=>a.amount),[12,8]);
+  assert.equal(getAffectionTotal(db,'1','101',first),17);
+  assert.deepEqual(getRollAffectionFeedback(db,rolled.rollId).filter(a=>a.userId==='101').map(a=>a.amount),[12,5]);
 });
 
 test('new bonus follows current selection while earlier appearance affection stays with its character', t=>{
@@ -69,7 +99,7 @@ test('new bonus follows current selection while earlier appearance affection sta
   assert.equal(confirmSoulmate(db,{guildId:'1',userId:'101',characterId:second,now:now+1}).status,'selected');
   reclaim(db);
   assert.equal(getAffectionTotal(db,'1','101',first),12);
-  assert.equal(getAffectionTotal(db,'1','101',second),8);
+  assert.equal(getAffectionTotal(db,'1','101',second),5);
 });
 
 test('selecting a first soulmate after rolling qualifies at reclaim time', t=>{
@@ -77,7 +107,7 @@ test('selecting a first soulmate after rolling qualifies at reclaim time', t=>{
   publish(db,rolled);
   confirmSoulmate(db,{guildId:'1',userId:'101',characterId:second,now:now+1});
   reclaim(db);
-  assert.equal(getAffectionTotal(db,'1','101',second),8);
+  assert.equal(getAffectionTotal(db,'1','101',second),5);
 });
 
 for (const state of ['none','lost']) test(`owner still reclaims when roller soulmate is ${state}`,t=>{
@@ -97,8 +127,8 @@ test('Bond uses the current pre-award chance and cannot be rerolled or redirecte
   const db=fixture(t,{total:200}),rolled=reserve(db);
   publish(db,rolled);
   const result=reclaim(db,()=>0);
-  assert.equal(result.affection.awards.find(a=>a.userId==='101').amount,16);
-  assert.equal(getAffectionTotal(db,'1','101',first),216);
+  assert.equal(result.affection.awards.find(a=>a.userId==='101').amount,10);
+  assert.equal(getAffectionTotal(db,'1','101',first),210);
   confirmSoulmate(db,{guildId:'1',userId:'101',characterId:second,now:now+3});
   assert.equal(reclaim(db,()=>{throw new Error('must not draw');},now+4).status,'closed');
   assert.equal(getAffectionTotal(db,'1','101',second),0);
@@ -108,7 +138,7 @@ test('crossing the first Bond checkpoint does not double its own award',t=>{
   const db=fixture(t,{total:196}),rolled=reserve(db);
   publish(db,rolled);
   const award=reclaim(db,()=>0).affection.awards.find(a=>a.userId==='101');
-  assert.equal(award.amount,8);assert.equal(award.total,204);
+  assert.equal(award.amount,5);assert.equal(award.total,201);
   assert.equal(award.checkpoints.find(c=>c.effect==='unbroken_bond').threshold,200);
 });
 

@@ -4,7 +4,7 @@ Status: Phase 2 design and Phase 3 implementation plan approved by the user on 2
 
 ## Purpose and scope
 
-When a player rolls another player's owned character and that owner successfully reclaims it, grant the roller's current, owned soulmate **8 base affection**. This creates a regular affection source that does not require a franchise match.
+When a player rolls another player's owned character and that owner successfully reclaims it, grant the roller's current, owned soulmate **5 base affection** (10 with Unbroken Bond). This creates a regular affection source that does not require a franchise match.
 
 The existing 2,100 affection cap, normal milestones, soulmate checkpoints, ownership rules, roll selection, gameplay odds, resource costs, escape deadlines, and six-second item reveals remain in force. Reuse the existing SQLite transaction, affection receipts, milestone entitlements, reward delivery, and card formatting. Add no dependencies or parallel reward subsystem.
 
@@ -14,10 +14,10 @@ This proposal extends the earning rules in [affection-design.md](affection-desig
 
 | Situation | Result |
 | --- | --- |
-| Another owner manually reclaims a character the player rolled | Owner receives the existing 20 base affection; roller's eligible soulmate receives 8 base affection |
+| Another owner manually reclaims a character the player rolled | Owner receives the existing 20 base affection; roller's eligible soulmate receives 5 base affection |
 | Golden Whistle completes that reclaim automatically | Same affection rules as a manual reclaim |
-| Rolled character shares no franchise with the roller's soulmate | The new 8-point award still qualifies |
-| Appearance already awarded franchise affection | The reclaim bonus adds separately; for example, 5 plus 8 gives 13 actual affection before any doubling or cap |
+| Rolled character shares no franchise with the roller's soulmate | The new 5-point award still qualifies |
+| Appearance already awarded franchise affection | The reclaim bonus adds separately; for example, 5 plus 5 gives 10 actual affection before any doubling or cap |
 | Roller changes soulmates between appearance and reclaim | The new bonus goes to the selected, owned soulmate at reclaim; earlier appearance affection keeps its original recipient |
 | Roller had no soulmate when rolling but selects one before reclaim | The selected, owned soulmate at reclaim qualifies |
 | Roller has no selected, owned soulmate when reclaim resolves | No roller bonus; owner reclaim and owner affection proceed normally |
@@ -67,9 +67,9 @@ Keep Discord operations outside the write transaction. Golden Whistle's existing
 
 The owner and roller can share the existing canonical reclaim source key: award uniqueness already includes guild, user, and character. Their distinct relationships produce separate permanent receipts. The new bonus therefore remains separate from the original appearance receipt, while existing roll-feedback reads can discover both reclaim recipients.
 
-Apply the new award through the existing affection award logic with base 8 and soulmate checkpoint eligibility enabled. Preserve actual credited amounts at the cap, one-time milestones, pending reward behavior, and retained progress after ownership loss. Perks unlocked by this award cannot enhance the same award.
+Apply the new award through the existing affection award logic with base 5 and soulmate checkpoint eligibility enabled. Preserve actual credited amounts at the cap, one-time milestones, pending reward behavior, and retained progress after ownership loss. Perks unlocked by this award cannot enhance the same award.
 
-Resolve eligibility only during the single open-to-reclaimed transition. Duplicate reactions, competing manual/automatic reclaims, and recovery of a committed result cannot reopen that transition, choose a different soulmate, or reroll Bond. Receipt reads precede any mutable reevaluation on a supported replay path. A committed no-bonus result also stays final: selecting a soulmate afterward cannot earn a delayed bonus.
+Resolve eligibility only during the single open-to-reclaimed transition. Duplicate reactions, competing manual/automatic reclaims, and recovery of a committed result cannot reopen that transition, choose a different soulmate, or reroll Bond. Receipt reads precede any mutable reevaluation on a supported replay path. The user-authorized balance hotfix reduces new roller awards from base 8 to 5 (Bond 16 to 10), without changing the owner's base 20. Stored base-8 and base-5 receipts replay their original recipient, credited amount, total, and unlocks verbatim; never rewrite history or recalculate them using the new base. A committed no-bonus result also stays final: selecting a soulmate afterward cannot earn a delayed bonus.
 
 ## Database upgrade
 
@@ -91,11 +91,11 @@ The roller's milestone items must be delivered to the roller, even though anothe
 
 Read the saved appearance and reclaim receipts, then group by **player and character** for this originating roll. Sum actual credited affection, retain stable first-occurrence order, and include each milestone/checkpoint once. Preserve underlying receipts individually; grouping is presentation only.
 
-Example: the roller earned 5 franchise affection on appearance and 8 on reclaim, while the owner earned 20:
+Example: the roller earned 5 franchise affection on appearance and 5 on reclaim, while the owner earned 20:
 
 ```text
 @Roller · Soulmate Name
-❤️ **+13** affection
+❤️ **+10** affection
 
 @Owner
 ❤️ **+20** affection
@@ -128,7 +128,7 @@ Implementation belongs on `feat/soulmate-reclaim-affection`, preserving unrelate
 
 The read-only production sample on 2026-11-06 contained 573 saved requests from 20 players: 56 rolled another user's character and 24 were successfully reclaimed. The four busiest players made 271 requests, with 27 foreign-owned appearances and 11 successful reclaims. Counts include zero-affection rolls and players without a soulmate.
 
-At that active-player frequency, 57–60 paid roll capacity daily gives approximately 2.3–2.4 qualifying actions before Windfall savings. With current Bond/Windfall checkpoints, saved capacity manually used, and the modeled median direct/franchise contribution, base 8 estimates approximately 80–84 days from zero to 2,100. Current-at-reclaim eligibility does not change the award size; it avoids withholding a bonus solely because the selection differed at roll time.
+At that sampled active-player frequency, 57–60 paid roll capacity daily gave approximately 2.3–2.4 qualifying actions before Windfall savings. The historical base-8 model estimated approximately 80–84 days from zero to 2,100 with the then-current Bond/Windfall checkpoints, saved capacity manually used, and modeled median direct/franchise contribution. This estimate predates the user-authorized base-5 nerf and is not a current pacing estimate. Current-at-reclaim eligibility avoids withholding a bonus solely because the selection differed at roll time.
 
 Only about eight hours of persistent history were available. Roll pools, reclaim participation, growing ownership, items, extra milestone capacity, and player activity can change actual completion time. This is a provisional balance recommendation, not measured 12-week player telemetry. Detailed evidence is in the local [pacing report](../../soulmate-pacing-20261106/recommendation.html).
 

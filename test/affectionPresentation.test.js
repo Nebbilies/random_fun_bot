@@ -11,7 +11,7 @@ const detail = { characterId: 'a', name: 'Marin Kitagawa', franchises: ['My Dres
   benefits: { perks: { windfall: 10, itemConservation: 16, unbrokenBond: 16,
     claimConservation: 8, fortunesFavor: 8, negation: 0, echo: 0 } } };
 
-test('roll feedback groups actual gains by player and character without inventing Bond or duplicate unlocks', () => {
+test('historical base-8 roll feedback groups saved gains without inventing Bond or duplicate unlocks', () => {
   const milestone={key:'normal_25',itemId:'four_leaf_clover'};
   const text=affectionFeedback([
     {userId:'101',characterId:'soul',name:'Marin',amount:5,base:5,milestones:[milestone]},
@@ -21,7 +21,7 @@ test('roll feedback groups actual gains by player and character without inventin
   assert.equal(text,'<@101> · **Marin**\n❤️ **+13** affection\n🔓 **1 item reward** unlocked\n\n<@202>\n❤️ **+20** affection');
 });
 
-test('feedback keeps different characters and users separate and retains genuine Bond labels',()=>{
+test('historical base-8 feedback keeps characters and users separate and retains genuine Bond labels',()=>{
   const text=affectionFeedback([
     {userId:'101',characterId:'a',name:'Old soulmate',amount:5,base:5,milestones:[]},
     {userId:'101',characterId:'b',name:'New *soulmate* @everyone',amount:16,base:8,milestones:[]},

@@ -80,7 +80,8 @@ test('escape refresh retains the roller gain and adds the reclaim owner gain wit
   assert.match(text,/<@101>/);assert.match(text,/<@202>/);
   assert.equal(io.sent.length,1);
   assert.equal(getAffectionTotal(db,'1','202',other),20);
-  assert.equal(getAffectionTotal(db,'1','101',own),20);
+  assert.equal(getAffectionTotal(db,'1','101',own),17);
+  assert.match(text,/\+17/);
 });
 
 test('checkpoint-only reclaim is recorded and announced once',async t=>{
@@ -151,10 +152,10 @@ test('manual reclaim immediately delivers milestone items to both owner and roll
   await deliverReservedRoll(db,io.client,{rollId:r.rollId,channel:io.channel,now:()=>now+1});
   await onRollReaction({catalogDb:db,client:io.client},{emoji:{name:'❤️'},message:io.messages.get('500')},{id:'202',bot:false});
   assert.deepEqual(db.prepare('SELECT user_id FROM user_inventory ORDER BY user_id').all().map(r=>r.user_id),['101','202']);
-  assert.equal(getAffectionTotal(db,'1','101',own),28);
+  assert.equal(getAffectionTotal(db,'1','101',own),25);
   const feedback=json(io.sent);
   assert.match(feedback,/<@101>/);assert.match(feedback,/<@202>/);
-  assert.match(feedback,/\+8/);assert.match(feedback,/\+20/);
+  assert.match(feedback,/\+5/);assert.match(feedback,/\+20/);
 });
 
 test('live Golden Whistle awards the roller, delivers both milestone items, and spends once',async t=>{
@@ -164,7 +165,7 @@ test('live Golden Whistle awards the roller, delivers both milestone items, and 
   const ctx={yoshiko:{catalogDb:db,client:io.client,mysteryEnabled:false,vaultEnabled:false,imagePicker:{pick:async()=>null}},
     message:{id:'100',guildId:'1',channelId:'10',author:{id:'101'},channel:io.channel,reply:p=>io.channel.send(p)}};
   await runRoll(ctx,'w',()=>.99,{now:()=>now+1,setTimer:()=>0,clearTimer:()=>{}});
-  assert.equal(getAffectionTotal(db,'1','101',own),28);
+  assert.equal(getAffectionTotal(db,'1','101',own),25);
   assert.equal(getAffectionTotal(db,'1','202',other),40);
   assert.deepEqual(db.prepare("SELECT user_id FROM user_inventory WHERE item_id='four_leaf_clover' ORDER BY user_id").all().map(r=>r.user_id),['101','202']);
   const text=json(io.sent);
@@ -172,7 +173,7 @@ test('live Golden Whistle awards the roller, delivers both milestone items, and 
   const sent=io.sent.length;
   await onRollReaction({catalogDb:db,client:io.client},{emoji:{name:'❤️'},message:io.messages.get('500')},{id:'202',bot:false});
   assert.equal(io.sent.length,sent);
-  assert.equal(db.prepare("SELECT count(*) n FROM affection_awards WHERE base=8").get().n,1);
+  assert.equal(db.prepare("SELECT count(*) n FROM affection_awards WHERE base=5").get().n,1);
 });
 
 test('Siren Whistle reclaim retains owner rewards and never grants instigator soulmate affection',async t=>{
@@ -183,7 +184,7 @@ test('Siren Whistle reclaim retains owner rewards and never grants instigator so
   assert.equal(result.status,'sealed');
   assert.equal(getAffectionTotal(db,'1','101',own),20);
   assert.equal(getAffectionTotal(db,'1','202',other),20);
-  assert.equal(db.prepare('SELECT count(*) n FROM affection_awards WHERE base=8').get().n,0);
+  assert.equal(db.prepare('SELECT count(*) n FROM affection_awards WHERE base IN (5,8)').get().n,0);
 });
 
 test('failed roller award rolls back Whistle reclaim, both awards, and the item charge',async t=>{
@@ -212,7 +213,7 @@ test('a restored open escape awards both users once and reward recovery never re
     await recoverOpenEscapes(reopened,io.client,{now:()=>now+2,setTimer:()=>0,clearTimer:()=>{}});
     const reaction={emoji:{name:'❤️'},message:io.messages.get('500')};
     await onRollReaction({catalogDb:reopened,client:io.client},reaction,{id:'202',bot:false});
-    assert.equal(getAffectionTotal(reopened,'1','101',own),28);
+    assert.equal(getAffectionTotal(reopened,'1','101',own),25);
     assert.equal(getAffectionTotal(reopened,'1','202',other),40);
     const count=io.sent.length;
     recoverSelectedAffectionRewards(reopened);
@@ -233,7 +234,7 @@ test('failed reclaim reward announcements recover both recipients without repeat
   await onRollReaction({catalogDb:db,client:io.client},{emoji:{name:'❤️'},message:io.messages.get('500')},{id:'202',bot:false});
   io.channel.send=send;
   recoverSelectedAffectionRewards(db);await recoverVaultRewards(db,io.client);
-  assert.equal(getAffectionTotal(db,'1','101',own),28);
+  assert.equal(getAffectionTotal(db,'1','101',own),25);
   assert.equal(getAffectionTotal(db,'1','202',other),40);
   assert.deepEqual(db.prepare('SELECT user_id FROM user_inventory ORDER BY user_id').all().map(r=>r.user_id),['101','202']);
   assert.equal(db.prepare('SELECT count(*) n FROM vault_rewards WHERE delivered_at IS NOT NULL AND message_id IS NOT NULL').get().n,2);

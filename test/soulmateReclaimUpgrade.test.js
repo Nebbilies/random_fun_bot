@@ -33,7 +33,9 @@ test('previous award schema upgrades on writable open without changing any exist
   const db = openFinalCatalog(fixture.path);
   try {
     assert.deepEqual(contents(db), before);
+    // Historical base 8 and the nerfed base 5 must both remain valid receipts.
     assert.doesNotThrow(() => db.prepare("INSERT INTO affection_awards VALUES('new','1','101',?,8,8,108,'[]',1)").run(character));
+    assert.doesNotThrow(() => db.prepare("INSERT INTO affection_awards VALUES('nerfed','1','101',?,5,5,113,'[]',2)").run(character));
     assert.equal(db.prepare('PRAGMA user_version').get().user_version, 12);
   } finally { db.close(); }
 });
