@@ -12,6 +12,13 @@
   },
   "include": [
     "lib/catalogDb.js",
+    "lib/affectionRules.js",
+    "lib/characterAffection.js",
+    "lib/affectionPerks.js",
+    "lib/affectionRewards.js",
+    "lib/affectionPresentation.js",
+    "commands/affection.js",
+    "commands/soulmate.js",
     "lib/characterMarriage.js",
     "lib/characterRolls.js",
     "lib/characterRollRuntime.js",

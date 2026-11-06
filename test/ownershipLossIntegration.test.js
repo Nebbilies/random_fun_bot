@@ -87,7 +87,7 @@ for (const fail of [false, true]) test(`UUID swap records both losses atomically
 
 function escape(db) {
   const roll = reserveRoll(db, { guildId: '1', channelId: '10', commandMessageId: '100',
-    userId: '101', pool: 'w', now: start, random: () => 0 });
+    userId: '303', pool: 'w', now: start, random: () => 0 });
   assert.equal(roll.status, 'reserved');
   assert.equal(roll.character.id, ids[0]);
   assert.equal(roll.escapeOwnerId, '101');

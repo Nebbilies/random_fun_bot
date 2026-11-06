@@ -136,9 +136,16 @@ test('Golden Hour actual use commits cost/reset/reservation together and recover
   assert.equal(f.sent, sent + 1);
   assert.deepEqual(allowances(f.db), paid);
   assert.equal(getInventory(f.db, '1', '101', NOW + 2000).length, 0);
-  assert.equal(executeItemUseById(f.db, '1', '101', inventoryId, [], {
+  const recoveredSession = getVaultSession(f.db, session.vaultId);
+  const receipts = f.db.prepare('SELECT * FROM affection_invocations ORDER BY invocation_id').all();
+  assert.deepEqual(executeItemUseById(f.db, '1', '101', inventoryId, [], {
     channelId: '10', commandMessageId: '100', now: NOW + 2000,
-  }).success, false);
+    random: () => { throw Error('replay must not draw'); },
+  }), result);
+  assert.deepEqual(f.db.prepare('SELECT * FROM affection_invocations ORDER BY invocation_id').all(), receipts);
+  assert.deepEqual(getVaultSession(f.db, session.vaultId), recoveredSession);
+  assert.deepEqual(allowances(f.db), paid);
+  assert.equal(getInventory(f.db, '1', '101', NOW + 2000).length, 0);
   await onVaultInteraction(f.db, choose(f, session), { now: () => NOW + 3000, random: () => 0 });
   await onVaultInteraction(f.db, choose(f, session, 'B'), { now: () => NOW + 4000,
     random: () => { throw Error('must not redraw'); } });

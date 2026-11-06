@@ -150,14 +150,23 @@ test('two Golden Hours, same command: one reset, one cost, one captured vault ac
   const first = addItemToInventory(f.db, '1', '101', 'golden_hour').item;
   const second = addItemToInventory(f.db, '1', '101', 'golden_hour').item;
   const options = { channelId: '10', commandMessageId: '700', now: NOW };
-  assert.equal(executeItemUseById(f.db, '1', '101', first.id, [], options).success, true);
+  const original = executeItemUseById(f.db, '1', '101', first.id, [], options);
+  assert.equal(original.success, true);
+  const receipt = f.db.prepare('SELECT * FROM affection_invocations WHERE invocation_id=?').get('item-use:700');
+  assert.equal(receipt.kind, 'manual_item');
+  assert.equal(JSON.parse(receipt.result_json).inventoryId, first.id);
   assert.equal(f.db.prepare('SELECT used FROM roll_allowances').get().used, 0);
   assert.equal(getInventory(f.db, '1', '101').length, 1);
   // Activity after the first reset must not be reset by the duplicate invocation.
   f.db.exec('UPDATE roll_allowances SET used=4');
   f.reopen(); const before = rows(f.db);
-  const again = executeItemUseById(f.db, '1', '101', second.id, [], options);
-  assert.equal(again.success, true); assert.equal(again.vaultCommandMessageId, '700');
+  const again = executeItemUseById(f.db, '1', '101', second.id, [], {
+    ...options, random: () => { throw Error('replay must not draw'); },
+  });
+  assert.deepEqual(again, original);
+  for (const [guildId, userId, channelId] of [['2', '101', '10'], ['1', '202', '10'], ['1', '101', '20']]) {
+    assert.throws(() => executeItemUseById(f.db, guildId, userId, second.id, [], { ...options, channelId }), /scope/i);
+  }
   assert.deepEqual(rows(f.db), before);
   assert.equal(f.db.prepare('SELECT count(*) n FROM vault_sessions').get().n, 1);
   assert.equal(f.db.prepare('SELECT used FROM roll_allowances').get().used, 4);

@@ -31,6 +31,12 @@ export async function run(ctx) {
         '**imao <franchise>** — Include current server owners.',
         '**imaro <franchise>** — Include ranks and owners.',
       ].join('\n') },
+      { name: 'AFFECTION & SOULMATE', value: [
+        '**affection [@user]** — View affection and normal harem bonuses. Alias: **aff**.',
+        '**affection <name or #rank> [@user]** — View one relationship’s saved progress.',
+        '**soulmate** — View your current soulmate and active perks. Alias: **sm**.',
+        '**soulmate <name or #rank>** — Choose an owned character, then confirm.',
+      ].join('\n') },
       { name: 'WISHLIST', value: [
         '**wish <name or #rank>** — Add a character to your wishlist.',
         '**wl** — View your wishlist. Aliases: **wishlist**, **wish** without arguments.',

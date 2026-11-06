@@ -49,7 +49,7 @@ test('atomic arming rejects duplicate without cost, survives expiry/restart, sco
   assert.equal(getActiveBuffs(f.db, '1', '101', now + 999999999)[0].expires_at, null);
 });
 
-for (const owner of ['101', '202']) test(`divorce ${owner === '101' ? 'self' : 'opponent'} bypasses protection/own Shield, skips mystery, normal claim`, t => {
+for (const owner of ['202']) test(`divorce opponent bypasses protection/own Shield, skips mystery, normal claim`, t => {
   const { db } = fixture(t);
   marryCharacter(db, '1', id, owner, now);
   inventory(db, 'mirror_shield', '101');
@@ -72,6 +72,19 @@ for (const owner of ['101', '202']) test(`divorce ${owner === '101' ? 'self' : '
   assert.equal(publicRoll.protected_until, null); assert.equal(publicRoll.exclusive_user_id, null);
   assert.equal(claimRoll(db, { guildId: '1', channelId: '10', messageId: '500', userId: owner, now }).status, 'married');
   assert.equal(getClaimStatus(db, '1', owner, now).canClaim, false);
+});
+
+test('own appearance leaves armed Misfire and ownership untouched instead of self-divorcing', t => {
+  const { db } = fixture(t);
+  marryCharacter(db, '1', id, '101', now);
+  arm(db);
+  const r = reserve(db, { mystery: { eventChannelId: '20', selectEvent: () => assert.fail('no mystery') } });
+  assert.equal(r.ownAppearance, true);
+  assert.equal(r.cupidsMisfire, null);
+  assert.equal(armed(db), true);
+  assert.equal(getMarriage(db, '1', id).ownerId, '101');
+  assert.equal(publishRoll(db, r.rollId, '500', now), true);
+  assert.equal(claimRoll(db, { guildId: '1', channelId: '10', messageId: '500', userId: '101', now }).status, 'closed');
 });
 
 test('opposing Shield spends exactly one charge and effect, retains normal owner reclaim', t => {

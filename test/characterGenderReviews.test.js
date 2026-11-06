@@ -11,7 +11,7 @@ import { reportCharacterGender, genderCase } from '../lib/characterGenderReviews
 import { reportCharacterTag } from '../lib/catalogDb.js';
 import { bindSourceCatalogStaging, publishSourceCatalog } from '../lib/sourceCatalogPublication.js';
 import { CHARACTER_GENDER_DDL } from '../lib/characterGenderSchema.js';
-import { FINAL_CATALOG_DDL, validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
+import { PRE_AFFECTION_CATALOG_DDL, validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
 import { ensureFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
 import { DatabaseSync } from 'node:sqlite';
 import { hydrateOneBatch } from '../scripts/importCharacterCatalog.js';
@@ -129,7 +129,7 @@ test('gender review rolls back gender, reports, audit and revisions on publicati
 test('exact pre-gender v12 schema upgrades additively; read-only requests upgrade; unknown DDL fails closed', () => {
   const db = new DatabaseSync(':memory:');
   try {
-    db.exec(FINAL_CATALOG_DDL.replace(CHARACTER_GENDER_DDL, ''));
+    db.exec(PRE_AFFECTION_CATALOG_DDL.replace(CHARACTER_GENDER_DDL, ''));
     db.exec(`INSERT INTO catalog_state VALUES(1,0,0,0); INSERT INTO game_config_state VALUES(1,0); INSERT INTO item_expiry_schema VALUES(1,0); PRAGMA user_version=12;`);
     assert.throws(() => validateFinalCatalogSchema(db), /Gender review schema update needed/);
     ensureFortuneCatalog(db);
