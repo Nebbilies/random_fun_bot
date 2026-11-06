@@ -38,6 +38,8 @@ Selection previews explain known ownership, busy-state, or cooldown blockers bef
 
 Opening your own profile retries owed milestone-item selection against the current eligible pool, even at maximum affection. Earned items use the existing reward delivery and pending-item dialogs; there is no separate affection claim button. Public profiles and all paging/filter interactions are pure reads and cannot select or deliver someone else’s rewards.
 
+New rolls grant 100 affection for your own character's appearance, and indirect soulmate affection of 12/10/5 for a shared franchise. Shared genres and missing genre metadata grant no affection. Successful owner reclaims grant 20. Rolls captured before the 2026-11-06 hotfix retain their saved earning rules during recovery.
+
 Affection starts at zero without historical backfill, persists after ownership loss and caps at 2,100. There are no numbered levels, XP, reward-path pages or automatic soulmate selections. See [the design](affection-design.md) for the full earning rules, reward tables and perk exclusions.
 
 Native portrait rendering and desktop/mobile spacing require separate live Discord acceptance; payload tests do not prove client appearance.

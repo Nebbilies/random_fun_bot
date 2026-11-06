@@ -39,17 +39,36 @@ function transport() {
   return{channel,client,messages,sent};
 }
 
+for (const sharedGenres of [false,true]) {
+  test(`unrelated rolls give no soulmate affection or feedback with ${sharedGenres?'shared':'missing'} genres`,async t=>{
+    const db=fixture(t),io=transport();
+    if(sharedGenres) {
+      db.exec(`INSERT INTO anime(id,genres,fetched_at) VALUES(1,'["Action"]','d')`);
+      for(const id of [own,other]) db.prepare('INSERT INTO character_anime VALUES(?,1)').run(id);
+    }
+    const roll=reserveRoll(db,{guildId:'1',channelId:'10',userId:'101',commandMessageId:'100',pool:'w',now,random:()=>.99});
+    await deliverReservedRoll(db,io.client,{rollId:roll.rollId,channel:io.channel,now:()=>now+1});
+    assert.equal(getAffectionTotal(db,'1','101',own),0);
+    assert.deepEqual(getRollAffectionFeedback(db,roll.rollId),[]);
+    assert.doesNotMatch(json(io.messages.get('500').payload),/affection|Soulmate/);
+    await deliverReservedRoll(db,io.client,{rollId:roll.rollId,channel:io.channel,now:()=>now+2});
+    assert.equal(getAffectionTotal(db,'1','101',own),0);
+  });
+}
+
 test('escape refresh retains the roller gain and adds the reclaim owner gain without duplicate notices',async t=>{
   const db=fixture(t),io=transport();
+  db.exec("INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Shared','d')");
+  for (const id of [own,other]) db.prepare('INSERT INTO character_franchise_memberships VALUES(?,1)').run(id);
   const roll=reserveRoll(db,{guildId:'1',channelId:'10',userId:'101',commandMessageId:'100',pool:'w',now,random:()=>.99});
   await deliverReservedRoll(db,io.client,{rollId:roll.rollId,channel:io.channel,now:()=>now+1});
   const message=io.messages.get('500');
-  assert.match(json(message.payload),/\+1/);
+  assert.match(json(message.payload),/\+12/);
   const updates=startEscapeUpdates({db,message,character:roll.character,image:null,remaining:roll.remaining,
     now:()=>now+2,setTimer:()=>0,clearTimer:()=>{}});t.after(()=>updates.stop());
   await updates.refresh();
   assert.match(json(message.payload),/Soulmate/);
-  assert.match(json(message.payload),/\+1/);
+  assert.match(json(message.payload),/\+12/);
   await onRollReaction({catalogDb:db,client:io.client},{emoji:{name:'❤️'},message},{id:'202',bot:false});
   const text=json(message.payload);
   assert.match(text,/Reclaimed/);assert.match(text,/\+20/);assert.match(text,/Soulmate/);

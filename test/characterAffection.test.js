@@ -102,17 +102,47 @@ test('franchise counts use all published identities and minimum shared category,
   assert.equal(capture(db,'small',b).awards.find(x=>x.characterId===a).base,12);
 });
 
-test('genre union and missing-metadata fallback are asymmetric', t=>{
+test('missing metadata and shared genres do not award indirect affection', t=>{
   const db=fixture(t);
   confirmSoulmate(db,{...scope,characterId:a,now:1});
-  assert.equal(capture(db,'empty',b).awards.find(x=>x.characterId===a).base,1);
+  assert.equal(capture(db,'empty',b).awards.some(x=>x.characterId===a),false);
   db.exec(`INSERT INTO anime(id,genres,fetched_at) VALUES(1,'["Action","Action"]','d'),(2,'["Comedy"]','d'),(3,'["Action"]','d')`);
   db.prepare('INSERT INTO character_anime VALUES(?,1)').run(a);
   assert.equal(capture(db,'covered',b).awards.some(x=>x.characterId===a),false);
   db.prepare('INSERT INTO character_anime VALUES(?,2)').run(a);
   db.prepare('INSERT INTO character_anime VALUES(?,3)').run(b);
-  assert.equal(capture(db,'shared',b).awards.find(x=>x.characterId===a).base,1);
+  assert.equal(capture(db,'shared',b).awards.some(x=>x.characterId===a),false);
+  for (const sourceKey of ['empty','covered','shared']) complete(db,sourceKey);
+  assert.equal(getAffectionTotal(db,'g','u',a),0);
 });
+
+for (const sharedGenres of [false,true]) {
+  test(`legacy ${sharedGenres?'genre':'missing-metadata'} captures remain valid and replay their saved award once`,t=>{
+    const db=fixture(t);
+    confirmSoulmate(db,{...scope,characterId:a,now:1});
+    if(sharedGenres) {
+      db.exec(`INSERT INTO anime(id,genres,fetched_at) VALUES(1,'["Action"]','d')`);
+      for(const id of [a,b]) db.prepare('INSERT INTO character_anime VALUES(?,1)').run(id);
+    }
+    const snapshot=capture(db,'legacy',b);
+    assert.equal(snapshot.version,2);
+    snapshot.awards.push({userId:'u',characterId:a,base:1,bondChance:0,bond:false});
+    db.prepare('UPDATE affection_contexts SET snapshot_json=? WHERE source_key=?').run(JSON.stringify(snapshot),'legacy');
+    assert.throws(()=>validateAffectionState(db),/context snapshot/);
+    snapshot.version=1;
+    db.prepare('UPDATE affection_contexts SET snapshot_json=? WHERE source_key=?').run(JSON.stringify(snapshot),'legacy');
+    validateAffectionState(db);
+    assert.deepEqual(capture(db,'legacy',b),snapshot);
+    const result=complete(db,'legacy');
+    assert.equal(getAffectionTotal(db,'g','u',a),1);
+    validateAffectionState(db);
+    assert.deepEqual(complete(db,'legacy'),result);
+    assert.equal(getAffectionTotal(db,'g','u',a),1);
+    const next=capture(db,'new-roll',b);
+    assert.equal(next.version,2);
+    assert.equal(next.awards.some(x=>x.characterId===a),false);
+  });
+}
 
 test('pre-award Bond freezes before unlock, doubles once, clamps, and restores only owned benefits', t=>{
   const db=fixture(t);
@@ -244,7 +274,7 @@ const corruptSnapshots = [
   ['wrong direct target', s=>{s.awards[0].characterId=a;s.awards.pop();}],
   ['different candidate user', s=>{s.awards[0].userId='other';}],
   ['wrong indirect target', s=>{s.awards[1].characterId=b;s.awards.shift();}],
-  ['wrong related score', s=>{s.awards[1].base=12;}],
+  ['wrong related score', s=>{s.awards[1].base=1;}],
   ['missing candidate', s=>{s.awards.pop();}],
   ['duplicate candidate', s=>{s.awards[1]={...s.awards[0]};}],
   ['third candidate', s=>{s.awards.push({...s.awards[0]});}],
@@ -259,7 +289,8 @@ const corruptSnapshots = [
   ['invalid franchise size', s=>{s.matching.sharedFranchises=[{franchise_id:1,size:0}];}],
   ['impossible shared pair size', s=>{s.matching.sharedFranchises=[{franchise_id:1,size:1}];s.awards[1].base=12;}],
   ['invalid franchise identity', s=>{s.matching.sharedFranchises=[{franchise_id:0,size:2}];s.awards[1].base=12;}],
-  ['no genre match', s=>{s.matching.soulmateGenres=['Action'];s.matching.rolledGenres=['Comedy'];}],
+  ['no franchise match', s=>{s.matching.sharedFranchises=[];}],
+  ['unsupported snapshot version', s=>{s.version=3;}],
   ['null candidate', s=>{s.awards[0]=null;}],
   ['null snapshot soulmate fields', s=>{s.soulmate={characterId:null,total:0};}],
   ['duplicate franchise fact', s=>{s.matching.sharedFranchises=[{franchise_id:1,size:2},{franchise_id:1,size:2}];}],
@@ -271,6 +302,8 @@ const corruptSnapshots = [
 for (const [label, corrupt] of corruptSnapshots) {
   test(`saved context rejects ${label} at inspection, capture replay and completion without effects`,t=>{
     const db=fixture(t);
+    db.exec("INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Shared','d')");
+    for (const id of [a,b]) db.prepare('INSERT INTO character_franchise_memberships VALUES(?,1)').run(id);
     confirmSoulmate(db,{...scope,characterId:a,now:1});
     const snapshot=capture(db,'corrupt',b);
     validateAffectionState(db); // Corruption can also arrive after startup inspection.

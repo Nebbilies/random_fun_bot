@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AFFECTION_CAP, NORMAL_MILESTONES, SOULMATE_CHECKPOINTS, getPerks, progressInterval } from '../lib/affectionRules.js';
+import { AFFECTION_CAP, NORMAL_MILESTONES, SOULMATE_CHECKPOINTS, getPerks, progressInterval, relatedAffectionBase } from '../lib/affectionRules.js';
+
+test('indirect affection requires a shared franchise, regardless of genre metadata', () => {
+  assert.equal(relatedAffectionBase({}), 0);
+  assert.equal(relatedAffectionBase({ soulmateGenres: ['Action'], rolledGenres: ['Action'] }), 0);
+  assert.equal(relatedAffectionBase({ soulmateGenres: [], rolledGenres: ['Action'] }), 0);
+  assert.equal(relatedAffectionBase({ soulmateGenres: ['Action'], rolledGenres: [] }), 0);
+  for (const [size, expected] of [[1,12],[5,12],[6,10],[10,10],[11,5]]) {
+    assert.equal(relatedAffectionBase({ sharedFranchiseSizes: [size] }), expected);
+  }
+  assert.equal(relatedAffectionBase({ sharedFranchiseSizes: [3,8,12] }), 5);
+});
 
 test('approved tracks use exact thresholds and replacement rates', () => {
   assert.equal(AFFECTION_CAP, 2100);

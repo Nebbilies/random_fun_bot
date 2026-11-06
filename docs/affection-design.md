@@ -50,8 +50,6 @@ Switching or ownership loss changes current benefits immediately without resetti
 | Successful owner reclaim on another player's roll | Owner and reclaimed character | 20 |
 | Successful reclaim of a Siren's Call escape, including Whistle | Owner and reclaimed character | 20 |
 | Roller and selected soulmate share a qualifying franchise with the rolled character | Roller and selected soulmate | 12 / 10 / 5 below |
-| No franchise match, but a shared genre | Roller and selected soulmate | 1 |
-| Selected soulmate has no genre metadata; no higher award applies | Roller and selected soulmate | 1 |
 
 Only the roller's own requests grant indirect soulmate affection. Someone else's related roll does not. Siren activation is an item action, not a character roll for its instigator; it grants neither indirect affection nor a Windfall opportunity. Acquiring, trading, gifting, or directly marrying a character is not an additional affection source.
 
@@ -73,11 +71,13 @@ Intersect the selected soulmate's and rolled character's franchise IDs. Evaluate
 
 Snapshot the relevant matching inputs and counts at selection. Use bounded indexed membership/count queries, not an all-character pairwise scan on every roll. Any internal cache must be revision-scoped and discardable; stored eligibility, not a cache, governs a pending event. The design requires no new AniList request, genre inference, franchise import, or recategorization.
 
-### Genres and missing metadata
+### Genre metadata and saved rules
 
-Use distinct genres from all anime associated with each character. One shared genre qualifies; several shared genres still award only one. Missing/invalid metadata is not a guessed match.
+As of the 2026-11-06 hotfix, shared genres and missing soulmate genre metadata grant no affection. Indirect soulmate affection requires a shared franchise; direct own-character appearances and reclaims retain their existing awards.
 
-The accepted exception is asymmetric: a **selected soulmate with no genres** receives the one-point fallback on each successfully shown character on its owner's rolls unless a higher award applies. A genre-covered soulmate does not get this exception merely because the rolled character lacks genres. Preserve this rule in snapshots rather than trying to fill metadata automatically.
+New rolls save snapshot version 2 with franchise-only indirect awards. Previously captured version 1 rolls retain their original rules during validation and recovery, including any captured one-point award. Existing affection and rewards are retained. This changes the JSON rule version without changing the database schema or capture envelope version.
+
+After version 2 rolls have been captured, a rollback binary must also accept version 2 snapshots; the previous version-1-only validator cannot validate them.
 
 ### Snapshot versus earning
 
@@ -181,7 +181,7 @@ Apply any existing Rolling Fever refund to already-spent usage, then debit the c
 
 ### Unbroken Bond
 
-Double a qualifying affection award once, using the chance captured at that event's eligibility snapshot. This covers direct appearances, related matches/fallback, and reclaims, including awards to other owned characters. Never multiply a milestone payout, recursively boost a boosted award, or activate newly unlocked Bond on the same event. Apply the capped resulting affection and all crossed milestones atomically.
+Double a qualifying affection award once, using the chance captured at that event's eligibility snapshot. This covers direct appearances, shared-franchise matches, and reclaims, including awards to other owned characters. Never multiply a milestone payout, recursively boost a boosted award, or activate newly unlocked Bond on the same event. Apply the capped resulting affection and all crossed milestones atomically.
 
 ### Claim Conservation
 
@@ -384,7 +384,7 @@ Use the existing Node test runner, temporary synthetic SQLite fixtures, injected
 ### Progress, matching, and ownership
 
 - Guild/player/character isolation; rank/source changes preserve identity; zero start/no backfill; cap/discarded excess; every crossed milestone exactly once, including 100/200-point jumps.
-- Direct vs related award precedence and two distinct relationship awards on one roll; genre union/deduplication; missing-genre exception only for the selected soulmate; empty/invalid metadata; all three franchise boundaries; multiple memberships use the minimum; published/manual distinct counts; no available-pool/Passport denominator exploit.
+- Direct vs related award precedence and two distinct relationship awards on one roll; no genre or missing-metadata awards on new rolls; compatibility with saved version 1 awards; all three franchise boundaries; multiple memberships use the minimum; published/manual distinct counts; no available-pool/Passport denominator exploit.
 - Saved eligibility survives switches/loss but never redirects; canceled/unacknowledged appearances do not earn; reveal after loss/unclaimable outcome does; failed/repeated presentation and roll cleanup cannot duplicate progress or payouts.
 - Selection confirmation ownership/busy/cooldown/stale checks; ownership loss bypass/replacement starts new cooldown; no auto-reselection; raw DELETE and owner-changing UPDATE clear matching selections atomically; normal passives stop/resume, payouts never replay.
 - No repeat-character/daily affection limiter; separate legitimate invocations count even if an item charge is conserved.

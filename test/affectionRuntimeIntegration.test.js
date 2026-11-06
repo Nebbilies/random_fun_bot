@@ -25,6 +25,10 @@ function fixture(t,{mystery=false}={}) {
  }
  db.prepare('INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES(?,?,?,?)').run('1',own,'101',new Date(now).toISOString());
  confirmSoulmate(db,{guildId:'1',userId:'101',characterId:own,now});
+ if(mystery) {
+  db.exec("INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Shared','d')");
+  for(const id of [own,other]) db.prepare('INSERT INTO character_franchise_memberships VALUES(?,1)').run(id);
+ }
  const r=reserveRoll(db,{guildId:'1',channelId:'10',userId:'101',commandMessageId:'100',pool:mystery?'w':'h',now,random:()=>0.99,
   ...(mystery?{mystery:{eventChannelId:'10',selectEvent:()=>({eventId:'doors',durationMs:30000,state:{}})},gameConfig:getGameConfig(db,'1')}:{})});
  return {db,own,other,r};
@@ -123,7 +127,7 @@ test('a terminal unclaimable mystery retains and recovers its character affectio
  const channel={id:'10',guildId:'1',messages:{fetch:async()=>null},send:async payload=>{sends++;return{id:String(600+sends),edit:async()=>{},payload};}};
  const recovered=await recoverMysteryRuntime({db,client:{channels:{fetch:async()=>channel}},now:()=>now+1100,setTimer:()=>0,clearTimer:()=>{}});
  assert.equal(recovered.deferred.length,0);
- assert.equal(getAffectionTotal(db,'1','101',own),1);
+ assert.equal(getAffectionTotal(db,'1','101',own),12);
  assert.equal(sends,1);
  const again=await recoverMysteryRuntime({db,client:{channels:{fetch:async()=>channel}},now:()=>now+1200,setTimer:()=>0,clearTimer:()=>{}});
  assert.equal(again.deferred.length,0);
@@ -172,7 +176,7 @@ test('Doors timeout acknowledgement earns affection without a second recovery re
   imagePicker:null,now:()=>time,setTimer,clearTimer,random:()=>0.99});
  const advanceTo=async target=>{while(true){const next=timers.filter(x=>!x.done&&x.at<=target).sort((a,b)=>a.at-b.at)[0];if(!next)break;next.done=true;time=next.at;await next.fn();}time=target;};
  await advanceTo(now+40000);
- assert.equal(getAffectionTotal(db,'1','101',own),1);
+ assert.equal(getAffectionTotal(db,'1','101',own),12);
  assert.equal(JSON.parse(getMysterySession(db,r.sessionId).stateJson).runtime.affectionRevealAcknowledged,true);
  const before=sent.length;
  cancelMysteryRuntime(db);
