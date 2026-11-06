@@ -26,6 +26,7 @@ function own(db, owner, ranks, guild = '1') {
 }
 const ten = (start) => Array.from({ length: 10 }, (_, i) => start + i);
 const member = (id) => ({ user: { username: `user_${id}`, displayAvatarURL: () => `https://cdn.discordapp.com/avatars/${id}/avatar.png` } });
+const fetchMembers = async ({ user }) => new Map(user.filter(id => id !== 'gone').map(id => [id, member(id)]));
 
 test('scores use ten smallest current ranks, exclude short harems, and isolate guilds', (t) => {
   const db = fixture(t);
@@ -68,15 +69,11 @@ test('total married counts all current ownership per server and orders ties by o
 });
 
 test('membership excludes departed users but propagates lookup failures', async () => {
-  const guild = { members: { fetch: async ({ user, force }) => {
-    assert.equal(force, true);
-    if (user === 'gone') throw Object.assign(new Error('Unknown Member'), { code: 10007 });
-    return member(user);
-  } } };
+  const guild = { members: { fetch: fetchMembers } };
   const rows = await resolveServerLeaderboard(guild, [{ ownerId: 'gone' }, { ownerId: 'present' }]);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].username, 'user_present');
-  await assert.rejects(resolveServerLeaderboard({ members: { fetch: async () => { throw new Error('network'); } } }, [{ ownerId: 'a' }]), /network/);
+  await assert.rejects(resolveServerLeaderboard({ members: { fetch: async () => { throw new Error('network'); } } }, [{ ownerId: 'a' }]), { code: 'LEADERBOARD_MEMBERS_UNAVAILABLE' });
 });
 
 test('view has ten rows, sequential positions, escaped usernames and overall leader avatar', () => {
@@ -123,7 +120,7 @@ test('command alias, initial pages, invoker-only navigation and expiration', asy
   let payload;
   const sent = { edit: async (value) => { payload = value; }, createMessageComponentCollector: () => collector };
   await run({ args: ['ts', '999'], yoshiko: { catalogDb: db }, message: {
-    guildId: '1', author: { id: 'invoker' }, guild: { members: { fetch: async ({ user }) => member(user) } },
+    guildId: '1', author: { id: 'invoker' }, guild: { members: { fetch: fetchMembers } },
     reply: async (value) => { payload = value; return sent; },
   } });
   assert.equal(payload.flags, MessageFlags.IsComponentsV2);
@@ -157,11 +154,7 @@ test('tsl captures current member totals for author-only pagination until expiry
     createMessageComponentCollector: (options) => { collectorOptions = options; return collector; },
   };
   const ctx = { args: ['tsl', '999'], yoshiko: { catalogDb: db }, message: {
-    guildId: '1', author: { id: 'invoker' }, guild: { members: { fetch: async ({ user, force }) => {
-      assert.equal(force, true);
-      if (user === 'gone') throw Object.assign(new Error('Unknown Member'), { code: 10007 });
-      return member(user);
-    } } }, reply: async (value) => { payload = value; return sent; },
+    guildId: '1', author: { id: 'invoker' }, guild: { members: { fetch: fetchMembers } }, reply: async (value) => { payload = value; return sent; },
   } };
   await totalRun(ctx);
   const card = () => payload.components[0].toJSON();
@@ -205,7 +198,7 @@ test('tsl defaults invalid pages to the first page and handles empty ownership',
   for (let i = 0; i < 11; i += 1) own(db, String(i), [i + 1]);
   let payload;
   const ctx = { args: ['tsl'], yoshiko: { catalogDb: db }, message: {
-    guildId: '1', author: { id: 'invoker' }, guild: { members: { fetch: async ({ user }) => member(user) } },
+    guildId: '1', author: { id: 'invoker' }, guild: { members: { fetch: fetchMembers } },
     reply: async (value) => { payload = value; },
   } };
   for (const page of [undefined, '0', '-1', '1.5', 'invalid', '9007199254740992']) {
@@ -221,12 +214,15 @@ test('tsl defaults invalid pages to the first page and handles empty ownership',
   assert.equal(card.components.length, 4);
 });
 
-test('tsl propagates membership lookup errors instead of displaying incomplete totals', async (t) => {
+test('tsl reports membership lookup errors instead of displaying incomplete totals', async (t) => {
   const { run: totalRun } = await import('../commands/tsl.js');
   const db = fixture(t);
   own(db, 'present', [1]);
-  await assert.rejects(totalRun({ args: ['tsl'], yoshiko: { catalogDb: db }, message: {
+  let payload;
+  await totalRun({ args: ['tsl'], yoshiko: { catalogDb: db }, message: {
     guildId: '1', guild: { members: { fetch: async () => { throw new Error('network'); } } },
-    reply: async () => assert.fail('Membership failures must not produce a leaderboard'),
-  } }), /network/);
+    reply: async value => { payload = value; },
+  } });
+  assert.match(payload.content, /try again/i);
+  assert.equal(payload.components, undefined);
 });
