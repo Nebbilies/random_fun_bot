@@ -609,6 +609,104 @@ test('Greed Chamber styles Stay and Escape as distinct actions', async (t) => {
   assert.doesNotMatch(later, /Stay to risk your unbanked points|Participants: |Entry is closed/);
 });
 
+function gate() {
+  let release;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  return { blocked, release };
+}
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test('blocked participant edits do not delay private revisions, results or the next prompt', async (t) => {
+  const { db, event, time, start } = fixture(t, 'deadlock');
+  const windows = await beginContest({ db, time, start });
+  const first = roundPrompt(event, 'Deadlock', 1);
+  const delivery = gate();
+  const edit = first.edit.bind(first);
+  first.edit = async (payload) => { await delivery.blocked; return edit(payload); };
+  const picked = roundInteraction(first, 1, '5');
+  const revision = roundInteraction(first, 1, '4');
+  const pending = onMysteryButton(db, picked);
+  let revised, timer;
+  try {
+    await flush();
+    assert.match(picked.acknowledgements.at(-1), /Saved: 5/);
+    revised = onMysteryButton(db, revision);
+    await flush();
+    assert.match(revision.acknowledgements.at(-1), /Saved: 4/);
+    timer = time.advanceTo(windows.open(2));
+    await flush();
+    assert.ok(roundPrompt(event, 'Deadlock', 2), 'next prompt does not wait for old-card edits');
+    assert.match(event.sent.map((item) => item.payload.content).join('\n'), /picked 4/);
+    const stale = roundInteraction(first, 1, '1');
+    await onMysteryButton(db, stale);
+    assert.match(stale.acknowledgements.at(-1), /expired/);
+  } finally {
+    delivery.release();
+    await Promise.all([pending, revised, timer]);
+    await flush();
+  }
+  assert.match(JSON.stringify(first.components), /Round closed/);
+  assert.doesNotMatch(JSON.stringify(first.components), /mystery:1:choice/);
+});
+
+test('new later-round participants save privately without editing an identical prompt', async (t) => {
+  const { db, event, time, start } = fixture(t, 'deadlock');
+  const windows = await beginContest({ db, time, start });
+  await time.advanceTo(windows.open(2));
+  const second = roundPrompt(event, 'Deadlock', 2);
+  const picked = roundInteraction(second, 2, '3', '102');
+  await onMysteryButton(db, picked);
+  assert.match(picked.acknowledgements.at(-1), /Saved: 3/);
+  assert.equal(second.edits.length, 0);
+  await time.advanceTo(windows.close(2));
+  assert.match(event.sent.at(-1).payload.content, /<@102>: picked 3/);
+});
+
+test('blocked final card close cannot hold results or prize delivery', async (t) => {
+  const { db, event, time, start } = fixture(t, 'deadlock');
+  const windows = await beginContest({ db, time, start });
+  await onMysteryButton(db, roundInteraction(roundPrompt(event, 'Deadlock', 1), 1, '5'));
+  await time.advanceTo(windows.open(3));
+  const final = roundPrompt(event, 'Deadlock', 3);
+  const delivery = gate();
+  const edit = final.edit.bind(final);
+  final.edit = async (payload) => { await delivery.blocked; return edit(payload); };
+  const pending = time.advanceTo(windows.close(3) + 3000);
+  try {
+    await flush();
+    const resultIndex = event.sent.findIndex((item) => item.payload.content?.includes('**Final standings**'));
+    const prizeIndex = event.sent.findIndex((item) => item.embeds[0]?.data.title === 'Hidden Prize');
+    assert.ok(resultIndex >= 0 && prizeIndex > resultIndex);
+    assert.equal(getMysterySession(db, 1).state, 'claim_open');
+  } finally {
+    delivery.release();
+    await pending;
+    await flush();
+  }
+});
+
+test('Doors confirms a durable choice privately while the public announcement is blocked', async (t) => {
+  const { db, event, time, start } = fixture(t);
+  await start();
+  await time.advanceTo(6100);
+  const delivery = gate();
+  const send = event.send.bind(event);
+  event.send = async (payload) => { await delivery.blocked; return send(payload); };
+  const picked = doorInteraction(event.sent[1], '1');
+  const pending = onMysteryButton(db, picked);
+  try {
+    await flush();
+    assert.equal(getMysterySession(db, 1).state, 'countdown');
+    assert.match(picked.acknowledgements.at(-1), /Choice locked in/);
+  } finally {
+    delivery.release();
+    await pending;
+  }
+  await time.advanceTo(9100);
+  assert.equal(getMysterySession(db, 1).state, 'claim_open');
+});
+
 for (const selected of ['1', '2']) test(`mystery ${selected === '1' ? 'winning' : 'unclaimable'} prize keeps frozen franchise fallback`, async t => {
   const { db, event, time, start } = fixture(t, 0, 0, true);
   db.exec("UPDATE franchises SET display_name='Renamed'");
