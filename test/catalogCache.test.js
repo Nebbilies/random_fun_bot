@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { openCatalog, saveDecision } from '../lib/catalogDb.js';
 import { convertLegacyCatalogToFinal } from '../lib/characterIdentityMigration.js';
 import { createCatalogCache } from '../lib/catalogCache.js';
+import { findCharacters } from '../lib/gameCharacterLookup.js';
+import { findFranchises } from '../lib/franchiseLookup.js';
 
 test('search cache observes another connection revision and reloads both models coherently',t=>{
   const dir=mkdtempSync(join(tmpdir(),'catalog-cache-')),file=join(dir,'synthetic.sqlite');
@@ -28,6 +30,27 @@ test('search cache observes another connection revision and reloads both models 
   writer.prepare('UPDATE catalog_state SET revision=?').run(Number.MAX_SAFE_INTEGER);
   assert.throws(()=>saveDecision(writer,id,'no_match',null,'automatic'),/overflow/);
   assert.equal(writer.prepare('SELECT tag_name FROM tag_decisions').get().tag_name,'new_tag');
+});
+
+test('cached direct-only franchises and prepared names track freshness and revision changes', t => {
+  const db = openCatalog(':memory:');t.after(() => db.close());
+  db.exec(`INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,1,1,'Old Name');
+    INSERT INTO franchises(id,display_name,name_source,created_at) VALUES(1,'Direct Series','manual','now');
+    CREATE TABLE IF NOT EXISTS character_franchise_memberships(character_id INTEGER,franchise_id INTEGER);
+    INSERT INTO character_franchise_memberships VALUES(1,1);
+    INSERT INTO catalog_meta(key,value) VALUES('published_at','one'),('franchise_source_published_at','old');`);
+  const cache = createCatalogCache(db), stale = cache.get();
+  assert.equal(stale.franchiseCurrent, false);
+  assert.deepEqual(findFranchises(stale.directFranchiseIndex, 'direct').map(r => r.id), [1]);
+  assert.deepEqual(findCharacters(stale.characterIndex, 'old name').map(r => r.id), [1]);
+  db.exec("UPDATE catalog_meta SET value='one' WHERE key='franchise_source_published_at'");
+  const fresh = cache.get();assert.notEqual(fresh, stale);assert.equal(fresh.franchiseCurrent, true);
+  db.exec("UPDATE characters SET name_full='New Name'; INSERT INTO catalog_meta VALUES('catalog_revision','1')");
+  assert.deepEqual(findCharacters(cache.get().characterIndex, 'old name'), []);
+  assert.deepEqual(findCharacters(cache.get().characterIndex, 'new name').map(r => r.id), [1]);
+  db.exec("DROP TABLE franchise_aliases; UPDATE catalog_meta SET value='2' WHERE key='catalog_revision'");
+  assert.throws(() => cache.get(), /franchise_aliases/);
+  assert.throws(() => cache.get(), /franchise_aliases/);
 });
 
 test('empty legacy cache supports initial bootstrap and durable publication revision',t=>{

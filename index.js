@@ -47,6 +47,7 @@ export const yoshiko = {
     config,
     cooldowns: client.cooldowns,
     catalogDb: client.catalogDb,
+    get catalogSnapshot() { return catalogCache.get(); },
     get characterIndex() { return catalogCache.get().characterIndex; },
     get franchiseIndex() { return catalogCache.get().franchiseIndex; },
     imagePicker: createCharacterImagePicker(),
@@ -82,6 +83,7 @@ yoshiko.client.once(Events.ClientReady, async (c) => {
     recoverSelectedAffectionRewards(yoshiko.catalogDb);
     await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
     cleanupExpiredItems(yoshiko.catalogDb);
+    catalogCache.get(); // Prepare search data before accepting the first game command.
     gameRuntimeReady = true;
     console.log('Character game ready.');
     let vaultRecoveryRunning = false;

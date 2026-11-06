@@ -32,12 +32,14 @@ export async function runFranchiseCommand(ctx) {
     await ctx.message.reply(`Usage: ${ctx.prefix}${ctx.args[0]} <franchise>`);
     return;
   }
-  const directOnly = !isFranchiseCatalogCurrent(db);
+  const snapshot = ctx.yoshiko.catalogSnapshot;
+  const directOnly = snapshot ? !snapshot.franchiseCurrent : !isFranchiseCatalogCurrent(db);
   const lookupOptions = { directOnly };
   const warning = directOnly
     ? '\n⚠️ Partial results: showing direct franchise memberships only. Anime-derived data is out of date; ask an administrator to refresh it.'
     : '';
-  const franchises = findFranchises(loadFranchiseIndex(db, lookupOptions), query);
+  const index = snapshot ? (directOnly ? snapshot.directFranchiseIndex : snapshot.franchiseIndex) : loadFranchiseIndex(db, lookupOptions);
+  const franchises = findFranchises(index, query);
   if (!franchises.length) {
     await ctx.message.reply(directOnly
       ? 'The franchise catalog is missing or out of date, and no direct franchise matches were found. Ask an administrator to refresh it.'

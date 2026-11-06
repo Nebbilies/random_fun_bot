@@ -11,6 +11,14 @@ test('bot bootstrap logs the client in', () => {
     'index.js must call yoshiko.client.login(config.token)');
 });
 
+test('search preparation follows recovery and precedes game readiness', () => {
+  const ready = source.indexOf('yoshiko.client.once(Events.ClientReady');
+  const recovered = source.indexOf('cleanupExpiredItems(yoshiko.catalogDb);', ready);
+  const prepared = source.indexOf('catalogCache.get();', recovered);
+  const enabled = source.indexOf('gameRuntimeReady = true;', ready);
+  assert.ok(ready >= 0 && recovered > ready && prepared > recovered && enabled > prepared);
+});
+
 function handlerBlocks(registration) {
   return [...source.matchAll(new RegExp(`${registration}[\\s\\S]*?\\n\\}\\);`, 'g'))].map((match) => match[0]);
 }
