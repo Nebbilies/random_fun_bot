@@ -98,7 +98,7 @@ test('durable own-character card has no seeded claim heart and credits one saved
  assert.equal(getAffectionTotal(db,'1','101',own),100);
  const card = payload.components.map(component=>component.toJSON?component.toJSON():component).find(component=>component.type===17);
  const texts=card.components.filter(component=>component.type===10).map(component=>component.content);
- assert.equal(card.accent_color,0xE91E63);
+ assert.equal(card.accent_color,0xF48FB1);
  assert.doesNotMatch(JSON.stringify(payload),/Wish|<@202>/);
  assert.deepEqual(payload.allowedMentions.parse,[]);
  assert.ok(texts.includes('❤️ An appearance from your harem'));
