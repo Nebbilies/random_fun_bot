@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { getPerks, progressInterval } from '../lib/affectionRules.js';
-import { detailPayload, overviewPayload, noSoulmatePayload, confirmationPayload } from '../lib/affectionPresentation.js';
+import { detailPayload, overviewPayload, noSoulmatePayload, confirmationPayload, affectionFeedback } from '../lib/affectionPresentation.js';
 
 const detail = { characterId: 'a', name: 'Marin Kitagawa', franchises: ['My Dress-Up Darling'],
   image: 'https://example.com/portrait.png', total: 640, isOwned: true, isSoulmate: true,
@@ -11,6 +11,16 @@ const detail = { characterId: 'a', name: 'Marin Kitagawa', franchises: ['My Dres
   benefits: { perks: { windfall: 10, itemConservation: 16, unbrokenBond: 16,
     claimConservation: 8, fortunesFavor: 8, negation: 0, echo: 0 } } };
 
+test('earning feedback separates item rewards, normal passives and soulmate checkpoint upgrades', () => {
+  const text = affectionFeedback([{userId:'101',characterId:'a',amount:100,base:100,
+    milestones:[{tier:'rare'},{rollBonus:1},{claimReductionMs:360000}],
+    checkpoints:[{threshold:150,effect:'item_conservation',chance:.08},{threshold:250,effect:'windfall',chance:.10}]}],'a');
+  assert.equal(text, '❤️ **+100** affection\n🔓 **1 item reward** unlocked\n🔓 **+1 hourly roll** unlocked\n🔓 **6-minute claim cooldown reduction** unlocked\n🔓 **Item Conservation · 8%** unlocked\n🔓 **Windfall · 10%** upgraded');
+  assert.equal(affectionFeedback([{userId:'101',characterId:'a',amount:40,base:20,milestones:[]}],'a'),
+    '❤️ **+40** affection · Unbroken Bond');
+  assert.equal(affectionFeedback([{characterId:'a',amount:0,milestones:[]}],'a'),'');
+});
+
 test('active soulmate uses gold, original portrait, interval meter and expanded perks', () => {
   const payload = detailPayload(detail, { ownerName: 'Neb', prefix: '?', isSelf: true });
   const embed = payload.embeds[0].toJSON();
@@ -19,7 +29,7 @@ test('active soulmate uses gold, original portrait, interval meter and expanded 
   assert.equal(embed.thumbnail.url, 'https://example.com/portrait.png');
   assert.match(text, /40 \/ 100/);
   assert.match(text, /Negation 8% \+ six-minute claim-wait contribution/);
-  assert.match(text, /Windfall · 10% — free qualifying roll/);
+  assert.match(text, /Windfall · 10% — spend no roll/);
   assert.doesNotMatch(text, /to go|to next reward|0 min/);
   assert.match(embed.footer.text, /\?aff/);
   assert.doesNotMatch(text, /Currently owned|perks active|level|reward path/i);

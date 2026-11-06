@@ -22,6 +22,10 @@ Active soulmate cards are gold with always-visible active perk descriptions. Reg
 
 Own-character roll appearances stay pink and omit wishlist announcements and mentions. Affection profiles omit zero-value normal bonuses and empty pending-reward sections; progress shows one meter and the next reward without a repeated remaining amount.
 
+Earning feedback uses `❤️ **+20** affection` and separate `🔓` lines for item reward counts, normal passive unlocks, and soulmate perk unlocks or upgrades. Reclaims, including Golden Whistle reclaims, show their actual earned amount and publish milestone items immediately. Escape-card updates retain both the roller's soulmate gain and the owner's reclaim gain, with player labels to distinguish them. Checkpoint announcements describe the triggering award rather than the player's later soulmate selection.
+
+Successful perk effects receive concise notices: Windfall saves the roll cost, Unbroken Bond labels a doubled gain, Claim Conservation saves the claim, and Item Conservation saves the source item charge. Fortune's Favor identifies the actual tier upgrade; an Echo copy is labeled separately. Milestone item cards are labeled “Affection reward.” These notices read saved outcomes and never reroll or repeat an award.
+
 The overview’s normal harem bonuses are your effective whole-harem benefits, not the sum of the visible page. A detail card’s normal contribution belongs only to that character. Normal contributions require current ownership; their mechanical limits remain +5 hourly rolls and 60 minutes of claim-wait reduction across your harem.
 
 ## Selection and safety
@@ -29,6 +33,8 @@ The overview’s normal harem bonuses are your effective whole-harem benefits, n
 Soulmate selection requires current ownership and a nonbusy character. Initial selection and each switch start a 12-hour cooldown. Losing ownership clears the selection; a replacement can be chosen without waiting out the old deadline. Reacquisition does not automatically select a soulmate. Selecting the already-active character only displays status and does not restart the cooldown.
 
 Confirmation rechecks ownership, availability, cooldown, maintenance restrictions and the expected prior selection. Stale prompts cannot silently overwrite a newer choice. Cancelled or expired controls do not change selection. Status remains inspectable during maintenance; new selections are blocked.
+
+Selection previews explain known ownership, busy-state, or cooldown blockers before confirmation and disable the confirm button while blocked. Switching previews name the soulmate whose active perks will be replaced. Switching availability appears in the card body so Discord can render its relative timestamp.
 
 Opening your own profile retries owed milestone-item selection against the current eligible pool, even at maximum affection. Earned items use the existing reward delivery and pending-item dialogs; there is no separate affection claim button. Public profiles and all paging/filter interactions are pure reads and cannot select or deliver someone else’s rewards.
 

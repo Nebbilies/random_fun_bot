@@ -115,7 +115,7 @@ test('public views cannot select owed items; only the initial own profile retrie
   visitor.ctx.message.author = { id: '202', username: 'Other' };
   const before = db.prepare('SELECT total_changes() n').get().n;
   await run(visitor.ctx);
-  assert.match(text(visitor.payload()), /3 owed/);
+  assert.match(text(visitor.payload()), /3 waiting for an eligible item/);
   assert.equal(db.prepare('SELECT total_changes() n').get().n, before);
   const own = transport(db, ['aff']);
   await run(own.ctx);
