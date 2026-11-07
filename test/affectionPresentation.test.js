@@ -115,6 +115,20 @@ test('overview separates whole-harem benefits from five compact relationships an
   assert.ok(buttons.every(button => button.custom_id.startsWith('affection:')));
 });
 
+test('pending affection rewards point to original reward cards instead of a removed inbox command', () => {
+  const pending = { owed: 1, pending: 2 };
+  const results = [
+    detailPayload({ ...detail, pending }, { ownerName: 'Neb', prefix: '?' }),
+    overviewPayload({ rows: [], benefits: {}, pending }, { ownerName: 'Neb', prefix: '?' }),
+  ];
+  for (const result of results) {
+    const field = result.embeds[0].toJSON().fields.find(field => field.name === 'Pending item rewards');
+    assert.match(field.value, /1 waiting for an eligible item/);
+    assert.match(field.value, /2 awaiting delivery or an inventory choice — check their reward cards/);
+    assert.doesNotMatch(JSON.stringify(result), /[!?]rewards|inbox/i);
+  }
+});
+
 test('empty states and confirmation use dynamic prefix and no invented progress', () => {
   const emptyOverview=overviewPayload({rows:[],benefits:{},pending:{}},{ownerName:'Neb',prefix:'~'}).embeds[0].toJSON();
   assert.ok(!emptyOverview.fields.some(field=>['Normal harem bonuses','Pending item rewards'].includes(field.name)));

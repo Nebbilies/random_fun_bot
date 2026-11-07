@@ -49,7 +49,6 @@ export async function run(ctx) {
         '**cancel** — Cancel your pending trade or gift.',
       ].join('\n') },
       { name: 'ITEMS', value: [
-        '**rewards** — Browse pending item rewards; accept, replace an inventory item, or decline.',
         '**inv [@user]** — View inventory and active effects.',
         '**inv help [@user]** — Explain items in that inventory.',
         '**itemlist** — Browse the server’s item catalog and rarity filters. Alias: **il**.',

@@ -18,7 +18,6 @@
     "lib/affectionRewards.js",
     "lib/affectionPresentation.js",
     "commands/affection.js",
-    "commands/rewards.js",
     "commands/soulmate.js",
     "lib/characterMarriage.js",
     "lib/characterRolls.js",

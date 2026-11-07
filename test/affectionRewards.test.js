@@ -9,8 +9,7 @@ import { revealVaultReward, decideVaultReward, getVaultReward, bindVaultRewardMe
 import { reservePaidVaultSession, drawVaultSessionOutcome } from '../lib/vaultSessions.js';
 import { getInventory, decrementItemCharge, addItemToInventory, removeItemFromInventory } from '../lib/itemStorage.js';
 import { resolveMysteryConsolation, isConsolationRewardPublishable, inspectMysteryConsolation } from '../lib/mysteryConsolation.js';
-import { recoverVaultRewards, settleInboxReward } from '../lib/vaultRuntime.js';
-import { listRecipientPendingItemRewards } from '../lib/vaultRewards.js';
+import { recoverVaultRewards, onVaultInteraction } from '../lib/vaultRuntime.js';
 import { activateLens, refundUnpresentedLens, getLens, armRecast, getRecast, presentRecast, inspectFortuneRuntime } from '../lib/vaultFortune.js';
 import { bindVaultSessionMessage } from '../lib/vaultSessions.js';
 import { flushAffectionRewardsInTransaction, recoverSelectedAffectionRewards, inspectAffectionRewards, retryOwedAffectionRewards } from '../lib/affectionRewards.js';
@@ -52,30 +51,38 @@ test('selected milestones acquire once and retain receipts after inventory consu
   assert.deepEqual(inspectAffectionRewards(db).blockers,[]);
 });
 
-test('affection milestone inbox settlement preserves durable copy receipts and canonical binding', async t => {
+test('affection milestone original-card replacement preserves durable copy receipts and rejects retired inbox controls', async t => {
   const db = fixture(t);
   const now = Date.now();
   for (let n = 0; n < 5; n++) addItemToInventory(db, '1', '2', 'hourglass_of_haste', 1, { now });
   const item = getResolvedItemDefinition(db, '1', 'golden_whistle');
   db.prepare(`INSERT INTO affection_entitlements(source_key,guild_id,user_id,character_id,milestone_key,threshold,
-    tier,item_id,outcome_json,reward_id,state,earned_at,channel_id) VALUES(?,?,?,?,?,?,?,?,?,'aff-inbox','selected',?,'20')`)
-    .run('milestone-inbox','1','2','00000000-0000-4000-8000-000000000002','500',500,item.tier,item.id,
+    tier,item_id,outcome_json,reward_id,state,earned_at,channel_id) VALUES(?,?,?,?,?,?,?,?,?,'aff-card','selected',?,'20')`)
+    .run('milestone-card','1','2','00000000-0000-4000-8000-000000000002','500',500,item.tier,item.id,
       JSON.stringify({ tier:item.tier,tierData:ITEM_TIERS[item.tier],item }), now);
   db.exec('BEGIN IMMEDIATE');
   flushAffectionRewardsInTransaction(db, { guildId:'1',userId:'2',now });
   db.exec('COMMIT');
-  bindVaultRewardMessage(db, 'aff-inbox', '20', '30');
-  const [displayed] = listRecipientPendingItemRewards(db, '1', '2');
-  assert.equal(displayed.vaultId, 'aff-inbox');
-  const inboxScope = { guildId:'1',userId:'2',channelId:'other-channel',messageId:'inbox' };
-  const interaction = { guildId:'1',user:{id:'2'},channelId:'other-channel',message:{id:'inbox'} };
+  bindVaultRewardMessage(db, 'aff-card', '20', '30');
   const inventoryId = getInventory(db, '1', '2', now)[0].id;
-  const result = await settleInboxReward(db, interaction, { inboxScope, reward:displayed, action:'replace', inventoryId, now:()=>now+1 });
-  assert.equal(result.reward.state, 'delivered');
-  assert.equal(result.reward.messageId, '30');
-  assert.equal(result.reward.channelId, '20');
-  assert.equal(db.prepare("SELECT acquired_at FROM reward_copies WHERE reward_id='aff-inbox'").get().acquired_at, now+1);
-  assert.equal((await settleInboxReward(db, interaction, { inboxScope, reward:displayed, action:'accept' })).status, 'stale');
+  const replies = [];
+  const interaction = { guildId:'1',user:{id:'2'},channelId:'20',message:{id:'30'},
+    customId:'vault:aff-card:replace',values:[String(inventoryId)],
+    isButton:()=>false,isStringSelectMenu:()=>true,
+    update:async()=>{},reply:async payload=>replies.push(payload) };
+  for (const customId of ['rewards:accept:aff-card', 'rewardreplace:choose']) {
+    assert.equal(await onVaultInteraction(db, { ...interaction, customId }), false);
+    assert.equal(getVaultReward(db, 'aff-card').state, 'overflow');
+    assert.equal(db.prepare("SELECT acquired_at FROM reward_copies WHERE reward_id='aff-card'").get().acquired_at, null);
+  }
+  assert.equal(await onVaultInteraction(db, interaction, { now:()=>now+1 }), true);
+  const settled = getVaultReward(db, 'aff-card');
+  assert.equal(settled.state, 'delivered');
+  assert.equal(settled.messageId, '30');
+  assert.equal(settled.channelId, '20');
+  assert.equal(db.prepare("SELECT acquired_at FROM reward_copies WHERE reward_id='aff-card'").get().acquired_at, now+1);
+  await onVaultInteraction(db, { ...interaction, values:['accept'] }, { now:()=>now+2 });
+  assert.match(JSON.stringify(replies), /stale/);
   assert.equal(getInventory(db, '1', '2', now+1).length, 5);
   assert.equal(inspectAffectionRewards(db).blockers.length, 0);
 });

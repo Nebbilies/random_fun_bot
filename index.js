@@ -200,7 +200,7 @@ yoshiko.client.on(Events.MessageCreate, async (message) => {
         const isMarriage = /^(mm|mymarry)([a-z]*)$/.test(gameCommand);
         const franchiseModifiers = parseFranchiseCommand(gameCommand);
         const topModifiers = parseTopCommand(gameCommand);
-        if (isMarriage || franchiseModifiers || topModifiers || ['rewards', 'affection', 'aff', 'soulmate', 'sm', 'help', 'char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'topo', 'ts', 'tsl', 'topserv', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
+        if (isMarriage || franchiseModifiers || topModifiers || ['affection', 'aff', 'soulmate', 'sm', 'help', 'char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'topo', 'ts', 'tsl', 'topserv', 'wish', 'wl', 'wishlist'].includes(gameCommand)) {
             args[0] = gameCommand;
             if (isCatalogDraining(client.catalogDb) && isNewGameActionCommand(gameCommand)) {
                 await message.reply('Character game is draining for maintenance. Existing actions may finish; new actions are paused.').catch(console.error);
@@ -308,9 +308,14 @@ for (const file of commandFiles) {
 
 yoshiko.client.on(Events.InteractionCreate, async (interaction) => {
     if (!gameRuntimeReady) return;
+    // Retired inbox controls must never settle rewards or suggest rerunning the removed command.
+    if (/^(?:rewards|rewardreplace):/.test(interaction.customId ?? '')) {
+        await interaction.reply({ content: 'The pending rewards inbox has been removed. Use the original reward card to claim or manage this reward.', ephemeral: true }).catch(console.error);
+        return;
+    }
     // Collector-only dialogs are process-local. The collector handles live ones;
     // after restart/cutover provide an explicit expired response, never replay.
-    if (/^(?:char|wish|divorce|xfer|affection|soulmate|rewards|rewardreplace):/.test(interaction.customId ?? '')) {
+    if (/^(?:char|wish|divorce|xfer|affection|soulmate):/.test(interaction.customId ?? '')) {
         const timer = setTimeout(() => {
             if (!interaction.replied && !interaction.deferred) interaction.reply({ content: 'This character-game dialog expired. Run the command again.', ephemeral: true }).catch(console.error);
         }, 500);
