@@ -650,6 +650,187 @@ test('blocked participant edits do not delay private revisions, results or the n
   assert.doesNotMatch(JSON.stringify(first.components), /mystery:1:choice/);
 });
 
+test('Glass Bridge saves burst entries and revisions while public edits are blocked, then renders results last', async (t) => {
+  const { db, event, time, start } = fixture(t, 'glass_bridge');
+  await start();
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  const first = event.sent.at(-1);
+  const delivery = gate();
+  const edit = first.edit.bind(first);
+  let attempts = 0;
+  first.edit = async payload => { attempts++; await delivery.blocked; return edit(payload); };
+  const tasks = [];
+  try {
+    const firstPick = roundInteraction(first, 1, 'left');
+    tasks.push(onMysteryButton(db, firstPick));
+    await flush();
+    assert.equal(attempts, 1);
+    for (const userId of ['102', '103', '104', '105']) {
+      const pick = roundInteraction(first, 1, 'left', userId);
+      tasks.push(onMysteryButton(db, pick));
+      await flush();
+      assert.match(pick.acknowledgements.at(-1), /Saved: Left/);
+      assert.equal(JSON.parse(getMysterySession(db, 1).stateJson).choices[userId], 'left');
+    }
+    const revision = roundInteraction(first, 1, 'right', '105');
+    tasks.push(onMysteryButton(db, revision));
+    await flush();
+    assert.match(revision.acknowledgements.at(-1), /Saved: Right/);
+    assert.equal(JSON.parse(getMysterySession(db, 1).stateJson).choices['105'], 'right');
+    tasks.push(time.advanceTo(getMysterySession(db, 1).nextAt));
+    await flush();
+    assert.equal(JSON.parse(getMysterySession(db, 1).stateJson).phase, 'result');
+    tasks.push(time.advanceTo(getMysterySession(db, 1).nextAt));
+    await flush();
+    const second = event.sent.at(-1);
+    assert.notEqual(second.id, first.id, 'next step publication must not wait for old-card edits');
+    assert.match(JSON.stringify(second.components), /Glass Bridge · Step 2/);
+    const nextPick = roundInteraction(second, 2, 'left');
+    tasks.push(onMysteryButton(db, nextPick));
+    await flush();
+    assert.match(nextPick.acknowledgements.at(-1), /Saved: Left/);
+  } finally {
+    delivery.release();
+    await Promise.all(tasks);
+    await flush();
+  }
+  assert.equal(attempts, 2, 'superseded participant snapshots coalesce into the final result');
+  assert.match(JSON.stringify(first.components), /Safe side: Left/);
+  assert.doesNotMatch(JSON.stringify(first.components), /mystery:1:choice/);
+});
+
+test('Glass Bridge coalesces pending choice snapshots without losing the latest public lists', async (t) => {
+  const { db, event, time, start } = fixture(t, 'glass_bridge');
+  await start();
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  const first = event.sent.at(-1);
+  const delivery = gate();
+  const edit = first.edit.bind(first);
+  first.edit = async payload => { await delivery.blocked; return edit(payload); };
+  const tasks = [];
+  try {
+    tasks.push(onMysteryButton(db, roundInteraction(first, 1, 'left')));
+    await flush();
+    tasks.push(onMysteryButton(db, roundInteraction(first, 1, 'left', '102')));
+    tasks.push(onMysteryButton(db, roundInteraction(first, 1, 'right', '102')));
+    await flush();
+    assert.equal(JSON.parse(getMysterySession(db, 1).stateJson).choices['102'], 'right');
+  } finally {
+    delivery.release();
+    await Promise.all(tasks);
+    await flush();
+  }
+  assert.equal(first.edits.length, 2);
+  const text = JSON.stringify(first.components);
+  assert.match(text, /### Left[\s\S]*<@101>[\s\S]*### Right[\s\S]*<@102>/);
+  assert.doesNotMatch(text.split('### Right')[0], /<@102>/);
+});
+
+test('Glass Bridge oversized public lists cannot hold entries or the round timer', async (t) => {
+  const { db, event, time, start } = fixture(t, 'glass_bridge');
+  await start();
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  const first = event.sent.at(-1);
+  const state = JSON.parse(getMysterySession(db, 1).stateJson);
+  for (let n = 0; n < 200; n++) {
+    const userId = String(100000000000000000n + BigInt(n));
+    state.players[userId] = { inside: true };
+    state.choices[userId] = 'left';
+  }
+  db.prepare('UPDATE mystery_sessions SET state_json=? WHERE id=1').run(JSON.stringify(state));
+  const delivery = gate();
+  const send = event.send.bind(event);
+  let sending = false;
+  event.send = async payload => {
+    if (payload.content?.includes('### Left')) { sending = true; await delivery.blocked; }
+    return send(payload);
+  };
+  const tasks = [];
+  try {
+    tasks.push(onMysteryButton(db, roundInteraction(first, 1, 'left')));
+    await flush();
+    assert.equal(sending, true);
+    const secondPick = roundInteraction(first, 1, 'right', '102');
+    tasks.push(onMysteryButton(db, secondPick));
+    await flush();
+    assert.match(secondPick.acknowledgements.at(-1), /Saved: Right/);
+    // The card payload is unchanged when lists are separate, but a later public
+    // snapshot must still be scheduled with the newly saved participant.
+    tasks.push(onMysteryButton(db, roundInteraction(first, 1, 'right', '103')));
+    await flush();
+    assert.equal(JSON.parse(getMysterySession(db, 1).stateJson).choices['103'], 'right');
+    tasks.push(time.advanceTo(getMysterySession(db, 1).nextAt));
+    await flush();
+    assert.equal(JSON.parse(getMysterySession(db, 1).stateJson).phase, 'result');
+  } finally {
+    delivery.release();
+    await Promise.all(tasks);
+    await flush();
+  }
+  assert.match(JSON.stringify(first.components), /Safe side: Left/);
+  assert.doesNotMatch(JSON.stringify(first.components), /mystery:1:choice/);
+  assert.ok(event.sent.every(message => (message.payload.content?.length ?? 0) <= 2000));
+});
+
+test('Glass Bridge failed cosmetic edit does not cancel paid play or block a later snapshot', async (t) => {
+  const { db, event, time, start } = fixture(t, 'glass_bridge');
+  const retries = [];
+  t.mock.method(globalThis, 'setTimeout', callback => { retries.push(callback); return { unref() {} }; });
+  await start();
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  const first = event.sent.at(-1);
+  const edit = first.edit.bind(first);
+  const errors = [];
+  t.mock.method(console, 'error', (...args) => errors.push(args));
+  let attempts = 0;
+  first.edit = async payload => {
+    if (++attempts === 1) throw new Error('transient Discord edit failure');
+    return edit(payload);
+  };
+  const picked = roundInteraction(first, 1, 'left');
+  await onMysteryButton(db, picked);
+  assert.match(picked.acknowledgements.at(-1), /Saved: Left/);
+  await onMysteryButton(db, roundInteraction(first, 1, 'right', '102'));
+  await flush();
+  assert.equal(getMysterySession(db, 1).state, 'running');
+  assert.equal(errors.length, 1);
+  assert.equal(retries.length, 1);
+  retries.shift()();
+  await flush();
+  assert.match(JSON.stringify(first.components), /### Right[\s\S]*<@102>/);
+});
+
+test('Glass Bridge retries a failed result edit without another choice or blocking the next step', async (t) => {
+  const { db, event, time, start } = fixture(t, 'glass_bridge');
+  const retries = [];
+  t.mock.method(globalThis, 'setTimeout', callback => { retries.push(callback); return { unref() {} }; });
+  t.mock.method(console, 'error', () => {});
+  await start();
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  const first = event.sent.at(-1);
+  await onMysteryButton(db, roundInteraction(first, 1, 'left'));
+  await onMysteryButton(db, roundInteraction(first, 1, 'left', '102'));
+  const edit = first.edit.bind(first);
+  let failed = false;
+  first.edit = async payload => {
+    if (!failed && JSON.stringify(payload).includes('Safe side:')) {
+      failed = true;
+      throw new Error('transient result delivery failure');
+    }
+    return edit(payload);
+  };
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  assert.equal(failed, true);
+  assert.equal(retries.length, 1);
+  assert.doesNotMatch(JSON.stringify(first.components), /Safe side:/);
+  await time.advanceTo(getMysterySession(db, 1).nextAt);
+  assert.match(JSON.stringify(event.sent.at(-1).components), /Glass Bridge · Step 2/);
+  retries.shift()();
+  await flush();
+  assert.match(JSON.stringify(first.components), /Safe side: Left/);
+  assert.doesNotMatch(JSON.stringify(first.components), /mystery:1:choice/);
+});
+
 test('new later-round participants save privately without editing an identical prompt', async (t) => {
   const { db, event, time, start } = fixture(t, 'deadlock');
   const windows = await beginContest({ db, time, start });
