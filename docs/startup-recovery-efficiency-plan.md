@@ -1,6 +1,6 @@
 # Startup recovery efficiency and readiness — draft plan
 
-Status: **draft for approval; no implementation or production changes authorized by this document**.
+Status: **implemented on the branch below; see [validation and implementation notes](./startup-recovery-efficiency-validation.md)**. Production rollout, service restarts, branch publication, and dependency-backup cleanup remain separate approval boundaries.
 
 Branch: `fix/startup-recovery-efficiency`
 
@@ -143,4 +143,4 @@ No schema migration is planned. A source rollback must not restore old database 
 
 Retained dependency backups (~998 MB at inspection) are an operational follow-up, **not part of this change**. Inventory retained deployment directories and establish retention/recovery requirements before any separately approved cleanup.
 
-Approval is required before implementation, pushing this branch, or deploying/restarting production. Existing unrelated working-tree files must remain out of plan/implementation commits.
+The user approved implementation after this plan was drafted. Pushing this branch or deploying/restarting production still requires separate approval. Existing unrelated working-tree files must remain out of plan/implementation commits.
