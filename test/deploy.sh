@@ -69,7 +69,10 @@ EOF
 cat > "$mocks/journalctl" <<'EOF'
 #!/usr/bin/env bash
 [[ " $* " == *' _PID=123 '* && " $* " == *' --since '* ]] || exit 2
-[[ "${FAKE_DISCORD_READY:-1}" == 1 ]] && echo 'Character game ready.'
+read -r now < "$FAKE_CLOCK"
+if [[ "${FAKE_DISCORD_READY:-1}" == 1 ]] && (( now >= FAKE_READY_AT_MS )); then
+  echo 'Character game ready.'
+fi
 exit 0
 EOF
 cat > "$mocks/npm" <<'EOF'
@@ -94,12 +97,24 @@ exit "${FAKE_LOCK_FAIL:-0}"
 EOF
 cat > "$mocks/sleep" <<'EOF'
 #!/usr/bin/env bash
-exit 0
+read -r now < "$FAKE_CLOCK"
+seconds=${1%%.*}
+fraction=${1#*.}
+[[ "$1" == *.* ]] || fraction=0
+fraction="${fraction}000"
+printf '%s\n' "$((now + seconds * 1000 + 10#${fraction:0:3}))" > "$FAKE_CLOCK"
+EOF
+cat > "$mocks/fake_monotonic_ms" <<'EOF'
+#!/usr/bin/env bash
+read -r now < "$FAKE_CLOCK"
+printf '%s\n' "$now"
 EOF
 cat > "$mocks/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 echo "curl $*" >> "$FAKE_LOG"
+read -r now < "$FAKE_CLOCK"
+printf '%s\n' "$((now + FAKE_PROBE_COST_MS))" > "$FAKE_CLOCK"
 [[ " $* " == *' --connect-timeout 2 '* && " $* " == *' --max-time 4 '* ]]
 [[ " $* " == *' --noproxy * '* && " $* " == *' --output /dev/null '* ]]
 # The deployed host guard is configured with --public-host=127.0.0.1.
@@ -171,9 +186,12 @@ setup_case() {
   target=$(git -C "$home/seed" rev-parse HEAD)
   sed -e "s|/home/ubuntu|$home|g" \
       -e "s|systemctl=/usr/bin/systemctl|systemctl=$mocks/systemctl|" \
+      -e '/^monotonic_ms() {$/,/^}$/c\monotonic_ms() { fake_monotonic_ms; }' \
       "$source_script" > "$home/deploy.sh"
   export FAKE_LOG="$home/service.log" FAKE_APP="$app" FAKE_NPM_FAIL=0 FAKE_LOCK_FAIL=0 FAKE_SERVICE_STATE=active FAKE_DISCORD_READY=1
   export FAKE_PORTAL_STATE=active FAKE_DENY=none FAKE_CRASH=none FAKE_PID_CHANGE=none FAKE_RESTART_CHANGE=none FAKE_HTTP_FAIL=none FAKE_HTTP_CRASH=0 FAKE_REDIRECT=303
+  export FAKE_CLOCK="$home/clock" FAKE_READY_AT_MS=0 FAKE_PROBE_COST_MS=0
+  printf '0\n' > "$FAKE_CLOCK"
   : > "$FAKE_LOG"
 }
 
@@ -209,6 +227,53 @@ expected=$(printf '%s\n' \
 [[ "$(grep -c '^systemctl is-active --quiet random-fun-bot-portal$' "$FAKE_LOG")" -ge 12 ]]
 assert_data
 echo 'PASS: both services preflight/install/stop/swap/restart in order; runtime data preserved'
+
+setup_case delayed-readiness
+export FAKE_READY_AT_MS=152000
+bash "$home/deploy.sh" "$target" > "$home/output" 2>&1 || { cat "$home/output"; exit 1; }
+read -r elapsed < "$FAKE_CLOCK"
+(( elapsed >= 152000 && elapsed <= 300000 ))
+assert_data
+echo 'PASS: real game readiness at 152 seconds succeeds within the elapsed budget'
+
+# Timeout diagnostics must describe the installed release, not a skipped install.
+assert_readiness_timeout() {
+  grep -Fq "Installed SHA: $target" "$home/output"
+  grep -Fq 'Installation and service restarts completed; readiness was not verified' "$home/output"
+  grep -Fq 'Process stability: stable' "$home/output"
+  grep -Fq 'no automatic code or database rollback' "$home/output"
+  [[ "$(git -C "$app" rev-parse HEAD)" == "$target" ]]
+  [[ "$(cat "$app/node_modules/version")" == new ]]
+  recovery=("$home"/random-fun-bot-deploy.*/previous-node_modules)
+  [[ -d "${recovery[0]}" ]]
+  grep -Fq "Recovery files retained at: ${recovery[0]%/previous-node_modules}" "$home/output"
+  assert_data
+}
+
+setup_case over-budget-readiness
+export FAKE_READY_AT_MS=301000
+if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+assert_readiness_timeout
+[[ "$(< "$FAKE_CLOCK")" == 300000 ]]
+grep -Fq 'Elapsed readiness time: 300000 ms (budget: 300000 ms)' "$home/output"
+grep -Fq 'Discord/game: not ready; portal HTTP/auth: ready' "$home/output"
+echo 'PASS: readiness beyond 300 seconds fails with installed SHA, elapsed/stability/readiness and retained paths'
+
+setup_case probe-cost
+export FAKE_READY_AT_MS=291000 FAKE_PROBE_COST_MS=4000
+if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+assert_readiness_timeout
+[[ "$(< "$FAKE_CLOCK")" == 306000 ]]
+grep -Fq 'Elapsed readiness time: 306000 ms (budget: 300000 ms)' "$home/output"
+grep -Fq 'Discord/game: ready; portal HTTP/auth: ready' "$home/output"
+echo 'PASS: probe cost counts; readiness whose probes finish over budget fails, with bounded-command overshoot reported'
+
+setup_case probe-cost-stability
+export FAKE_PROBE_COST_MS=4000
+bash "$home/deploy.sh" "$target" > "$home/output" 2>&1 || { cat "$home/output"; exit 1; }
+[[ "$(< "$FAKE_CLOCK")" == 34000 ]]
+assert_data
+echo 'PASS: minimum stability is 30 elapsed seconds including probe work, not six attempts'
 
 setup_case incoming-data
 echo incoming > "$home/seed/data/birthdays.json"
@@ -266,7 +331,8 @@ setup_case missing-readiness
 export FAKE_DISCORD_READY=0
 if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
 grep -q 'Discord/game readiness was not observed' "$home/output"
-assert_data
+assert_readiness_timeout
+[[ "$(< "$FAKE_CLOCK")" == 300000 ]]
 echo 'PASS: a live process without Discord/game readiness cannot pass deployment'
 
 setup_case failed-service
