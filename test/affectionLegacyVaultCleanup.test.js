@@ -47,7 +47,7 @@ async function fixture(t) {
   assert.equal(result.status, 'published');
   assert.equal(getAffectionTotal(db, '1', '101', characterId), 100);
   const rewards = db.prepare('SELECT * FROM vault_rewards ORDER BY vault_id').all();
-  assert.equal(rewards.length, 3);
+  assert.equal(rewards.length, 1);
   assert.ok(rewards.every(row => row.source_message_id === null && row.state === 'delivered'));
   return { db, abandoned, evidence, rewards };
 }

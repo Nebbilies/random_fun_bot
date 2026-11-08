@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { installEmptyFinalCatalog } from '../lib/catalogFinalSchema.js';
 import { getConfigView, saveConfigSection } from '../lib/gameConfig.js';
-import { captureAppearanceInTransaction, completeAppearanceInTransaction } from '../lib/characterAffection.js';
+import { captureAppearanceInTransaction, completeAppearanceInTransaction, selectOwedAffectionRewardsInTransaction } from '../lib/characterAffection.js';
+import { validateAffectionState } from '../lib/affectionSchema.js';
 import { getResolvedItemDefinition, getResolvedItemDefinitions, ITEM_TIERS } from '../lib/itemRoster.js';
 import { revealVaultReward, decideVaultReward, getVaultReward, bindVaultRewardMessage } from '../lib/vaultRewards.js';
 import { reservePaidVaultSession, drawVaultSessionOutcome } from '../lib/vaultSessions.js';
@@ -87,7 +88,42 @@ test('affection milestone original-card replacement preserves durable copy recei
   assert.equal(inspectAffectionRewards(db).blockers.length, 0);
 });
 
-test('empty milestone tier remains owed; owner retry resolves fixed gifts and later the restored tier', t=>{
+for (const [threshold,itemId] of [[25,'four_leaf_clover'],[50,'hourglass_of_haste']]) {
+  test(`retired ${threshold} milestone stays valid through owed, selected, overflow and delivered recovery`, t=>{
+    const db=fixture(t);
+    db.prepare(`INSERT INTO affection_entitlements(source_key,guild_id,user_id,character_id,milestone_key,
+      threshold,item_id,state,earned_at,channel_id) VALUES('legacy','1','2',?,?,?,?,'owed',100,'20')`)
+      .run('00000000-0000-4000-8000-000000000002',`normal_${threshold}`,threshold,itemId);
+    validateAffectionState(db);
+    db.exec('BEGIN IMMEDIATE');
+    selectOwedAffectionRewardsInTransaction(db,{guildId:'1',userId:'2',now:200,
+      rewardRoster:getResolvedItemDefinitions(db,'1'),random:()=>0});
+    db.exec('COMMIT');
+    assert.equal(db.prepare('SELECT state FROM affection_entitlements').get().state,'selected');
+    validateAffectionState(db);
+    for (let n=0;n<5;n++) addItemToInventory(db,'1','2','hourglass_of_haste',1,{now:200});
+    const [reward]=recoverSelectedAffectionRewards(db,{now:201});
+    assert.equal(reward.state,'overflow');
+    assert.equal(reward.reward.item.id,itemId);
+    validateAffectionState(db);
+    assert.deepEqual(inspectAffectionRewards(db).blockers,[]);
+    removeItemFromInventory(db,getInventory(db,'1','2',201)[0].id);
+    bindVaultRewardMessage(db,reward.vaultId,'20','30');
+    const accepted=decideVaultReward(db,{vaultId:reward.vaultId,guildId:'1',userId:'2',channelId:'20',
+      messageId:'30',action:'accept',now:202});
+    assert.equal(accepted.reward.state,'delivered');
+    validateAffectionState(db);
+    const before=getInventory(db,'1','2',202);
+    recoverSelectedAffectionRewards(db,{now:203});
+    retryOwedAffectionRewards(db,{guildId:'1',userId:'2',now:203,random:()=>{throw Error('redraw');}});
+    assert.deepEqual(getInventory(db,'1','2',203),before);
+    assert.deepEqual(inspectAffectionRewards(db).blockers,[]);
+    db.prepare('UPDATE affection_entitlements SET threshold=threshold+1').run();
+    assert.throws(()=>validateAffectionState(db),/Invalid affection entitlement milestone/);
+  });
+}
+
+test('empty milestone tier remains owed until the restored tier is available', t=>{
   const db=fixture(t);
   db.prepare('UPDATE player_soulmates SET character_id=NULL').run();
   db.exec('BEGIN IMMEDIATE');
@@ -104,10 +140,10 @@ test('empty milestone tier remains owed; owner retry resolves fixed gifts and la
   const first=retryOwedAffectionRewards(db,{guildId:'1',userId:'2',now:200,random:()=>0});
   assert.equal(first.owed.length,1);
   assert.equal(first.owed[0].tier,'common');
-  assert.equal(getInventory(db,'1','2',200).length,2);
+  assert.equal(getInventory(db,'1','2',200).length,0);
   save({[`items.${commons[0].id}.rewardEligible`]:true});
   assert.equal(retryOwedAffectionRewards(db,{guildId:'1',userId:'2',now:300,random:()=>0}).owed.length,0);
-  assert.equal(getInventory(db,'1','2',300).length,3);
+  assert.equal(getInventory(db,'1','2',300).length,1);
   assert.equal(inspectAffectionRewards(db).blockers.length,0);
 });
 

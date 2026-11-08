@@ -47,14 +47,14 @@ test('own-character milestone rewards are announced live without waiting for rec
  const result=await deliverReservedRoll(db,client,{rollId:r.rollId,channel,now:()=>now+1});
  assert.equal(result.status,'published');
  assert.equal(getAffectionTotal(db,'1','101',own),100);
- assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,3);
- assert.equal(sent.length,4,'character card and all three reward cards should be sent live');
- assert.equal(db.prepare('SELECT COUNT(*) n FROM vault_rewards WHERE message_id IS NOT NULL AND delivered_at IS NOT NULL').get().n,3);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,1);
+ assert.equal(sent.length,2,'character card and the reward card should be sent live');
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM vault_rewards WHERE message_id IS NOT NULL AND delivered_at IS NOT NULL').get().n,1);
  await deliverReservedRoll(db,client,{rollId:r.rollId,channel,now:()=>now+2});
  await recoverVaultRewards(db,client,{now:()=>now+3});
- assert.equal(sent.length,4,'recovery must not send duplicate reward cards');
+ assert.equal(sent.length,2,'recovery must not send duplicate reward cards');
  assert.equal(getAffectionTotal(db,'1','101',own),100);
- assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,3);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,1);
 });
 
 test('failed live milestone announcement remains recoverable without replaying affection or items', async t => {
@@ -68,13 +68,13 @@ test('failed live milestone announcement remains recoverable without replaying a
  }};
  const client={channels:{fetch:async()=>channel}};
  assert.equal((await deliverReservedRoll(db,client,{rollId:r.rollId,channel,now:()=>now+1})).status,'published');
- assert.equal(sent.length,3,'one failed reward must not prevent the other two announcements');
- assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,3);
+ assert.equal(sent.length,1,'the character card survives a failed reward announcement');
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,1);
  await recoverVaultRewards(db,client,{now:()=>now+2});
- assert.equal(sent.length,4);
- assert.equal(db.prepare('SELECT COUNT(*) n FROM vault_rewards WHERE delivered_at IS NOT NULL').get().n,3);
+ assert.equal(sent.length,2);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM vault_rewards WHERE delivered_at IS NOT NULL').get().n,1);
  assert.equal(getAffectionTotal(db,'1','101',own),100);
- assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,3);
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM user_inventory').get().n,1);
 });
 
 test('durable own-character card has no seeded claim heart and credits one saved appearance',async t=>{
@@ -102,11 +102,11 @@ test('durable own-character card has no seeded claim heart and credits one saved
  assert.doesNotMatch(JSON.stringify(payload),/Wish|<@202>/);
  assert.deepEqual(payload.allowedMentions.parse,[]);
  assert.ok(texts.includes('❤️ An appearance from your harem'));
- assert.ok(texts.includes('❤️ **+100** affection\n🔓 **3 item rewards** unlocked\n🔓 **Windfall · 8%** unlocked'));
+ assert.ok(texts.includes('❤️ **+100** affection\n🔓 **1 item reward** unlocked\n🔓 **Windfall · 8%** unlocked'));
  assert.equal(texts.filter(text=>text.includes('Character 1')).length,1,'only the title repeats the character name');
  assert.doesNotMatch(texts.join('\n'),/No claim needed|100 total/);
  await deliverReservedRoll(db,client,{rollId:r.rollId,channel,now:()=>now+2});
- assert.equal(sends,4);
+ assert.equal(sends,2);
  assert.equal(reactions,0);
 });
 
@@ -160,7 +160,7 @@ test('delayed publication starts milestone item lifetimes at actual inventory in
  const channel={id:'10',guildId:'1',messages:{fetch:async()=>message}};
  await deliverReservedRoll(db,{channels:{fetch:async()=>channel}},{rollId:r.rollId,channel,now:()=>later});
  const inventory=db.prepare('SELECT acquired_at,expires_at FROM user_inventory').all();
- assert.equal(inventory.length,3);
+ assert.equal(inventory.length,1);
  for(const item of inventory){assert.equal(Date.parse(item.acquired_at),later);assert.ok(item.expires_at>later);}
 });
 

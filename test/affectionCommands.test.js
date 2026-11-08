@@ -110,12 +110,12 @@ test('public views cannot select owed items; only the initial own profile retrie
     assert.ok(result);
     return result;
   };
-  assert.equal(detail().pending.filter(row => row.state === 'owed').length, 3);
+  assert.equal(detail().pending.filter(row => row.state === 'owed').length, 1);
   const visitor = transport(db, ['aff', '<@101>']);
   visitor.ctx.message.author = { id: '202', username: 'Other' };
   const before = db.prepare('SELECT total_changes() n').get().n;
   await run(visitor.ctx);
-  assert.match(text(visitor.payload()), /3 waiting for an eligible item/);
+  assert.match(text(visitor.payload()), /1 waiting for an eligible item/);
   assert.equal(db.prepare('SELECT total_changes() n').get().n, before);
   const own = transport(db, ['aff']);
   await run(own.ctx);
@@ -147,12 +147,12 @@ test('public overview projection keeps five-row alphabetical pages, scoped pendi
   assert.equal(view.total, 1006); assert.equal(view.pages, 202); assert.equal(view.rows.length, 5);
   assert.deepEqual(view.rows.map(row => row.name), ['Shared 0', 'Character 2', 'Character 3', 'Character 4', 'Character 5']);
   assert.equal(view.benefits.soulmate.name, 'Shared 0');
-  assert.equal(view.hasFormer, true); assert.deepEqual(view.pending, { owed: 3, pending: 0 });
-  assert.equal(view.rows[0].pending.length, 3);
+  assert.equal(view.hasFormer, true); assert.deepEqual(view.pending, { owed: 1, pending: 0 });
+  assert.equal(view.rows[0].pending.length, 1);
   const former = overviewProjection(db, { ...args, former: true });
   assert.equal(former.total, 1); assert.equal(former.rows[0].characterId, ids[1]);
   assert.equal(former.rows[0].isFormer, true); assert.equal(former.hasFormer, true);
-  assert.deepEqual(former.pending, { owed: 3, pending: 0 });
+  assert.deepEqual(former.pending, { owed: 1, pending: 0 });
   const next = overviewProjection(db, { ...args, page: 1 });
   assert.deepEqual(next.rows.map(row => row.name), ['Character 6', 'Zero 0001', 'Zero 0002', 'Zero 0003', 'Zero 0004']);
   for (const scope of [{ userId: '202' }, { guildId: '2' }]) {

@@ -154,11 +154,14 @@ test('a roller award failure rolls back the owner award and successful reclaim t
 });
 
 test('both recipients earn milestone entitlements atomically and credited amounts respect the cap',t=>{
-  const db=fixture(t,{total:20});
-  db.prepare("INSERT INTO character_affection VALUES('1','202',?,20,?)").run(foreign,now);
+  const db=fixture(t,{total:95});
+  db.prepare("INSERT INTO character_affection VALUES('1','202',?,95,?)").run(foreign,now);
   const rolled=reserve(db);publish(db,rolled);
   const result=reclaim(db);
-  assert.deepEqual(result.affection.awards.map(a=>[a.userId,a.milestones[0].threshold]),[['202',25],['101',25]]);
+  assert.deepEqual(result.affection.awards.map(a=>[a.userId,a.total,a.milestones]),[
+    ['202',115,[{key:'normal_100',threshold:100,tier:'common'}]],
+    ['101',100,[{key:'normal_100',threshold:100,tier:'common'}]],
+  ]);
   assert.deepEqual(db.prepare('SELECT user_id,state FROM affection_entitlements ORDER BY user_id').all().map(r=>[r.user_id,r.state]),[['101','selected'],['202','selected']]);
   const capped=fixture(t,{total:2097}),otherRoll=reserve(capped);publish(capped,otherRoll);
   const cappedAward=reclaim(capped,()=>0).affection.awards.find(a=>a.userId==='101');
