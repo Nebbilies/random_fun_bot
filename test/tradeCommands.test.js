@@ -305,3 +305,52 @@ test('the character list is a valid Components V2 payload', async (t) => {
   assert.match(notice.content, /Gift for <@102>/);
   assert.equal(container.components.length, 2);
 });
+
+
+test('a typo-only gift requires the giver to select the corrected character', async (t) => {
+  const db = fixture(t);
+  marryCharacter(db, '1', 11, '101');
+  const channel = createChannel();
+  const ctx = context(db, channel, '101', ['give', '<@102>']);
+  ctx.message.guild.members.cache.set('102', { id: '102' });
+  await give(ctx);
+  await say(db, channel, '101', 'Elevne');
+  assert.match(text(channel.sent.at(-1).payload), /pick the character you meant/);
+  assert.equal(getMarriage(db, '1', 11)?.ownerId, '101');
+  const picker = channel.sent.at(-1);
+  await picker.collector.listeners('collect')[0]({ user: { id: '101' }, guildId: '1',
+    values: ['11'], deferUpdate: async () => {}, reply: async () => {} });
+  assert.match(text(channel.sent.at(-1).payload), /wants to give you/);
+});
+
+test('a newer typed query invalidates an older ambiguous-name picker', async (t) => {
+  const db = fixture(t);
+  marryCharacter(db, '1', 13, '101');
+  marryCharacter(db, '1', 14, '101');
+  const channel = createChannel();
+  const ctx = context(db, channel, '101', ['give', '<@102>']);
+  ctx.message.guild.members.cache.set('102', { id: '102' });
+  await give(ctx);
+  await say(db, channel, '101', 'Shared');
+  const old = channel.sent.at(-1);
+  await say(db, channel, '101', 'unknown');
+  let refused = '';
+  await old.collector.listeners('collect')[0]({ user: { id: '101' }, guildId: '1', values: ['13'],
+    reply: async value => { refused = value.content; }, deferUpdate: async () => {} });
+  assert.match(refused, /expired/);
+  assert.equal(getMarriage(db, '1', 13)?.ownerId, '101');
+});
+
+test('a typo-only counteroffer requires the recipient to accept the corrected identity', async (t) => {
+  const db = fixture(t);
+  marryCharacter(db, '1', 11, '101');
+  marryCharacter(db, '1', 12, '102');
+  const channel = createChannel();
+  const ctx = context(db, channel, '101', ['trade', '<@102>']);
+  ctx.message.guild.members.cache.set('102', { id: '102' });
+  await trade(ctx);
+  await say(db, channel, '101', 'Eleven');
+  await say(db, channel, '102', 'Twelev');
+  assert.match(text(channel.sent.at(-1).payload), /pick the character you meant/);
+  assert.equal(getMarriage(db, '1', 12)?.ownerId, '102');
+});
