@@ -24,9 +24,19 @@ Already-open cards keep their existing pagination snapshot.
 
 ## Search preparation
 
-The catalog cache prepares normalized character names/aliases and full/direct-only
-franchise names once per snapshot. Public lookup signatures and match precedence
-remain unchanged; ad-hoc live harem lists still use fresh metadata. WeakMaps keep
+The catalog cache prepares normalized character names/aliases, word tokens, and
+full/direct-only franchise names once per snapshot. Character preparation also
+retains rank ordering. Public array-returning lookup signatures remain unchanged;
+ad-hoc live harem lists still use fresh metadata.
+
+Shared name search preserves exact-name/alias precedence, then considers meaningful
+word/prefix matches together (so surnames are not hidden by another full-name prefix),
+conservative typo matches, and finally substring fallback. Adjacent letter swaps
+count as one typo; short and numeric tokens are not broadly typo-expanded. All
+qualifying candidates remain available to existing choosers, with text relevance
+before rank. Existing menus are not redesigned. Newly typo-inferred gifts and trade
+counteroffers require the selecting owner to accept the character in the existing
+picker; normal literal partial inputs retain their current flow. WeakMaps keep
 prepared fields out of returned character/card data without retaining discarded
 snapshots. The exposed revision format remains compatible.
 
