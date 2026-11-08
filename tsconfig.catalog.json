@@ -12,6 +12,8 @@
   },
   "include": [
     "lib/catalogDb.js",
+    "lib/gameRecovery.js",
+    "lib/recoveryObservation.js",
     "lib/affectionRules.js",
     "lib/characterAffection.js",
     "lib/affectionPerks.js",

@@ -24,22 +24,32 @@ import {onInventoryButton} from "./commands/inv.js";
 import {cleanupExpiredItems} from './lib/itemExpiryCleanup.js';
 import {recoverBinocularsUses} from './lib/binocularsUse.js';
 import {recoverSelectedAffectionRewards} from './lib/affectionRewards.js';
+import {runGameRecovery} from './lib/gameRecovery.js';
+import {createRecoveryObserver, recoveryError, accumulateRecoveryCounts} from './lib/recoveryObservation.js';
+import {performance} from 'node:perf_hooks';
 import {parseFranchiseCommand} from "./lib/franchiseModifiers.js";
 import {parseTopCommand} from "./lib/topModifiers.js";
 
 const { CommandCooldown, msToMinutes } = commandCooldown;
+const startup = createRecoveryObserver();
+let finishDiscordLogin;
+const recoveryOperations = { recoverBinocularsUses, recoverItemActionRuntime, recoverPendingRollDeliveries,
+    recoverForcedEscapes, recoverOpenEscapes, recoverMysteryRuntime, recoverVaultSessions,
+    recoverSelectedAffectionRewards, recoverVaultRewards, cleanupExpiredItems };
 
 // Create a new client instance
 const intents = [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessageReactions ];
 
 const client = new Client({ intents, partials: [Partials.Message, Partials.Channel, Partials.Reaction] });
 client.cooldowns = new Collection();
-client.catalogDb = openCatalog();
+client.catalogDb = startup.runSync('catalog-open', () => openCatalog());
 // Final-schema startup must not silently cancel paid actions or guess recovery.
 // Run before handlers, timers, recovery writes, or Discord login are enabled.
-if (client.catalogDb.prepare('PRAGMA user_version').get().user_version === 12) {
-    assertCatalogRuntimeRestartReady(client.catalogDb);
-}
+startup.runSync('restart-validation', () => {
+    if (client.catalogDb.prepare('PRAGMA user_version').get().user_version === 12) {
+        assertCatalogRuntimeRestartReady(client.catalogDb);
+    }
+});
 const catalogCache = createCatalogCache(client.catalogDb);
 
 export const yoshiko = {
@@ -53,8 +63,10 @@ export const yoshiko = {
     imagePicker: createCharacterImagePicker(),
     vaultEnabled: process.env.VAULT_ROLLS_DISABLED !== '1',
 };
-cancelMysteryRuntime(client.catalogDb);
-recoverRollRuntime(client.catalogDb);
+startup.runSync('runtime-detach', () => {
+    cancelMysteryRuntime(client.catalogDb);
+    recoverRollRuntime(client.catalogDb);
+});
 let gameRuntimeReady = false;
 
 client.on(Events.MessageReactionAdd, (reaction, user) => {
@@ -71,37 +83,39 @@ client.on(Events.MessageReactionAdd, (reaction, user) => {
 yoshiko.client.once(Events.ClientReady, async (c) => {
     yoshiko.client.user.setActivity("Se hoat dong khi thay 727");
     console.log("dmLam");
-    recoverBinocularsUses(yoshiko.catalogDb);
-    await recoverItemActionRuntime(yoshiko.catalogDb, yoshiko.client);
-    await recoverPendingRollDeliveries(yoshiko.catalogDb, yoshiko.client);
-    await recoverForcedEscapes(yoshiko.catalogDb, yoshiko.client);
-    await recoverOpenEscapes(yoshiko.catalogDb, yoshiko.client);
-    // Mystery recovery acknowledges the character reveal before direct Chit
-    // rewards may publish; vault recovery also enforces that durable gate.
-    await recoverMysteryRuntime({ db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker });
-    await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
-    recoverSelectedAffectionRewards(yoshiko.catalogDb);
-    await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
-    cleanupExpiredItems(yoshiko.catalogDb);
-    catalogCache.get(); // Prepare search data before accepting the first game command.
+    finishDiscordLogin?.();
+    const stats = await startup.run('post-client-ready', () => runGameRecovery({
+        db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker,
+        startup: true, observer: startup, operations: recoveryOperations,
+    }));
+    startup.runSync('search-cache', () => catalogCache.get());
     gameRuntimeReady = true;
     console.log('Character game ready.');
+    startup.finish(stats);
     let vaultRecoveryRunning = false;
+    let lastRecoveryReport = performance.now();
+    let recoveryTotals = {};
+    let recoveryCycles = 0;
     const vaultRecovery = setInterval(async () => {
         if (vaultRecoveryRunning) return;
         vaultRecoveryRunning = true;
+        const observer = createRecoveryObserver({ mode: 'periodic', verbose: false });
         try {
-            await recoverPendingRollDeliveries(yoshiko.catalogDb, yoshiko.client);
-            await recoverForcedEscapes(yoshiko.catalogDb, yoshiko.client);
-            await recoverOpenEscapes(yoshiko.catalogDb, yoshiko.client);
-            // Include terminal mysteries with an outstanding compensated reveal.
-            await recoverMysteryRuntime({ db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker });
-            await recoverVaultSessions(yoshiko.catalogDb, yoshiko.client);
-            recoverSelectedAffectionRewards(yoshiko.catalogDb);
-            await recoverVaultRewards(yoshiko.catalogDb, yoshiko.client);
-            cleanupExpiredItems(yoshiko.catalogDb);
+            const counts = await runGameRecovery({ db: yoshiko.catalogDb, client: yoshiko.client,
+                imagePicker: yoshiko.imagePicker, observer, operations: recoveryOperations });
+            accumulateRecoveryCounts(recoveryTotals, counts);
+            recoveryCycles++;
+            // Interval totals include every completed pass; timings describe the
+            // latest pass only. Delivery failures surface immediately.
+            if (counts.deferred || performance.now() - lastRecoveryReport >= 300_000) {
+                observer.finish(recoveryTotals, { cycles: recoveryCycles,
+                    elapsedMs: Math.round(performance.now() - lastRecoveryReport) });
+                lastRecoveryReport = performance.now();
+                recoveryTotals = {};
+                recoveryCycles = 0;
+            }
         }
-        catch (error) { console.error('Vault recovery failed:', error); }
+        catch (error) { console.error('Vault recovery failed:', recoveryError(error)); }
         finally { vaultRecoveryRunning = false; }
     }, 15_000);
     vaultRecovery.unref();
@@ -411,6 +425,10 @@ yoshiko.client.once(Events.ClientReady, async (readyClient) => {
 yoshiko.client.on(Events.GuildCreate, (guild) => {
     void registerUtilityCommands(guild.id);
 });
-yoshiko.client.login(config.token).catch((err) => console.error(err));
+finishDiscordLogin = startup.begin('discord-login');
+yoshiko.client.login(config.token).catch((err) => {
+    finishDiscordLogin(err);
+    console.error('Discord login failed:', recoveryError(err));
+});
 
 //FINISHED: DEPLOYED FIRST SLASH COMMAND, TODO: DEPLOY LOGIN SLASH COMMAND WITH OPTIONS, HANDLING WRONG TOKENS AND UIDS.

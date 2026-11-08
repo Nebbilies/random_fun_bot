@@ -35,12 +35,13 @@ test('retired reward inbox is not routable and old controls only receive a remov
   await retired({ customId: 'vault:reward:replace', reply: async () => assert.fail('canonical controls must remain routable') });
 });
 
-test('search preparation follows recovery and precedes game readiness', () => {
+test('search preparation follows awaited recovery and precedes game readiness', () => {
   const ready = source.indexOf('yoshiko.client.once(Events.ClientReady');
-  const recovered = source.indexOf('cleanupExpiredItems(yoshiko.catalogDb);', ready);
-  const prepared = source.indexOf('catalogCache.get();', recovered);
+  const recovered = source.indexOf("await startup.run('post-client-ready'", ready);
+  const prepared = source.indexOf("startup.runSync('search-cache'", recovered);
   const enabled = source.indexOf('gameRuntimeReady = true;', ready);
-  assert.ok(ready >= 0 && recovered > ready && prepared > recovered && enabled > prepared);
+  const marker = source.indexOf("console.log('Character game ready.');", enabled);
+  assert.ok(ready >= 0 && recovered > ready && prepared > recovered && enabled > prepared && marker > enabled);
 });
 
 function handlerBlocks(registration) {
