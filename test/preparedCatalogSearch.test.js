@@ -12,7 +12,7 @@ test('prepared character lookup preserves all match tiers, Unicode, ambiguous na
   ];
   const original = JSON.stringify(rows), plain = structuredClone(rows);
   assert.equal(prepareCharacterSearchIndex(rows), rows);
-  for (const query of ['rem', 'maid rem', 'レム', 'remy', 'alice smith', 'alice', 'smith', 'emy', 'missing', '#1', '#1,234', 'r']) {
+  for (const query of ['rem', 'maid rem', 'レム', 'remy', 'alice smith', 'alice', 'smith', 'emy', 'missing', '#1', '#1,234', 'r', 'alcie smith', 'maid rme']) {
     assert.deepEqual(findCharacters(rows, query).map(r => r.id), findCharacters(plain, query).map(r => r.id), query);
   }
   assert.deepEqual(findCharacters(rows, 'rem').map(r => r.id), ['b', 'a']);
@@ -39,7 +39,7 @@ test('prepared franchise searches retain exact, prefix, substring and ambiguous 
   const rows = [{ id: 9, name: 'Sword Art Online', aliases: ['ＳＡＯ'] }, { id: 2, name: 'Alternative', aliases: ['SAO', 'Gun Gale'] }];
   const original = JSON.stringify(rows), plain = structuredClone(rows);
   assert.equal(prepareFranchiseSearchIndex(rows), rows);
-  for (const query of ['sao', 'sword', 'online', 'gun gale', 'gun', 'gale', 'missing', 's']) {
+  for (const query of ['sao', 'sword', 'online', 'gun gale', 'gun', 'gale', 'missing', 's', 'sword art onlien']) {
     assert.deepEqual(findFranchises(rows, query).map(r => r.id), findFranchises(plain, query).map(r => r.id));
   }
   assert.deepEqual(findFranchises(rows, 'sao').map(r => r.id), [2, 9]);
