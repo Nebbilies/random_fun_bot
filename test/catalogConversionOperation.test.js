@@ -145,7 +145,11 @@ for (const state of ['delivered', 'lost', 'declined']) test(`terminal vault ${st
     assert.equal(inspectCatalogRuntimeRestart(final).ready, true);
     assert.equal(final.prepare('SELECT delivered_at FROM vault_rewards').get().delivered_at, null);
     let sends = 0;
-    const client = { channels: { fetch: async () => ({ send: async () => { sends++; return { id: '501', edit: async () => {} }; } }) } };
+    const client = { channels: { fetch: async () => ({ send: async payload => {
+      sends++;
+      const message = { id: '501', ...payload, edit: async change => Object.assign(message, change) };
+      return message;
+    } }) } };
     await recoverVaultRewards(final, client, { now: () => 456 });
     await recoverVaultRewards(final, client, { now: () => 456 });
     assert.equal(final.prepare('SELECT delivered_at FROM vault_rewards').get().delivered_at, 456);
@@ -172,7 +176,11 @@ test('actual offline settlement vault converts without replaying item or inventi
     assert.equal(final.prepare('SELECT delivered_at FROM vault_rewards').get().delivered_at, null);
     assert.equal(final.prepare('SELECT count(*) n FROM user_inventory').get().n, 1);
     let sends = 0;
-    const client = { channels: { fetch: async () => ({ send: async () => { sends++; return { id: '502', edit: async () => {} }; } }) } };
+    const client = { channels: { fetch: async () => ({ send: async payload => {
+      sends++;
+      const message = { id: '502', ...payload, edit: async change => Object.assign(message, change) };
+      return message;
+    } }) } };
     await recoverVaultRewards(final, client, { now: () => 456 });
     await recoverVaultRewards(final, client, { now: () => 456 });
     assert.equal(final.prepare('SELECT delivered_at FROM vault_rewards').get().delivered_at, 456);

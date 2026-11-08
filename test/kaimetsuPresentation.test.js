@@ -26,7 +26,15 @@ function save(db, section, values, guildId) {
 async function recoveredCard(db, vaultId) {
   const cards = new Map();
   await recoverVaultRewards(db, { channels: { fetch: async () => ({
-    messages: { fetch: async id => ({ edit: async payload => cards.set(id, payload.components[0].toJSON()) }) },
+    messages: { fetch: async request => {
+      const id = typeof request === 'string' ? request : request.message;
+      const message = { id, components: [], edit: async payload => {
+        cards.set(id, payload.components[0].toJSON());
+        Object.assign(message, payload);
+        return message;
+      } };
+      return message;
+    } },
   }) } });
   return cards.get(vaultId);
 }

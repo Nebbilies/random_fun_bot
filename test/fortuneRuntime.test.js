@@ -294,6 +294,9 @@ test('a reward write catches up timeout reconciliation that commits during its t
   // Recovery's public edit starts before timeout; a DB-only periodic scan commits
   // timeout Keep while that network operation is in flight.
   const edit = message.edit;
+  // Make the fetched card stale so this test still exercises an actual edit await.
+  // An already-correct recovery card now correctly performs no edit at all.
+  message.payload = { ...message.payload, components: [] };
   let first = true;
   message.edit = async payload => {
     if (first) { first = false; reconcileVaultRewards(f.db, { now: deadline }); }

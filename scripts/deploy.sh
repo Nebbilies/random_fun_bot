@@ -105,10 +105,19 @@ if [[ -e node_modules || -L node_modules ]]; then
   mv node_modules "$stage/previous-node_modules"
 fi
 mv "$stage/node_modules" node_modules
+# Linux uptime is monotonic; wall-clock changes must not extend readiness waits.
+monotonic_ms() {
+  local uptime ignored
+  read -r uptime ignored < /proc/uptime || return 1
+  [[ "$uptime" =~ ^([0-9]+)\.([0-9]{2})$ ]] || return 1
+  printf '%s\n' "$((10#${BASH_REMATCH[1]} * 1000 + 10#${BASH_REMATCH[2]} * 10))"
+}
 started_at=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 for unit in "${services[@]}"; do
   sudo -n "$systemctl" restart "$unit"
 done
+readiness_started_ms=$(monotonic_ms)
+readiness_deadline_ms=$((readiness_started_ms + 300000))
 
 # Never follow redirects, send credentials, or print response bodies/headers.
 # The service accepts the configured loopback Host; public proxy origins remain
@@ -134,6 +143,7 @@ for unit in "${services[@]}"; do
   [[ "${pids[$unit]}" =~ ^[1-9][0-9]*$ ]]
   [[ "${restarts[$unit]}" =~ ^[0-9]+$ ]]
 done
+stable_since_ms=$(monotonic_ms)
 check_stability() {
   local unit
   for unit in "${services[@]}"; do
@@ -144,9 +154,40 @@ check_stability() {
 }
 ready=0
 portal_is_ready=0
-for attempt in {1..12}; do
-  sleep 5
-  check_stability || { echo 'Bot or portal process became unhealthy or unstable.' >&2; exit 1; }
+process_stability=stable
+readiness_failure() {
+  local reason=$1 elapsed_ms game_status='not ready' portal_status='not ready'
+  elapsed_ms=$(( $(monotonic_ms) - readiness_started_ms ))
+  (( ready )) && game_status=ready
+  (( portal_is_ready )) && portal_status=ready
+  echo "$reason" >&2
+  echo 'Installation and service restarts completed; readiness was not verified within the budget.' >&2
+  echo "Installed SHA: $target" >&2
+  echo "Elapsed readiness time: $elapsed_ms ms (budget: 300000 ms)" >&2
+  echo "Process stability: $process_stability; observed for $(( $(monotonic_ms) - stable_since_ms )) ms (minimum: 30000 ms)" >&2
+  echo "Last observations — Discord/game: $game_status; portal HTTP/auth: $portal_status" >&2
+  # finish() retains and reports the recovery directory; never undo this install.
+  exit 1
+}
+require_stability() {
+  if ! check_stability; then
+    process_stability=unstable
+    readiness_failure 'Bot or portal process became unhealthy or unstable.'
+  fi
+}
+verified=0
+while :; do
+  now_ms=$(monotonic_ms)
+  remaining_ms=$((readiness_deadline_ms - now_ms))
+  (( remaining_ms > 0 )) || break
+  # Five-second cadence, clipped to the remaining elapsed-time budget.
+  wait_ms=5000
+  if (( remaining_ms < wait_ms )); then wait_ms=$remaining_ms; fi
+  printf -v poll_delay '%d.%03d' "$((wait_ms / 1000))" "$((wait_ms % 1000))"
+  sleep "$poll_delay"
+  now_ms=$(monotonic_ms)
+  (( now_ms < readiness_deadline_ms )) || break
+  require_stability
   # The marker is emitted only after Discord login and durable game recovery.
   if journalctl -b -u "$service" "_PID=${pids[$service]}" --since "$started_at" --no-pager -o cat \
     | grep -Fx 'Character game ready.' > /dev/null; then
@@ -155,11 +196,25 @@ for attempt in {1..12}; do
   portal_is_ready=0
   if portal_ready; then portal_is_ready=1; fi
   # Also catch a crash/restart during HTTP requests, not just before them.
-  check_stability || { echo 'Bot or portal process became unhealthy or unstable.' >&2; exit 1; }
-  if (( attempt >= 6 && ready && portal_is_ready )); then break; fi
+  require_stability
+  now_ms=$(monotonic_ms)
+  # Probe work counts too. Bounded requests may finish just after the deadline;
+  # this is not a hard wall-clock bound tighter than subprocess timeouts.
+  if (( now_ms <= readiness_deadline_ms && now_ms - stable_since_ms >= 30000 && ready && portal_is_ready )); then
+    verified=1
+    break
+  fi
 done
-(( ready )) || { echo 'Discord/game readiness was not observed; check the service journal and deploy-user journal access.' >&2; exit 1; }
-(( portal_is_ready )) || { echo 'Portal HTTP/auth readiness was not observed; inspect the portal service.' >&2; exit 1; }
+if (( ! verified )); then
+  require_stability
+  if (( ! ready )); then
+    echo 'Discord/game readiness was not observed; check the service journal and deploy-user journal access.' >&2
+  fi
+  if (( ! portal_is_ready )); then
+    echo 'Portal HTTP/auth readiness was not observed; inspect the portal service.' >&2
+  fi
+  readiness_failure 'Readiness budget expired.'
+fi
 completed=1
 echo "Deployed $target; bot and portal processes stayed stable for at least 30 seconds."
 echo 'Discord/game recovery and anonymous portal HTTP/auth readiness were observed.'
