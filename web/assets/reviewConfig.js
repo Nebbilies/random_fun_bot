@@ -69,7 +69,7 @@ function render() {
       else {
         input.type = 'number'; input.required = true;
         const scale = probability(field) ? 100 : 1;
-        input.value = value * scale;
+        input.value = probability(field) ? Number((value * scale).toFixed(10)) : value * scale;
         if (field.min !== undefined) input.min = field.min * scale;
         if (field.max !== undefined) input.max = field.max * scale;
         input.step = field.type === 'integer' ? '1' : 'any';
