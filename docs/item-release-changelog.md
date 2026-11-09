@@ -21,3 +21,7 @@ The formatter derives counts, names, and rarity groups from registered definitio
 Each name follows **guild item discovery**, not the requesting player's inventory. An undiscovered name is `???`; acquiring the item anywhere in the server permanently reveals its name. Merely previewing Lens or Recast choices does not discover items. Catalog changes alone never generate a new announcement.
 
 The initial Fortune release is dated 28/10/2026. Phase 2 is dated 31/10/2026 and announces one Common item (Consolation Chit) and one Epic item (Chronicle of Return), with each name masked until guild discovery. Update a release's fixed date before publication if the actual release moves.
+
+## 2026-11-09
+
+- Added Threadbreaker, a one-charge Legendary franchise divorce chain with a web-configurable same-owner divorce chance (50% default) and paced character verdicts.

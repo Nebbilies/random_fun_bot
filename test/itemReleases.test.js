@@ -45,11 +45,10 @@ test('guild announcement reveals acquisitions permanently without leaking across
   t.after(() => db.close());
   const hidden = guildItemChangelog(db, 'guild');
   assert.match(hidden, /new \*Legendary\* item: \*\*\?\?\?\*\*/);
-  assert.match(hidden, /new \*Rare\* item: \*\*\?\?\?\*\*/);
-  const acquired = addItemToInventory(db, 'guild', 'player', 'shackles_of_liberation');
+  const acquired = addItemToInventory(db, 'guild', 'player', 'threadbreaker');
   decrementItemCharge(db, acquired.item.id);
-  assert.match(guildItemChangelog(db, 'guild'), /\*\*Shackles of Liberation\*\*/);
-  assert.doesNotMatch(guildItemChangelog(db, 'other'), /Shackles of Liberation/);
+  assert.match(guildItemChangelog(db, 'guild'), /\*\*Threadbreaker\*\*/);
+  assert.doesNotMatch(guildItemChangelog(db, 'other'), /Threadbreaker/);
 });
 
 test('large future release stays within a text-display budget without losing counts', () => {
