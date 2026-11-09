@@ -1,6 +1,6 @@
 # Franchise divorce chain: brainstorm
 
-Status: Brainstorm completed and Phase 2 design approved. Implementation Plan is the next phase; production implementation is not yet approved.
+Status: Brainstorm completed; design and implementation approved. Implemented and verified on feat/threadbreaker.
 
 ## Confirmed requirements
 

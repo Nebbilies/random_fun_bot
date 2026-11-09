@@ -1,6 +1,6 @@
 # Franchise divorce chain: design proposal
 
-Status: Phase 2 approved by the user. Phase 3 (Implementation Plan) may proceed.
+Status: Approved and implemented on feat/threadbreaker.
 
 Approved name: **Threadbreaker**. Stable item ID: `threadbreaker`.
 
@@ -116,4 +116,4 @@ Extend existing action-kind, identity-snapshot, and migration validators whereve
 
 ## Self-review
 
-Phase 2 self-review: passed for internal consistency against confirmed interview answers and inspected repository behavior. The user approved this design, including confirmation-time snapshotting, the natural-exhaustion message, and independent scheduling, and selected Threadbreaker as the final name. No production code has been written.
+Phase 2 self-review: passed for internal consistency against confirmed interview answers and inspected repository behavior. The user approved this design, including confirmation-time snapshotting, the natural-exhaustion message, and independent scheduling, and selected Threadbreaker as the final name. Implementation and validation are complete; see threadbreaker-validation.md.

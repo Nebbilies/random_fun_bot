@@ -6,7 +6,7 @@ Approved design: [Franchise divorce chain](franchise-divorce-chain-design.md).
 
 ## Scope and stop condition
 
-Implement Threadbreaker through existing inventory, prefix-command, durable action, ownership, and Components V2 systems. Add no dependencies. Stop when the approved gameplay and reveal flow work, focused regression checks pass, and verification results are recorded. Do not commit or deploy.
+Implement Threadbreaker through existing inventory, prefix-command, durable action, ownership, and Components V2 systems. Add no dependencies. Stop when the approved gameplay and reveal flow work, focused regression checks pass, and verification results are recorded. Create focused commits on feat/threadbreaker as authorized; do not deploy.
 
 ## Proposed public test boundaries
 
@@ -84,4 +84,4 @@ For each slice, add one meaningful failing behavior test, run it to establish th
 
 ## Self-review
 
-Phase 3 self-review: passed. Planned files match the inspected activation, action, reveal, cleanup, registration, and validation boundaries. The plan preserves the approved chain semantics and exact ending text, includes independent reveal scheduling, uses existing dependencies, and proposes behavioral tests at public boundaries. No tests or production code have been written for Threadbreaker. User approval is still required before entering TDD/implementation.
+Phase 3 self-review: passed. Planned files match the inspected activation, action, reveal, cleanup, registration, and validation boundaries. The plan preserves the approved chain semantics and exact ending text, includes independent reveal scheduling, uses existing dependencies, and proposes behavioral tests at public boundaries. Implementation was authorized by the user and is complete. See threadbreaker-validation.md for results.
