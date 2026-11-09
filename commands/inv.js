@@ -119,6 +119,8 @@ export function getItemHelpBullet(def) {
   switch (def.id) {
     case 'kaimetsu':
       return `• **${tier.emoji} ${def.name}**: Type \`!use kaimetsu\` and confirm the guild-wide divorce. Includes your own harem; only soulbound characters are immune. ${def.description}`;
+    case 'threadbreaker':
+      return `• **${tier.emoji} ${def.name}**: Type \`!use threadbreaker <franchise name>\` and confirm. ${def.description}`;
     case 'double_or_nothing':
       return `• **${tier.emoji} Double or Nothing**: Choose Keep or Gamble when a qualifying vault reward is revealed.`;
     case 'alchemist': case 'chaos_exchange': case 'counterfeit_crown': case 'heart_for_a_heart':
