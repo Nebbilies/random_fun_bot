@@ -40,6 +40,14 @@ _Avoid_: Remarry, new marriage
 To end character ownership in one Discord server.
 _Avoid_: Release
 
+**Franchise divorce chain**:
+A sequence through a franchise's owned characters from highest rank number to lowest, comparing owners as they were when the chain began. The first character and each character whose preceding owner differs are divorced; a character with the same preceding owner has a configurable divorce chance (50% by default), and survival ends the entire chain.
+_Avoid_: Owner-by-owner divorce, ascending-rank divorce
+
+**Threadbreaker**:
+A one-charge Legendary item that starts a franchise divorce chain in its user's Discord server, excluding permanently locked characters.
+_Avoid_: Domino Effect, Requiem of Fate
+
 **Character catalog**:
 The growing set of published characters and their display metadata. Published characters remain in the catalog, while popularity ranks can change on refresh.
 _Avoid_: Ownership registry
