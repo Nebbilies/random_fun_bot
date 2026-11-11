@@ -45,6 +45,7 @@
     "test/characterEscapes.test.js",
     "test/rollCommands.test.js",
     "test/characterTrade.test.js",
-    "test/tradeCommands.test.js"
+    "test/tradeCommands.test.js",
+    "features/trade/**/*.js"
   ]
 }

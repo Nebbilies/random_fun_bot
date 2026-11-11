@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openCatalog } from '../lib/catalogDb.js';
 import { getMarriage, marryCharacter } from '../lib/characterMarriage.js';
-import { onTradeAnswer } from '../lib/tradeRuntime.js';
+// Root commands still use the compatibility path; answers use the feature directly.
+import { onTradeAnswer } from '../features/trade/tradeRuntime.js';
 import { run as trade } from '../commands/trade.js';
 import { run as me } from '../commands/me.js';
 import { run as give } from '../commands/give.js';
