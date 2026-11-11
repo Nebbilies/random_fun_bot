@@ -49,6 +49,7 @@
     "features/trade/**/*.js",
     "features/rolls/**/*.js",
     "test/rollAllowanceService.test.js",
-    "test/rollAllowanceTransactions.test.js"
+    "test/rollAllowanceTransactions.test.js",
+    "test/rollLifecycleDependencies.test.js"
   ]
 }
