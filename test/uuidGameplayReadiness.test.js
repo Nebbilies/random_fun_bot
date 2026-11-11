@@ -232,7 +232,7 @@ test('owned source paths document the legacy-only bridge and do not number-coerc
   const lookup = readFileSync(new URL('../lib/gameCharacterLookup.js', import.meta.url), 'utf8');
   assert.match(lookup, /explicit legacy database connection/);
   assert.match(lookup, /Source IDs are never resolved automatically/);
-  for (const path of ['../commands/wish.js', '../lib/tradeRuntime.js']) {
+  for (const path of ['../commands/wish.js', '../lib/tradeRuntime.js', '../features/trade/tradeRuntime.js']) {
     const source = readFileSync(new URL(path, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /Number\(interaction\.values/);
   }

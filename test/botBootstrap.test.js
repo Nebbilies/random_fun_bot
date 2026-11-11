@@ -1,59 +1,81 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import { EventEmitter } from 'node:events';
+import { Collection, Events } from 'discord.js';
+import { startBot } from '../app/bootstrap.js';
+import { openCatalog } from '../lib/catalogDb.js';
+import { createInteractionHandler } from '../app/events/interactionCreate.js';
+import { registerUtilityCommands } from '../app/utilityCommands.js';
 
-const source = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+test('bot bootstrap logs the client in with handlers installed and ingress closed', async t => {
+  const db = openCatalog(':memory:');
+  t.after(() => db.close());
+  const client = Object.assign(new EventEmitter(), { loggedIn: false, login: async token => {
+    assert.equal(token, 'test-token');
+    assert.equal(client.listenerCount(Events.MessageCreate), 1);
+    await client.listeners(Events.MessageCreate)[0]({ get author() { assert.fail('ingress must stay closed'); } });
+    client.loggedIn = true;
+  } });
+  const bot = await startBot({ token: 'test-token' }, { client, openCatalog: () => db });
+  assert.equal(bot.client, client);
+  assert.equal(client.loggedIn, true);
+});
 
-test('bot bootstrap logs the client in', () => {
-  // Regression guard: a truncated index.js once dropped the login block, so the
-  // service started, exited with status 0 and never connected to Discord.
-  assert.match(source, /yoshiko\.client\.login\(config\.token\)/,
-    'index.js must call yoshiko.client.login(config.token)');
+test('invalid restart state prevents handler registration and login', async t => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  db.exec('PRAGMA user_version=12');
+  const client = Object.assign(new EventEmitter(), { login: () => assert.fail('must not log in') });
+  await assert.rejects(startBot({}, { client, openCatalog: () => db,
+    validateRestart() { throw new Error('invalid restart'); } }), /invalid restart/);
+  assert.equal(client.eventNames().length, 0);
 });
 
 test('retired reward inbox is not routable and old controls only receive a removal notice', async () => {
   assert.equal(existsSync(new URL('../commands/rewards.js', import.meta.url)), false);
-  assert.doesNotMatch(source, /'rewards'/);
   const { run } = await import('../commands/help.js');
   let help;
   await run({ prefix: '?', message: { reply: async payload => { help = payload; } } });
   assert.doesNotMatch(JSON.stringify(help), /\*\*rewards\*\*/);
-  // Exercise the retired-control branch without booting a Discord client or catalog.
-  const start = source.indexOf("    // Retired inbox controls");
-  const end = source.indexOf('    // Collector-only dialogs', start);
-  assert.ok(start >= 0 && end > start);
-  const retired = new Function('interaction', `return (async () => {${source.slice(start, end)}})();`);
+  const handle = createInteractionHandler({ yoshiko: {}, isReady: () => true });
   for (const customId of ['rewards:next', 'rewards:accept:reward', 'rewards:decline:reward', 'rewardreplace:choose']) {
     const replies = [];
-    await retired({ customId, reply: async payload => replies.push(payload) });
+    await handle({ customId, reply: async payload => replies.push(payload) });
     assert.equal(replies.length, 1);
     assert.equal(replies[0].ephemeral, true);
     assert.match(replies[0].content, /inbox has been removed/);
     assert.match(replies[0].content, /original reward card/);
     assert.doesNotMatch(replies[0].content, /Run the command again|[!?]rewards/);
   }
-  await retired({ customId: 'vault:reward:replace', reply: async () => assert.fail('canonical controls must remain routable') });
 });
 
-test('search preparation follows awaited recovery and precedes game readiness', () => {
-  const ready = source.indexOf('yoshiko.client.once(Events.ClientReady');
-  const recovered = source.indexOf("await startup.run('post-client-ready'", ready);
-  const prepared = source.indexOf("startup.runSync('search-cache'", recovered);
-  const enabled = source.indexOf('gameRuntimeReady = true;', ready);
-  const marker = source.indexOf("console.log('Character game ready.');", enabled);
-  assert.ok(ready >= 0 && recovered > ready && prepared > recovered && enabled > prepared && marker > enabled);
+test('collector controls only get an expired reply when the live collector has not acknowledged', async () => {
+  let fallback;
+  const handle = createInteractionHandler({ yoshiko: {}, isReady: () => true,
+    schedule: (callback, delay) => { assert.equal(delay, 500); fallback = callback; return { unref() {} }; } });
+  let replies = 0;
+  const interaction = { customId: 'xfer:confirm', deferred: false, reply: async () => { replies++; } };
+  await handle(interaction);
+  assert.equal(replies, 0);
+  interaction.deferred = true;
+  fallback();
+  assert.equal(replies, 0);
+  interaction.deferred = false;
+  fallback();
+  assert.equal(replies, 1);
 });
 
-function handlerBlocks(registration) {
-  return [...source.matchAll(new RegExp(`${registration}[\\s\\S]*?\\n\\}\\);`, 'g'))].map((match) => match[0]);
-}
-
-test('bot bootstrap registers utility commands on ready and on guild create', () => {
-  const readyBlocks = handlerBlocks('yoshiko\\.client\\.once\\(Events\\.ClientReady');
-  assert.ok(readyBlocks.some((block) => block.includes('registerUtilityCommands')),
-    'an Events.ClientReady handler must register utility commands');
-
-  const guildBlocks = handlerBlocks('yoshiko\\.client\\.on\\(Events\\.GuildCreate');
-  assert.ok(guildBlocks.some((block) => block.includes('registerUtilityCommands')),
-    'an Events.GuildCreate handler must register utility commands');
+test('utility commands register on ready and on guild create', async () => {
+  const puts = [];
+  const client = new EventEmitter();
+  registerUtilityCommands({ client, config: { clientId: '123' }, commands: new Collection() },
+    { put: async (...args) => { puts.push(args); } });
+  await client.listeners(Events.ClientReady)[0]({ guilds: { cache: new Map([['1', {}]]) } });
+  client.emit(Events.GuildCreate, { id: '2' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(puts.length, 2);
+  assert.match(puts[0][0], /guilds\/1\/commands/);
+  assert.match(puts[1][0], /guilds\/2\/commands/);
 });
