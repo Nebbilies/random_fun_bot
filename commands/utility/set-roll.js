@@ -1,5 +1,5 @@
 import { PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
-import { setMaxRolls } from '../../lib/characterRolls.js';
+import { setMaxRolls } from '../../features/rolls/rollAllowanceService.js';
 
 export const data = new SlashCommandBuilder()
   .setName('set-roll')
