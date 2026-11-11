@@ -1,5 +1,5 @@
 import { getGameConfig } from '../lib/gameConfig.js';
-import { claimDailyRolls } from '../lib/characterRolls.js';
+import { claimDailyRolls } from '../features/rolls/rollAllowanceService.js';
 
 export async function run(ctx) {
   const schedules = getGameConfig(ctx.yoshiko.catalogDb, ctx.message.guildId).schedules;

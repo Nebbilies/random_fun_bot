@@ -65,3 +65,18 @@ export function readClaimBuffs(db, guildId, userId, now) {
     AND (expires_at IS NULL OR expires_at>?) AND (remaining_rolls IS NULL OR remaining_rolls>0)
     AND (starts_at IS NULL OR starts_at<=?) ORDER BY id`).all(guildId, userId, now, now);
 }
+
+export function refundRollAllowance(db, guildId, userId, period, amount) {
+  db.prepare(`UPDATE roll_allowances SET used = MAX(0, used - ?)
+    WHERE guild_id = ? AND user_id = ? AND period = ?`).run(amount, guildId, userId, period);
+}
+
+/** Both writes join the successful marriage's existing transaction. */
+export function recordClaimUsage(db, guildId, userId, period, now) {
+  db.prepare(`INSERT INTO claim_allowances (guild_id, user_id, period) VALUES (?, ?, ?)
+    ON CONFLICT(guild_id, user_id) DO UPDATE SET period = excluded.period`)
+    .run(guildId, userId, period);
+  db.prepare(`INSERT INTO claim_events (guild_id, user_id, claimed_at) VALUES (?, ?, ?)
+    ON CONFLICT(guild_id, user_id) DO UPDATE SET claimed_at = excluded.claimed_at`)
+    .run(guildId, userId, now);
+}

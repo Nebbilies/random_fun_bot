@@ -127,4 +127,3 @@ function validId(id) {
 function validNow(now) {
   return Number.isSafeInteger(now) && now >= 0;
 }
-

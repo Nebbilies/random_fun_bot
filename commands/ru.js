@@ -1,4 +1,4 @@
-import { getRollStatus } from '../lib/characterRolls.js';
+import { getRollStatus } from '../features/rolls/rollAllowanceService.js';
 import { resolveUserTarget } from '../lib/userTarget.js';
 
 export async function run(ctx) {

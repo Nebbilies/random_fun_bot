@@ -1,4 +1,4 @@
-import { getClaimStatus } from '../lib/characterRolls.js';
+import { getClaimStatus } from '../features/rolls/rollAllowanceService.js';
 import { getActiveBuffs } from '../lib/itemStorage.js';
 import { resolveUserTarget } from '../lib/userTarget.js';
 
