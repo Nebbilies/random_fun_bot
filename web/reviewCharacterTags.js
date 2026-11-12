@@ -87,7 +87,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
   async function verifiedTag(tag) {
     const canonical = await api.exactTag(tag);
     if (!canonical || canonical.category !== 4 || canonical.is_deprecated
-      || typeof canonical.name !== 'string' || !/^[a-z0-9_():.!-]{2,120}$/.test(canonical.name)) return null;
+      || typeof canonical.name !== 'string' || !/^(?!.*[*,A-Z])[\x21-\x7E]{2,120}$/.test(canonical.name)) return null;
     const params = new URLSearchParams({ 'search[name]': canonical.name, 'search[category]': '4', limit: '5' });
     db.prepare('INSERT OR REPLACE INTO tag_search_cache (query, response, fetched_at) VALUES (?, ?, ?)')
       .run(`/tags.json?${params}`, JSON.stringify([canonical]), new Date().toISOString());
@@ -257,7 +257,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
         json(response, 200, (await api.searchTagsLiteral(query)).slice(0, 25));
       } else if (request.method === 'GET' && url.pathname === '/api/preview') {
         const tag = url.searchParams.get('tag') || '';
-        if (!/^[a-z0-9_():.!-]{2,120}$/.test(tag)) return json(response, 400, { error: 'Invalid tag' });
+        if (!/^(?!.*[*,A-Z])[\x21-\x7E]{2,120}$/.test(tag)) return json(response, 400, { error: 'Invalid tag' });
         const solo = url.searchParams.get('solo') === '1';
         const query = `${tag} order:score`;
         const cacheKey = `${query}${solo ? ' solo' : ''}`;

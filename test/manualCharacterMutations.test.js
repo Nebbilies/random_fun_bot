@@ -156,7 +156,7 @@ test('optional single tag is hash-bound and committed atomically with manual pro
 test('creation rejects invalid/unverified tags and rechecks exact active category-4 cached evidence on confirm', () => {
   const db = fixture();
   try {
-    for (const tagName of [[], ['chell'], {}, 1, 'x', 'UPPER', 'foo bar', 'foo,bar', 'foo/bar', 'x'.repeat(121)]) {
+    for (const tagName of [[], ['chell'], {}, 1, 'x', 'UPPER', 'foo bar', 'foo,bar', 'foo*bar', 'x'.repeat(121)]) {
       unchanged(db, () => makePreview(db, { input: input({ tagName }) }), /Invalid character tag/);
     }
     const tagName = 'chell_(portal)';

@@ -162,6 +162,34 @@ for (const [name, factory] of [['combined', createReviewServer], ['standalone', 
   });
 }
 
+for (const [name, factory] of [['combined', createReviewServer], ['standalone', createFranchiseReviewServer]]) {
+  test(`${name}: tag validation accepts Danbooru punctuation and preserves other restrictions`, async t => {
+    const { db, post, request } = await setup(t, factory, { api: { exactTag: async name =>
+      ({ name, category: 4, is_deprecated: false }) }, fetchImpl: async () => Response.json([]) });
+    const characterId = await seedCharacter(post);
+    const punctuation = "!\"#$%&'()+-./:;<=>?@[\\]^_`{|}~";
+    for (const tagName of [...punctuation].map(symbol => `tag${symbol}name`).concat(["jeanne_d'arc_(fate)", 'aa', 'a'.repeat(120)])) {
+      const params = new URLSearchParams({ 'search[name]': tagName, 'search[category]': '4', limit: '5' });
+      db.prepare('INSERT OR REPLACE INTO tag_search_cache (query,response,fetched_at) VALUES (?,?,?)')
+        .run(`/tags.json?${params}`, JSON.stringify([{ name: tagName, category: 4, is_deprecated: false }]), 'test');
+      const creation = await post('/create/preview', { input: { ...metadata, tagName }, rank: 1 });
+      assert.equal(creation.tagName, tagName);
+      const decision = await post('/tag/preview', { input: { characterId, status: 'approve', tagName } });
+      await post('/tag/confirm', commitPreview(decision));
+      assert.equal(db.prepare('SELECT tag_name FROM tag_decisions WHERE character_id=?').get(characterId).tag_name, tagName);
+      if (name === 'combined') {
+        assert.equal((await request(`/api/preview?${new URLSearchParams({ tag: tagName })}`)).status, 200, tagName);
+        assert.equal((await request('/api/decision', { characterId, status: 'approve', tag: tagName })).status, 200, tagName);
+      }
+    }
+    for (const tagName of ['bad*tag', 'bad,tag', 'UPPER', 'bad tag', 'bad\ttag', 'bad\u0000tag', 'caf\u00e9', 'a', 'a'.repeat(121)]) {
+      for (const [path, input] of [['create', { ...metadata, tagName }], ['tag', { characterId, status: 'approve', tagName }]]) {
+        assert.equal((await request(`/api/catalog/${path}/preview`, { input, rank: 1 })).status, 400, tagName);
+      }
+    }
+  });
+}
+
 test('creation preview rejects invalid remote tag evidence without writing a preview or character', async t => {
   let calls = 0;
   const { db, post, request } = await setup(t, createReviewServer, { api: { exactTag: async name => {

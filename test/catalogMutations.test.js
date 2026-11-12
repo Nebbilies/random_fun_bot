@@ -167,7 +167,7 @@ test('tags follow literal approval/no-match constraints with durable attribution
   const db = fixture();
   try {
     const id = rows(db)[0].id;
-    for (const tagName of ['x', 'foo rating:e', 'foo/bar', 'UPPER', 'x'.repeat(121)]) unchanged(db,
+    for (const tagName of ['x', 'foo rating:e', 'foo*bar', 'foo,bar', 'UPPER', 'x'.repeat(121)]) unchanged(db,
       () => preview(db, 'tag', { characterId: id, status: 'approve', tagName }), /Invalid tag/);
     unchanged(db, () => preview(db, 'tag', { characterId: id, status: 'no_match', tagName: 'foo' }), /cannot include/);
     unchanged(db, () => preview(db, 'tag', { characterId: id, status: 'approve', tagName: 'unverified' }), /verified/);

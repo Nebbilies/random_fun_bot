@@ -109,7 +109,7 @@ export async function handleCatalogRequest({ db, request, response, url, origin,
     async function verifiedTagName(tagName) {
       const canonical = await verifyTag(tagName);
       if (!canonical || canonical.category !== 4 || canonical.is_deprecated
-        || typeof canonical.name !== 'string' || !/^[a-z0-9_():.!-]{2,120}$/.test(canonical.name)) {
+        || typeof canonical.name !== 'string' || !/^(?!.*[*,A-Z])[\x21-\x7E]{2,120}$/.test(canonical.name)) {
         throw new Error('Tag must be an active Danbooru character tag');
       }
       return canonical.name;
@@ -140,7 +140,7 @@ export async function handleCatalogRequest({ db, request, response, url, origin,
         if (!['franchise', 'source'].includes(operation) && body.operation !== undefined && body.operation !== operation) throw new Error('Operation mismatch');
         if (operation === 'tag' && body.input?.status === 'approve') {
           fields(body.input, ['characterId', 'status', 'tagName']);
-          if (typeof body.input.tagName !== 'string' || !/^[a-z0-9_():.!-]{2,120}$/.test(body.input.tagName)) throw new Error('Invalid character tag');
+          if (typeof body.input.tagName !== 'string' || !/^(?!.*[*,A-Z])[\x21-\x7E]{2,120}$/.test(body.input.tagName)) throw new Error('Invalid character tag');
           body.input.tagName = await verifiedTagName(body.input.tagName);
         }
         value = operation === 'source' ? await service.previewSourceMutation(db, { ...body, ...attribution,
