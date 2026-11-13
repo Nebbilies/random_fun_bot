@@ -16,9 +16,10 @@ export function readTransferOwnership(db, guildId, characterId) {
     JOIN characters AS character ON character.id = marriage.character_id
     WHERE marriage.guild_id = ? AND marriage.character_id = ?`, guildId, characterId);
 }
-export function readSoulbind(db, guildId, characterId) {
+export function readSoulbind(db, guildId, characterId, now) {
     return firstRow(db, `SELECT 1 AS locked FROM character_protection_locks
-    WHERE guild_id = ? AND character_id = ? AND lock_type = ? AND protected_until IS NULL`, guildId, characterId, SOULBIND_LOCK);
+    WHERE guild_id = ? AND character_id = ? AND lock_type = ?
+      AND (protected_until IS NULL OR protected_until > ?)`, guildId, characterId, SOULBIND_LOCK, now);
 }
 export function readOpenEscape(db, guildId, characterId, now) {
     return firstRow(db, `SELECT 1 AS escaping FROM character_rolls

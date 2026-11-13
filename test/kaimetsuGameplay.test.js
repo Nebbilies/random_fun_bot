@@ -59,6 +59,18 @@ test('Kaimetsu uses current stored guild pools, floor half, soulbind only, and u
   assert.equal(getItemAction(db, a.id).delivery_pending, 1);
 });
 
+test('Kaimetsu protects only soulbinds active at its resolution time', t => {
+  const db = setup(t);
+  const a = action(db, 'kaimetsu', {}, '101', 1_000);
+  for (let id = 1; id <= 4; id++) own(db, id, '101');
+  addCharacterLock(db, '1', 1, 'soulbind', 2_000);
+  addCharacterLock(db, '1', 2, 'soulbind', 1_001);
+  const result = activate(db, a, { now: 1_001, random: () => 0 });
+  assert.equal(result.totalDivorced, 1);
+  assert.ok(getMarriage(db, '1', 1), 'active Aegis remains immune');
+  assert.equal(getMarriage(db, '1', 2), null, 'a soulbind expires at its deadline');
+});
+
 test('cancellation, expiry, unauthorized confirmation and zero loss never spend', (t) => {
   const db = setup(t);
   own(db, 1, '101');
