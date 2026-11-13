@@ -63,7 +63,7 @@ for (const owner of ['101', '202']) test(`Shackles unbinds owner ${owner} withou
   assert.equal(f.lock().lock_type, 'soulbind');
 });
 
-for (const change of ['unowned', 'owner', 'marriage', 'no-lock', 'temporary', 'other-permanent', 'finite-soulbind', 'missing-item', 'missing-selection']) {
+for (const change of ['unowned', 'owner', 'marriage', 'no-lock', 'temporary', 'other-permanent', 'expired-soulbind', 'missing-item', 'missing-selection']) {
   test(`Shackles revalidates ${change} without cost or deleting replacement protection`, t => {
     const f = fixture(t);
     const target = f.marry();
@@ -75,7 +75,7 @@ for (const change of ['unowned', 'owner', 'marriage', 'no-lock', 'temporary', 'o
     if (change === 'no-lock') f.db.exec('DELETE FROM character_protection_locks');
     if (change === 'temporary') addCharacterLock(f.db, '1', 1, 'theft', f.now + 10000);
     if (change === 'other-permanent') addCharacterLock(f.db, '1', 1, 'unrelated', null);
-    if (change === 'finite-soulbind') addCharacterLock(f.db, '1', 1, 'soulbind', f.now + 10000);
+    if (change === 'expired-soulbind') addCharacterLock(f.db, '1', 1, 'soulbind', f.now - 1);
     if (change === 'missing-item') {
       f.db.prepare('DELETE FROM item_use_reservations WHERE inventory_id=?').run(source);
       f.db.prepare('DELETE FROM user_inventory WHERE id=?').run(source);
@@ -88,6 +88,17 @@ for (const change of ['unowned', 'owner', 'marriage', 'no-lock', 'temporary', 'o
     assert.equal(f.db.prepare('SELECT count(*) AS n FROM item_use_reservations').get().n, 0);
   });
 }
+
+test('Shackles can target and remove an active timed Aegis soulbind', t => {
+  const f = fixture(t);
+  const target = f.marry();
+  addCharacterLock(f.db, '1', 1, 'soulbind', f.now + 10_000);
+  const source = f.source();
+  const action = f.start(target, source);
+  assert.equal(getShacklesTargets(f.db, action, f.now).length, 1);
+  assert.equal(f.activate(action).status, 'resolved');
+  assert.equal(f.lock(), undefined);
+});
 
 for (const busy of ['escape', 'pending-escape', 'trade', 'reservation']) test(`Shackles rejects busy ${busy} at confirmation without cost`, t => {
   const f = fixture(t);

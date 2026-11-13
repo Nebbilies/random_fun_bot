@@ -39,6 +39,22 @@ test('timer durations reject values that Node would execute immediately', () => 
   assert.equal(validateConfigValue('controls.lifetimeMs', 2_147_483_647), 2_147_483_647);
 });
 
+test('Aegis duration is configurable globally and per guild in milliseconds', t => {
+  const db = memory(t);
+  const key = 'itemEffects.aegis_of_fidelity.protectionMs';
+  assert.equal(GAME_CONFIG_DEFAULTS.itemEffects.aegis_of_fidelity.protectionMs, 604_800_000);
+  assert.equal(GAME_CONFIG_REGISTRY[key].section, 'itemEffects');
+  assert.equal(GAME_CONFIG_REGISTRY[key].default, 604_800_000);
+  for (const invalid of [0, -1, 1.5, 2_147_483_648, '604800000']) {
+    assert.throws(() => validateConfigValue(key, invalid));
+  }
+
+  save(db, 'itemEffects', { [key]: 86_400_000 });
+  save(db, 'itemEffects', { [key]: 3_600_000 }, { guildId: '123' });
+  assert.equal(getGameConfig(db, '123').itemEffects.aegis_of_fidelity.protectionMs, 3_600_000);
+  assert.equal(getGameConfig(db, '456').itemEffects.aegis_of_fidelity.protectionMs, 86_400_000);
+});
+
 test('registry includes every current item and matching starting charges', () => {
   assert.deepEqual(Object.keys(GAME_CONFIG_DEFAULTS.items).sort(), ALL_ITEMS.map((item) => item.id).sort());
   for (const item of ALL_ITEMS) assert.equal(GAME_CONFIG_DEFAULTS.items[item.id].startingCharges, item.maxCharges);

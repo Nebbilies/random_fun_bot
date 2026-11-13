@@ -82,6 +82,15 @@ test('resolved timed and counted effects use effective values rather than histor
   assert.match(getResolvedItemDefinition(db, '1', 'rolling_fever').description, /4 character rolls.*over 2500 favorites.*3 rolls/);
 });
 
+test('Aegis description shows its current effective duration', t => {
+  const db = fixture(t);
+  assert.match(getResolvedItemDefinition(db, '1', 'aegis_of_fidelity').description, /for 7 days/);
+  save(db, 'itemEffects', { 'itemEffects.aegis_of_fidelity.protectionMs': 5_400_000 });
+  assert.match(getResolvedItemDefinition(db, '1', 'aegis_of_fidelity').description, /for 1 hour 30 minutes/);
+  assert.match(getResolvedItemDefinition(db, '2', 'aegis_of_fidelity').description, /for 7 days/);
+  assert.match(getItemHelpBullet(getResolvedItemDefinition(db, '1', 'aegis_of_fidelity')), /for 1 hour 30 minutes/);
+});
+
 test('resolved action descriptions follow configured costs and rank bounds', (t) => {
   const db = fixture(t);
   save(db, 'itemActions', { 'itemActions.alchemistCost': 4,

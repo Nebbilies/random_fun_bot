@@ -165,7 +165,7 @@ export function getItemHelpBullet(def) {
     case 'wish_upon_a_star':
       return `• **${tier.emoji} Wish Upon A Star**: Type \`!use wish <franchise name>\` (e.g. \`!use wish Frieren\`) to activate it. ${def.description}`;
     case 'aegis_of_fidelity':
-      return `• **${tier.emoji} Aegis of Fidelity**: Type \`!use aegis <character name>\` to permanently soulbind a character you own so they can never be stolen or escape.`;
+      return `• **${tier.emoji} Aegis of Fidelity**: Type \`!use aegis <character name>\` to soulbind a character you own. ${def.description}`;
     case 'crown_of_the_sovereign':
       return `• **${tier.emoji} Crown of the Sovereign**: Click the button on \`!inv\` or type \`!use crown\` to equip 3 instant claim tokens that bypass cooldowns.`;
     default:

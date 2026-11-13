@@ -96,11 +96,14 @@ test('Pickpockets Hook steals character unless Mirror Shield blocks it', () => {
   assert.equal(lock.lockType, 'theft_cooldown');
 });
 
-test('Master Key steals specifically named character and Aegis soulbinds permanently', () => {
+test('Master Key respects an active Aegis soulbind until its configured deadline', () => {
   const db = openCatalog(':memory:');
   const guildId = '1001';
   const attackerId = '3001';
   const victimId = '3002';
+  const now = 1_000;
+  db.prepare('INSERT INTO game_config_overrides(scope_id,key,value_json) VALUES(?,?,?)')
+    .run(guildId, 'itemEffects.aegis_of_fidelity.protectionMs', JSON.stringify(1_000));
 
   db.exec(`
     INSERT INTO characters (id, rank, favourites, name_full, gender)
@@ -109,14 +112,21 @@ test('Master Key steals specifically named character and Aegis soulbinds permane
   marryCharacter(db, guildId, 20, victimId);
 
   // Soulbind Megumin with Aegis
-  const soulbindRes = useAegisOfFidelity(db, guildId, victimId, 'Megumin');
+  const soulbindRes = useAegisOfFidelity(db, guildId, victimId, 'Megumin', now);
   assert.equal(soulbindRes.success, true);
+  assert.equal(db.prepare('SELECT protected_until FROM character_protection_locks WHERE guild_id=? AND character_id=?')
+    .get(guildId, 20).protected_until, now + 1_000);
+  assert.equal(isCharacterLocked(db, guildId, 20, now).locked, true);
 
   // Attempt steal with Master Key
-  const stealRes = useMasterKey(db, guildId, attackerId, victimId, 'Megumin');
+  const stealRes = useMasterKey(db, guildId, attackerId, victimId, 'Megumin', now + 999);
   assert.equal(stealRes.blocked, true);
   assert.equal(stealRes.blockedBy, 'soulbind');
   assert.equal(getMarriage(db, guildId, 20).ownerId, victimId);
+
+  const expiredSteal = useMasterKey(db, guildId, attackerId, victimId, 'Megumin', now + 1_000);
+  assert.equal(expiredSteal.success, true);
+  assert.equal(getMarriage(db, guildId, 20).ownerId, attackerId);
 });
 
 test('Wish Upon A Star marries unowned top 3 character of franchise', () => {

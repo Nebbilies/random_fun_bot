@@ -7,6 +7,7 @@ import { createItemAction, activateItemAction } from '../lib/itemActions.js';
 import { getItemDefinition, getResolvedItemDefinition } from '../lib/itemRoster.js';
 import { initGameConfig, getConfigView, saveConfigSection, getGameConfig } from '../lib/gameConfig.js';
 import { publishThreadbreakerReveal } from '../lib/threadbreakerReveal.js';
+import { aegisOfFidelity } from '../lib/items/aegisOfFidelity.js';
 
 function setup(t) {
   const db = openCatalog(':memory:'); t.after(() => db.close());
@@ -53,4 +54,14 @@ for (const chance of [0,1]) test(`configured divorce chance ${chance} applies at
   const result=activateItemAction(db,{actionId:action.id,guildId:'1',actorId:'101',now:1001,random:()=>.4});
   assert.equal(result.divorceChance,chance);
   assert.deepEqual(result.visited.map(c=>[c.characterId,c.divorced]),chance===0?[[4,true],[3,false]]:[[4,true],[3,true],[2,true],[1,true]]);
+});
+
+for (const now of [1999, 2000]) test(`Threadbreaker honors Aegis deadline at ${now}`, t => {
+  const { db, action } = setup(t);
+  saveConfigSection(db, { guildId: '1', section: 'itemEffects',
+    expectedRevision: getConfigView(db, '1').revision,
+    values: { 'itemEffects.aegis_of_fidelity.protectionMs': 1_000 } });
+  assert.equal(aegisOfFidelity.execute({ db, guildId: '1', userId: '101', args: ['C4'], now: 1_000 }).success, true);
+  const result = activateItemAction(db, { actionId: action.id, guildId: '1', actorId: '101', now, random: () => 0 });
+  assert.deepEqual(result.visited.map(row => row.characterId), now < 2_000 ? [3, 2, 1] : [4, 3, 2, 1]);
 });

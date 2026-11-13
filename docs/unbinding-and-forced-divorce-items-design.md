@@ -170,6 +170,6 @@ Discord publication and local acknowledgement cannot be committed atomically. Pe
 
 ## Existing mechanics relevant to the design
 
-- Aegis of Fidelity supplies permanent soulbinding; ordinary character rolls exclude soulbound characters.
+- Aegis of Fidelity supplies time-limited soulbinding; ordinary character rolls exclude characters while their soulbind remains active.
 - An ordinary married-character roll starts an escape attempt while retaining the original marriage. Forced divorce must be distinct from this outcome.
 - Character ownership is server-scoped.

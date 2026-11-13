@@ -84,7 +84,7 @@ function checkTransferable(db, guildId, characterId, ownerId, now, marriageId) {
         return { status: 'unknown_character' };
     if (row.ownerId !== ownerId || (marriageId != null && row.marriageId !== marriageId))
         return { status: 'not_owned', name: row.name };
-    const soulbound = readSoulbind(db, guildId, characterId);
+    const soulbound = readSoulbind(db, guildId, characterId, now);
     if (soulbound)
         return { status: 'locked', name: row.name };
     const escaping = readOpenEscape(db, guildId, characterId, now);

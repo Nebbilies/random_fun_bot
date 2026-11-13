@@ -61,7 +61,7 @@ Examples: an eligible pool of 1 loses 0, 3 loses 1, and 10 loses 5. An owner wit
 
 ## Protections and conflicting interactions
 
-Soulbinding is the only character protection that grants immunity. Mirror Shield, Counterfeit Crown, and temporary theft protection neither block nor redirect Kaimetsu and are not consumed as defensive payments. Ordinary cleanup of invalid state, such as a Crown whose decoy no longer belongs to its owner, must still occur.
+An active Aegis soulbind grants immunity. Its configured deadline controls how long that immunity lasts. Mirror Shield, Counterfeit Crown, and temporary theft protection neither block nor redirect Kaimetsu and are not consumed as defensive payments. Ordinary cleanup of invalid state, such as a Crown whose decoy no longer belongs to its owner, must still occur.
 
 Busy status grants no immunity and does not reduce the eligible pool. Selected characters may be involved in live escapes, pending trades/gifts, or Hostage challenges. Safely cancel conflicting interactions involving selected characters, invalidating their controls so they cannot subsequently modify ownership. Unrelated interactions continue.
 

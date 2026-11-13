@@ -326,13 +326,17 @@ test('Aegis of Fidelity soulbind keeps a character out of escape attempts', (t) 
   grant(db, 'aegis_of_fidelity');
   assert.equal(use(db, 'aegis', ['Alpha'], { now: start }).success, true);
   assert.deepEqual(isCharacterLocked(db, '1', 1, start),
-    { locked: true, lockType: 'soulbind', permanent: true });
+    { locked: true, lockType: 'soulbind', expiresAt: start + 604_800_000 });
 
   const roll = reserve(db, { random: () => 0, user: '202' });
   assert.equal(roll.status, 'reserved');
   assert.notEqual(roll.character.id, 1, 'a soulbound character must never attempt an escape');
   assert.equal(roll.character.id, 2, 'the next owned character still escapes');
   assert.equal(roll.escapeOwnerId, '101');
+
+  const afterExpiry = reserve(db, { id: '901', user: '202', random: () => 0, now: start + 604_800_000 });
+  assert.equal(afterExpiry.status, 'reserved');
+  assert.equal(afterExpiry.character.id, 1, 'an expired Aegis must no longer prevent an escape attempt');
 });
 
 test('Piñata boosts high-favorite rates guild-wide and grants a claim token', (t) => {

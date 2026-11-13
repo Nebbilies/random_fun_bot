@@ -59,6 +59,15 @@ test('transfer refuses a soulbound character', (t) => {
   assert.equal(getMarriage(db, '1', 11)?.ownerId, '101');
 });
 
+test('timed soulbind blocks transfers until its exact expiry', t => {
+  const db = fixture(t);
+  marryCharacter(db, '1', 11, '101');
+  db.prepare(`INSERT INTO character_protection_locks (guild_id,character_id,lock_type,protected_until)
+    VALUES ('1',11,'soulbind',2000)`).run();
+  assert.equal(transferCharacter(db, { guildId: '1', characterId: 11, fromOwnerId: '101', toOwnerId: '102', now: 1999 }).status, 'locked');
+  assert.equal(transferCharacter(db, { guildId: '1', characterId: 11, fromOwnerId: '101', toOwnerId: '102', now: 2000 }).status, 'transferred');
+});
+
 test('transfer refuses a character that is trying to escape', (t) => {
   const db = fixture(t);
   marryCharacter(db, '1', 11, '101');
