@@ -638,3 +638,77 @@ test('Chronicle empty selector is terminal and never renders an empty select men
   assert.equal(getInventory(f.db, '1', '101')[0].charges, 1);
   const runtime = await recoverItemActionRuntime(f.db, f.client); t.after(runtime.stop);
 });
+
+function franchiseFixture(f) {
+  const insert = f.db.prepare("INSERT INTO franchises(id,display_name,name_source,created_at) VALUES(?,?,'manual','now')");
+  for (let id = 1; id <= 30; id++) insert.run(id, id === 1 ? 'Naruto' : id === 2 ? 'One Piece' : `Series ${id}`);
+  f.db.prepare("INSERT INTO franchise_aliases(franchise_id,alias,normalized_alias,source) VALUES(1,'Hidden Leaf','hidden leaf','manual')").run();
+}
+function searchClick(f, action, message, id = '777') {
+  const interaction = f.click(`item:${action.id}:search`, message);
+  interaction.id = id;
+  interaction.showModal = async modal => { interaction.modal = modal.toJSON(); };
+  return interaction;
+}
+function searchSubmit(f, modal, message, query, user = '101') {
+  const interaction = f.click(modal.custom_id, message, user);
+  interaction.isModalSubmit = () => true;
+  interaction.fields = { getTextInputValue: id => { assert.equal(id, 'franchise-query'); return query; } };
+  return interaction;
+}
+
+test('Threadbreaker searches aliases in-place and clears to the paginated catalog without payment', async t => {
+  const f = fixture(t); franchiseFixture(f);
+  const action = await launch(f, 'threadbreaker'); const message = f.sent[0];
+  const initialInventory = getInventory(f.db, '1', '101');
+  assert.equal(menus(message)[0].options.length, 25);
+  const open = searchClick(f, action, message);
+  await onItemActionInteraction(f.db, open);
+  assert.equal(open.modal.title, 'Search franchises');
+  assert.equal(open.deferred, undefined, 'showModal must be the initial response');
+  const submission = searchSubmit(f, open.modal, message, '  Hidden Leaf  ');
+  delete submission.message; // Persisted message binding supports recovered modal submissions.
+  await onItemActionInteraction(f.db, submission);
+  assert.deepEqual(menus(message)[0].options.map(o => o.label), ['Naruto']);
+  assert.equal(getItemAction(f.db, action.id).selections.franchiseQuery, 'Hidden Leaf');
+  assert.match(JSON.stringify(components(message)), /Hidden Leaf/);
+  await onItemActionInteraction(f.db, f.click(control(message, 'franchise'), message, '101', ['1']));
+  assert.ok(ids(message).some(id => id.endsWith(':confirm')));
+  await onItemActionInteraction(f.db, f.click(control(message, 'clear-search'), message));
+  assert.equal(getItemAction(f.db, action.id).selections.franchise, undefined);
+  assert.equal(getItemAction(f.db, action.id).selections._ui.page, 0);
+  assert.equal(menus(message)[0].options.length, 25);
+  assert.ok(!ids(message).some(id => id.endsWith(':confirm')));
+  await onItemActionInteraction(f.db, f.click(control(message, 'next'), message));
+  assert.equal(menus(message)[0].options.length, 5);
+  assert.deepEqual(getInventory(f.db, '1', '101'), initialInventory);
+  assert.equal(getItemAction(f.db, action.id).state, 'confirming');
+});
+
+test('Threadbreaker rejects stale, foreign and invalid searches and can recover from no results', async t => {
+  const f = fixture(t); franchiseFixture(f);
+  const action = await launch(f, 'threadbreaker'); const message = f.sent[0];
+  const first = searchClick(f, action, message, '777'); await onItemActionInteraction(f.db, first);
+  const second = searchClick(f, action, message, '778'); await onItemActionInteraction(f.db, second);
+  const stale = searchSubmit(f, first.modal, message, 'Naruto'); await onItemActionInteraction(f.db, stale);
+  assert.equal(stale.replies.length, 1);
+  const foreign = searchSubmit(f, second.modal, message, 'Naruto', '202'); await onItemActionInteraction(f.db, foreign);
+  assert.equal(foreign.replies.length, 1);
+  const short = searchSubmit(f, second.modal, message, '  '); await onItemActionInteraction(f.db, short);
+  assert.equal(short.replies.length, 1);
+  const long = searchSubmit(f, second.modal, message, 'x'.repeat(101)); await onItemActionInteraction(f.db, long);
+  assert.equal(long.replies.length, 1);
+  assert.equal(getItemAction(f.db, action.id).selections.franchiseQuery, undefined);
+  await onItemActionInteraction(f.db, searchSubmit(f, second.modal, message, 'zzzzzzzzzzzzzzzzzz'));
+  assert.equal(menus(message).length, 0);
+  assert.match(JSON.stringify(components(message)), /No franchises match/);
+  assert.ok(control(message, 'search')); assert.ok(control(message, 'clear-search'));
+  await onItemActionInteraction(f.db, f.click(control(message, 'clear-search'), message));
+  assert.equal(menus(message)[0].options.length, 25);
+  const old = searchSubmit(f, second.modal, message, 'Naruto'); await onItemActionInteraction(f.db, old);
+  assert.equal(old.replies.length, 1);
+  const expired = searchClick(f, action, message, '779'); await onItemActionInteraction(f.db, expired);
+  f.db.prepare('UPDATE item_actions SET expires_at=1 WHERE id=?').run(action.id);
+  const expiredSubmit = searchSubmit(f, expired.modal, message, 'Naruto'); await onItemActionInteraction(f.db, expiredSubmit);
+  assert.equal(expiredSubmit.replies.length, 1);
+});
