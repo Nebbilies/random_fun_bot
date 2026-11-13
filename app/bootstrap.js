@@ -2,7 +2,7 @@ import { Client, Events, Collection, GatewayIntentBits, Partials } from "discord
 import { BirthdayStore } from "../lib/birthdays.js";
 import { startBirthdayScheduler } from "../lib/birthdayScheduler.js";
 import { openCatalog } from "../lib/catalogDb.js";
-import { createCatalogCache } from "../lib/catalogCache.js";
+import { getCatalogCache } from "../lib/catalogCache.js";
 import { assertCatalogRuntimeRestartReady } from '../lib/catalogRuntimeRecovery.js';
 import { createCharacterImagePicker } from "../lib/characterImages.js";
 import { recoverRollRuntime, recoverForcedEscapes, recoverOpenEscapes } from "../lib/characterRollRuntime.js";
@@ -41,7 +41,7 @@ export async function startBot(config, options = {}) {
             (options.validateRestart ?? assertCatalogRuntimeRestartReady)(client.catalogDb);
         }
     });
-    const catalogCache = createCatalogCache(client.catalogDb);
+    const catalogCache = getCatalogCache(client.catalogDb);
     const yoshiko = {
         client: client,
         config,

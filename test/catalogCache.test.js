@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openCatalog, saveDecision } from '../lib/catalogDb.js';
 import { convertLegacyCatalogToFinal } from '../lib/characterIdentityMigration.js';
-import { createCatalogCache } from '../lib/catalogCache.js';
+import { createCatalogCache, getCatalogCache } from '../lib/catalogCache.js';
 import { findCharacters } from '../lib/gameCharacterLookup.js';
 import { findFranchises } from '../lib/franchiseLookup.js';
 
@@ -58,4 +58,18 @@ test('empty legacy cache supports initial bootstrap and durable publication revi
   assert.deepEqual(cache.get().characterIndex,[]);
   db.exec("INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,1,0,'First'); INSERT INTO catalog_meta(key,value) VALUES('catalog_revision','1');");
   assert.equal(cache.get().characterIndex[0].name_full,'First');
+});
+
+
+test('bot and item dialogs share a revision-aware cache per database', t => {
+  const db = openCatalog(':memory:'); t.after(() => db.close());
+  const bot = getCatalogCache(db), dialog = getCatalogCache(db);
+  assert.equal(bot, dialog);
+  const first = bot.get();
+  assert.equal(dialog.get(), first);
+  db.exec("INSERT INTO franchises(display_name,name_source,created_at) VALUES('New Saga','manual','now'); INSERT INTO catalog_meta(key,value) VALUES('catalog_revision','1')");
+  const next = dialog.get();
+  assert.notEqual(next, first);
+  assert.equal(bot.get(), next);
+  assert.deepEqual(findFranchises(next.franchiseIndex, 'New Saga').map(row => row.name), ['New Saga']);
 });
