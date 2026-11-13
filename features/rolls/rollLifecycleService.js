@@ -157,7 +157,7 @@ export function claimRollInTransaction(db, { guildId, channelId, messageId, user
     const ringBuff = claimBuffs.find((b) => b.buff_id === 'engagement_ring');
     const cooldownEnd = claimCooldownEnd(db, guildId, userId, now, ringBuff);
     if (!getClaimAvailability(db, guildId, userId, now).canClaim) return { status: 'exhausted', resetAt: cooldownEnd, rollId: roll.id };
-    const normalSelected = !doubleDateBuff && !crownBuff && !tokenBuff;
+    const normalSelected = !doubleDateBuff && cooldownEnd === null;
     const ringNeeded = normalSelected && Boolean(ringBuff) && claimCooldownEnd(db, guildId, userId, now, false) !== null;
     const claimConserved = hasAffection(db) && resolveAffectionDecisionInTransaction(db, {
       sourceKey: `marriage:${guildId}:${roll.commandMessageId ?? roll.id}`, guildId, userId, effect: 'claim_conservation',
@@ -182,14 +182,14 @@ export function claimRollInTransaction(db, { guildId, channelId, messageId, user
         initializeDoubleDateClaims(db, doubleDateBuff.id, buffRules(doubleDateBuff).freeClaims ?? 2);
       }
       consumeBuffRoll(db, doubleDateBuff.id);
+    } else if (normalSelected) {
+      recordClaimUsage(db, guildId, userId, period, now);
+      // The ring only pays for a claim it actually shortened.
+      if (ringNeeded) consumeBuffRoll(db, ringBuff.id);
     } else if (crownBuff) {
       consumeBuffRoll(db, crownBuff.id);
     } else if (tokenBuff) {
       consumeBuffRoll(db, tokenBuff.id);
-    } else {
-      recordClaimUsage(db, guildId, userId, period, now);
-      // The ring only pays for a claim it actually shortened.
-      if (ringNeeded) consumeBuffRoll(db, ringBuff.id);
     }
     if (roll.escapeMarriageId) closeEscape(db, roll, 'married', now, userId);
     closeCharacterRolls(db, guildId, roll.characterId);

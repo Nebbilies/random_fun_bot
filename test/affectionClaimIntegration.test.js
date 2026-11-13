@@ -56,3 +56,22 @@ test('a nonconserved Ring-enabled marriage spends the prepared use and advances 
   assert.equal(db.prepare('SELECT * FROM active_user_buffs WHERE id=?').get(ring.id),undefined);
   assert.equal(db.prepare('SELECT claimed_at FROM claim_events WHERE user_id=?').get('101').claimed_at,time+1);
 });
+
+for (const conserved of [true, false]) test(`Ring-enabled normal claim precedes saved tokens, conserved=${conserved}`, t => {
+  const { db } = fixture(t);
+  const firstClaimAt = start + 5 * 60_000, time = firstClaimAt + 90 * 60_000;
+  const period = Math.floor((firstClaimAt + 7 * 3_600_000) / (3 * 3_600_000));
+  db.prepare('INSERT INTO claim_allowances VALUES(?,?,?)').run('1', '101', period);
+  db.prepare('INSERT INTO claim_events VALUES(?,?,?)').run('1', '101', firstClaimAt);
+  const ring = addActiveBuff(db, '1', '101', 'engagement_ring', JSON.stringify({ cooldownMultiplier: 0.5 }), null, 1);
+  const crown = addActiveBuff(db, '1', '101', 'crown_of_the_sovereign', '{}', null, 3);
+  const pinata = addActiveBuff(db, '1', '101', 'pinata_claim_token', '{}', null, 1);
+  const roll = reserveRoll(db, { guildId: '1', channelId: '10', userId: '202', commandMessageId: '100', pool: 'w', now: time, random: () => .99 });
+  publishRoll(db, roll.rollId, '500', time);
+  const result = claimRoll(db, { guildId: '1', channelId: '10', messageId: '500', userId: '101', now: time + 1, random: () => conserved ? 0 : .99 });
+  assert.equal(result.status, 'married');
+  assert.equal(db.prepare('SELECT remaining_rolls FROM active_user_buffs WHERE id=?').get(crown.id).remaining_rolls, 3);
+  assert.equal(db.prepare('SELECT remaining_rolls FROM active_user_buffs WHERE id=?').get(pinata.id).remaining_rolls, 1);
+  assert.equal(db.prepare('SELECT remaining_rolls FROM active_user_buffs WHERE id=?').get(ring.id)?.remaining_rolls, conserved ? 1 : undefined);
+  assert.equal(db.prepare('SELECT claimed_at FROM claim_events WHERE user_id=?').get('101').claimed_at, conserved ? firstClaimAt : time + 1);
+});

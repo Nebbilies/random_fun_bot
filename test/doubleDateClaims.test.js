@@ -93,3 +93,36 @@ test('Double Date expires at ten minutes even with unused free claims', t=>{
   assert.equal(getClaimAvailability(db,'1','101',now+600000).canClaim,false);
   assert.equal(claimRoll(db,card(db,0,now+600000)).status,'exhausted');
 });
+
+test('normal claim is spent before Crown and Pinata tokens; tokens only pay during cooldown', t => {
+  const db = fixture(t, false);
+  addActiveBuff(db, '1', '101', 'crown_of_the_sovereign', '{}', null, 1);
+  addActiveBuff(db, '1', '101', 'pinata_claim_token', '{}', null, 1);
+  assert.equal(claimRoll(db, card(db, 0)).status, 'married');
+  const normalHistory = claimState(db);
+  assert.equal(normalHistory[0].length, 1);
+  assert.equal(db.prepare("SELECT remaining_rolls FROM active_user_buffs WHERE buff_id='crown_of_the_sovereign'").get().remaining_rolls, 1);
+  assert.equal(db.prepare("SELECT remaining_rolls FROM active_user_buffs WHERE buff_id='pinata_claim_token'").get().remaining_rolls, 1);
+  assert.equal(claimRoll(db, card(db, 1)).status, 'married');
+  assert.equal(db.prepare("SELECT id FROM active_user_buffs WHERE buff_id='crown_of_the_sovereign'").get(), undefined);
+  assert.deepEqual(claimState(db), normalHistory);
+  assert.equal(claimRoll(db, card(db, 2)).status, 'married');
+  assert.equal(db.prepare("SELECT id FROM active_user_buffs WHERE buff_id='pinata_claim_token'").get(), undefined);
+  assert.deepEqual(claimState(db), normalHistory);
+  assert.equal(claimRoll(db, card(db, 3)).status, 'exhausted');
+});
+
+test('Double Date stays ahead of an available normal claim and saved Crown tokens', t => {
+  const db = fixture(t, false);
+  addActiveBuff(db, '1', '101', 'crown_of_the_sovereign', '{}', null, 1);
+  doubleDate.execute({ db, guildId: '1', userId: '101', now });
+  const initial = claimState(db);
+  for (let i = 0; i < 2; i++) {
+    assert.equal(claimRoll(db, card(db, i)).status, 'married');
+    assert.deepEqual(claimState(db), initial);
+  }
+  assert.equal(claimRoll(db, card(db, 2)).status, 'married');
+  assert.equal(db.prepare("SELECT remaining_rolls FROM active_user_buffs WHERE buff_id='crown_of_the_sovereign'").get().remaining_rolls, 1);
+  assert.equal(claimRoll(db, card(db, 3)).status, 'married');
+  assert.equal(db.prepare("SELECT id FROM active_user_buffs WHERE buff_id='crown_of_the_sovereign'").get(), undefined);
+});

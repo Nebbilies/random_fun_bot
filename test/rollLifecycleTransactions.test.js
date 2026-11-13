@@ -6,7 +6,7 @@ import { installEmptyFinalCatalog } from '../lib/catalogFinalSchema.js';
 import { reserveRoll, publishMysteryIntro, advanceMysterySession, openMysteryClaim } from '../lib/characterRolls.js';
 import { getMysterySession } from '../lib/mysterySessionState.js';
 import { claimRoll, claimRollInTransaction, publishRoll, getRoll } from '../features/rolls/rollLifecycleService.js';
-import { getClaimStatus } from '../features/rolls/rollAllowanceService.js';
+import { getClaimStatus, claimPeriod } from '../features/rolls/rollAllowanceService.js';
 import { addActiveBuff, getActiveBuffs } from '../lib/itemStorage.js';
 import { getMarriage } from '../lib/characterMarriage.js';
 import { confirmSoulmate, getAffectionTotal } from '../lib/characterAffection.js';
@@ -32,6 +32,8 @@ function reserve(db, mystery = null) {
 
 test('outer claim rollback restores ownership, open state, and the bypass charge', t => {
   const db = fixture(t);
+  db.prepare('INSERT INTO claim_allowances VALUES(?,?,?)').run('1', '102', claimPeriod(db, '1', now));
+  db.prepare('INSERT INTO claim_events VALUES(?,?,?)').run('1', '102', now);
   const rolled = reserve(db);
   publishRoll(db, rolled.rollId, '500', now);
   addActiveBuff(db, '1', '102', 'crown_of_the_sovereign', null, null, 1);
@@ -39,6 +41,7 @@ test('outer claim rollback restores ownership, open state, and the bypass charge
     now: now + 1, random: () => 0.99 };
   assert.throws(() => transaction(db, () => {
     assert.equal(claimRollInTransaction(db, request).status, 'married');
+    assert.equal(getActiveBuffs(db, '1', '102', now + 1).length, 0);
     assert.equal(db.isTransaction, true);
     throw new Error('outer rollback');
   }), /outer rollback/);
@@ -49,7 +52,7 @@ test('outer claim rollback restores ownership, open state, and the bypass charge
   assert.equal(transaction(db, () => claimRollInTransaction(db, request)).status, 'married');
   assert.equal(getActiveBuffs(db, '1', '102', now + 1).length, 0);
   assert.equal(claimRoll(db, request).status, 'closed');
-  assert.equal(getClaimStatus(db, '1', '102', now + 1).canClaim, true);
+  assert.equal(getClaimStatus(db, '1', '102', now + 1).canClaim, false);
 });
 
 test('failed mystery settlement rolls back marriage, allowance, and both lifecycle states', t => {
