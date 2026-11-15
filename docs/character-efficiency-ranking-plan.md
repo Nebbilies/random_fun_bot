@@ -227,11 +227,12 @@ The implementation preserves the agreed data, ordering, publication, portal, gam
 
 Verification used Node 22.23.2 and disposable databases:
 
-- Complete Node suite: 1,890 tests, 1,889 passed, one skipped, zero failed or cancelled.
+- Complete Node suite after PR review fixes: 1,895 tests, 1,894 passed, one skipped, zero failed or cancelled.
 - Expanded catalog TypeScript check, deployment shell harness, and Git whitespace checks passed.
 - Real Chrome acceptance passed for both portal entrypoints, admin/moderator roles, and desktop/mobile layouts, including copyright warnings and stale confirmation invalidation.
 - Synthetic release benchmark passed for 1,000 and 10,000 characters with 20 iterations.
 - The exact supplied CSV bytes passed read-only preflight, rollback-only rehearsal, disposable committed conversion, and identical retry for all 15,409 UUIDs. Native backup restoration, frozen archives, unaffected-state hashes, old/new application rejection checks, and restored old-application startup passed.
+- Five review regressions passed red/green checks: preview lifetime after slow evidence collection, fresh HTTP retries, saved alias approval, navigation invalidation in both response orders, and report confirmation retries preserving later reports.
 
 The full CSV rehearsal used synthetic predecessor names, ranks, relationships, and gameplay state. It did not open production data or establish actual target coverage. The runbook records observed resource usage and the remaining target rehearsal, maintenance, promotion, and rollback steps. Production services and databases were not changed.
 

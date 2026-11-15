@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 // Run the actual browser module with controllable fetch completion and a small DOM.
-function browser() {
+function browser(module = 'catalog') {
   class Element {
-    constructor(value = '') { this.value = String(value); this.children = []; this.listeners = {}; this.hidden = false; this.open = false; this.disabled = false; this.dataset = {}; this.attributes = {}; }
+    constructor(value = '') { this.value = String(value); this.children = []; this.listeners = {}; this.hidden = false; this.open = false; this.disabled = false; this.dataset = {}; this.attributes = {}; this.style = { setProperty() {} }; }
     addEventListener(name, fn) { (this.listeners[name] ??= []).push(fn); }
     async fire(name, extra = {}) {
       const event = { target: this, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...extra };
@@ -28,23 +28,51 @@ function browser() {
     reportValidity() { return !this.validationMessage; }
     focus() { this.focused = true; }
   }
-  const html = readFileSync(new URL('../web/reviewCatalog.html', import.meta.url), 'utf8');
+  const html = readFileSync(new URL(`../web/${module === 'catalog' ? 'reviewCatalog' : 'reviewCharacterTags'}.html`, import.meta.url), 'utf8');
   const elements = Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, new Element()]));
-  elements.franchisePicker.append(elements.franchiseChips, elements.franchiseSearch, elements.franchiseOptions);
-  elements.characterForm.append(elements.franchisePicker, elements.franchiseIds);
+  if (module === 'catalog') {
+    elements.franchisePicker.append(elements.franchiseChips, elements.franchiseSearch, elements.franchiseOptions);
+    elements.characterForm.append(elements.franchisePicker, elements.franchiseIds);
+  }
   const requests = [];
   let key = 0;
   const context = vm.createContext({
     document: { getElementById: id => elements[id], createElement: () => new Element(), querySelector: () => null, querySelectorAll: () => ['characterForm', 'sourceForm', 'rankingForm', 'franchiseForm'].map(id => elements[id]) },
     Option: function(text, value) { return Object.assign(new Element(value), { textContent: text }); },
     URL, crypto: { randomUUID: () => `request-key-${++key}` },
+    localStorage: { getItem: () => null, setItem() {} },
     feedback: (el, message) => { el.textContent = message; },
     fetch: (path, init) => new Promise(resolve => requests.push({ path, body: init?.body && JSON.parse(init.body), resolve: (data, status = 200) => resolve({ ok: status >= 200 && status < 300, status, json: async () => data }) })),
   });
-  vm.runInContext(readFileSync(new URL('../web/assets/catalog.js', import.meta.url), 'utf8').replace("import { feedback } from './portal.js';", ''), context);
+  vm.runInContext(readFileSync(new URL(`../web/assets/${module}.js`, import.meta.url), 'utf8').replace("import { feedback } from './portal.js';", ''), context);
   return { elements, requests, run: code => vm.runInContext(code, context) };
 }
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+
+test('navigation discards decisions started while another character was still displayed', async () => {
+  for (const previewFirst of [true, false]) {
+    const b = browser('reviewCharacterTags');
+    b.requests[0].resolve({ efficiencyRanking: true, queue: 2, reports: 0, manual: 0, automatic: 0, matched: 0, total: 2 });
+    await flush();
+    const row = (id, rank) => ({ id, rank, name: id, animeTitles: [], candidates: [], reportCount: 0, firstReportedAt: '2026-01-01' });
+    b.requests.at(-1).resolve(row('A', 1)); await flush();
+    const navigating = b.elements.forward.fire('click');
+    const navigation = b.requests.at(-1);
+    b.elements.custom.value = 'series'; await b.elements.custom.fire('input');
+    const deciding = b.elements.approve.fire('click');
+    const preview = b.requests.at(-1);
+    const result = { previewId: 'A-preview', payloadHash: 'A-hash', rank: 1, efficiency: 0, danbooru_post_count: 0 };
+    if (previewFirst) { preview.resolve(result); await deciding; }
+    navigation.resolve(row('B', 2)); await navigating;
+    if (!previewFirst) { preview.resolve(result); await deciding; }
+    assert.equal(b.elements.name.textContent, 'B');
+    assert.equal(b.elements.decisionPreview.hidden, true);
+    assert.equal(b.elements.confirmDecision.disabled, true);
+    const count = b.requests.length;
+    await b.elements.confirmDecision.fire('click');
+    assert.equal(b.requests.length, count, 'no confirmation for A can be sent while B is displayed');
+  }
+});
 
 const franchiseRows = [
   { id: 1, display_name: 'One', aliases: ['FIRST SERIES'] },

@@ -68,6 +68,13 @@ try {
   const fill = (id, value) => evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   const click = id => evaluate(`document.getElementById(${JSON.stringify(id)}).click()`);
   const submit = id => evaluate(`document.getElementById(${JSON.stringify(id)}).requestSubmit()`);
+  const trackRequests = () => evaluate(`(()=>{const send=window.fetch;window.catalogRequests=0;window.fetch=async(...args)=>{
+    window.catalogRequests++;
+    try { const response=await send(...args); const json=response.json.bind(response);
+      response.json=async()=>{try{return await json();}finally{setTimeout(()=>window.catalogRequests--,0);}};
+      return response;
+    } catch(error) {window.catalogRequests--;throw error;}
+  };})()`);
   const confirm = async () => {
     await wait("!document.getElementById('previewPanel').hidden");
     assert.equal(await evaluate("document.getElementById('previewDetails').open"), false);
@@ -104,13 +111,7 @@ try {
       // Keep confirmation followups (franchises/search/detail) from racing the
       // next edit. Retire each request one task after JSON consumption so a
       // chained followup starts before the outstanding count reaches zero.
-      await evaluate(`(()=>{const send=window.fetch;window.catalogRequests=0;window.fetch=async(...args)=>{
-        window.catalogRequests++;
-        try { const response=await send(...args); const json=response.json.bind(response);
-          response.json=async()=>{try{return await json();}finally{setTimeout(()=>window.catalogRequests--,0);}};
-          return response;
-        } catch(error) {window.catalogRequests--;throw error;}
-      };})()`);
+      await trackRequests();
       const label = `${name}-${role}`;
       assert.equal(await evaluate("document.querySelectorAll('input[type=checkbox]').length"), 0);
       assert.equal(await evaluate("document.getElementById('repositionForm')"), null);
@@ -222,8 +223,9 @@ try {
       if (name === 'combined') {
         const reviewId = db.prepare('SELECT id FROM characters WHERE id NOT IN (SELECT character_id FROM tag_decisions) ORDER BY rank LIMIT 1').get().id;
         await call('Page.navigate', { url: `${origin}/` });
-        await wait("document.getElementById('first') && document.readyState==='complete'");
-        await click('first'); await wait("!document.getElementById('tagWorkspace').hidden");
+        await wait("document.getElementById('first') && document.readyState==='complete' && document.getElementById('status').children.length===4");
+        await trackRequests();
+        await click('first'); await wait("!document.getElementById('tagWorkspace').hidden && window.catalogRequests===0");
         await fill('custom', 'browser_copyright'); await click('approve');
         await wait("!document.getElementById('decisionPreview').hidden");
         assert.ok(await evaluate("document.getElementById('decisionPreviewText').textContent.includes('franchise-wide')"));
@@ -233,7 +235,7 @@ try {
         await wait("!document.getElementById('decisionPreview').hidden");
         await click('forward');
         assert.equal(await evaluate("document.getElementById('decisionPreview').hidden"), true, 'navigation revokes tag confirmation');
-        await click('first'); await wait("!document.getElementById('tagWorkspace').hidden");
+        await click('first'); await wait("!document.getElementById('tagWorkspace').hidden && window.catalogRequests===0");
         await evaluate(`(()=>{const send=window.fetch;window.decisionHeld=false;window.decisionReleased=false;
           const gate=new Promise(resolve=>window.releaseDecision=resolve);window.fetch=async(...args)=>{
           const response=await send(...args);if(String(args[0])==='/api/decision'&&JSON.parse(args[1].body).preview){

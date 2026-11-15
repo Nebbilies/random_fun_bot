@@ -111,9 +111,10 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
       const payload = stored && JSON.parse(stored.payload_json);
       if (!payload || payload.input.characterId !== characterId || payload.input.status !== status
         || (payload.reportOutcome ?? null) !== (reported ? outcome : null)) throw new Error('Decision preview mismatch');
+      const alreadyConfirmed = db.prepare('SELECT 1 FROM catalog_mutations WHERE preview_id=?').get(body.previewId);
       const result = confirmCatalogMutation(nestedCatalogMutationConnection(db), { ...attribution,
         previewId: body.previewId, payloadHash: body.payloadHash, idempotencyKey: body.idempotencyKey });
-      if (reported) resolveCharacterTagReports(db, characterId, outcome);
+      if (reported && !alreadyConfirmed) resolveCharacterTagReports(db, characterId, outcome);
       return result;
     });
     return json(response, 200, { saved: true, ...result });

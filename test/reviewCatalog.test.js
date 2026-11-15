@@ -271,6 +271,32 @@ test('v12 legacy queue decisions and corrections are attributed, audited, invali
   assert.equal(calls, verifiedCalls, 'confirmation must use captured preview evidence without network');
 });
 
+test('an exact tag-report confirmation retry leaves later reports open', async t => {
+  const { db, post, request } = await setup(t, createReviewServer, { api: { exactTag: async name =>
+    ({ name, category: 4, post_count: 100, is_deprecated: false }) } });
+  const characterId = await seedCharacter(post);
+  const report = db.prepare('INSERT INTO character_tag_reports(character_id,reporter_id,reported_at) VALUES(?,?,?)');
+  report.run(characterId, 'first-reporter', 'first');
+  const body = { characterId, outcome: 'corrected', tag: 'corrected_tag' };
+  const previewResponse = await request('/api/reports/resolve', { ...body, preview: true });
+  assert.equal(previewResponse.status, 200);
+  const p = await previewResponse.json();
+  const confirmation = { ...body, ...commitPreview(p) };
+  const response = await request('/api/reports/resolve', confirmation);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(await (await request('/api/reports/next')).json(), null);
+  report.run(characterId, 'later-reporter', 'later');
+  const retry = await request('/api/reports/resolve', confirmation);
+  assert.equal(retry.status, 200);
+  assert.deepEqual(await retry.json(), result);
+  const pending = await (await request('/api/reports/next')).json();
+  assert.equal(pending?.id, characterId);
+  assert.equal(pending.reportCount, 1);
+  assert.equal((await request('/api/reports/resolve', body)).status, 200);
+  assert.equal(await (await request('/api/reports/next')).json(), null);
+});
+
 test('v12 trusted tag adapters reject non-character and deprecated verification results', async t => {
   const { db, request, post } = await setup(t, createReviewServer, { api: { exactTag: async name =>
     ({ name, category: name === 'general_tag' ? 0 : 4, post_count: 100, is_deprecated: name === 'deprecated_tag' }) } });

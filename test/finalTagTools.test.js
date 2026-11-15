@@ -121,6 +121,23 @@ test('character maintenance preserves human decisions made during alias verifica
   assert.equal(db.prepare('SELECT sum(post_count) n FROM tag_candidates').get().n, 0);
 });
 
+test('ranked saved candidates retain active aliases when choosing a fresh approved tag', async t => {
+  const { db } = fixture(t);
+  db.prepare('INSERT INTO tag_match_progress VALUES (?,?)').run(id, 'synthetic');
+  db.prepare('INSERT INTO tag_candidates VALUES (?,?,?,?)').run(id, 'renamed_character', 1000, 'Active alias from test_person');
+  db.prepare('INSERT INTO tag_candidates VALUES (?,?,?,?)').run(id, 'other_character', 1, 'Character-tag name search');
+  let calls = 0;
+  const count = await approveSearchedByCount(db, quiet, { verifyRankingTag: async name => {
+    calls++;
+    assert.equal(name, 'renamed_character');
+    return captureRankingTagEvidence(name, { ...tag, name, post_count: 1000 });
+  } });
+  assert.equal(count, 1);
+  assert.equal(calls, 1);
+  assert.equal(db.prepare('SELECT tag_name FROM tag_decisions WHERE character_id=?').get(id).tag_name, 'renamed_character');
+  assert.equal(db.prepare('SELECT danbooru_post_count FROM characters WHERE id=?').get(id).danbooru_post_count, 1000);
+});
+
 test('Google and DuckDuckGo honor shared completed attempts without source collision or repeat work', async t => {
   const { db } = fixture(t);
   setMeta(db, 'import_phase', 'complete');

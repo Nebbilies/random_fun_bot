@@ -59,7 +59,9 @@ async function approveRankedSavedCandidates(db, api, log) {
     LEFT JOIN tag_decisions d ON d.character_id=c.id WHERE d.character_id IS NULL ORDER BY c.rank`).all();
   let count = 0;
   for (const row of pending) {
-    const tags = db.prepare('SELECT tag_name AS name,post_count FROM tag_candidates WHERE character_id=?').all(row.id);
+    const tags = db.prepare('SELECT tag_name AS name,post_count,reason FROM tag_candidates WHERE character_id=?').all(row.id)
+      .map(tag => ({ ...tag, aliasFrom: tag.reason.startsWith('Active alias from ')
+        ? tag.reason.slice('Active alias from '.length) : null }));
     const verdict = chooseTagByCount({ name: row.name_full, alternatives: JSON.parse(row.name_alternatives || '[]'), animeTitles: JSON.parse(row.anime_titles || '[]') }, tags);
     if (!verdict) continue;
     const evidence = await api.verifyRankingTag(verdict.tag, { allowCopyright: false });

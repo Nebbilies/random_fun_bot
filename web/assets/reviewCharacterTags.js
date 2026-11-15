@@ -87,6 +87,7 @@ async function navigate(direction = 'resume') {
     byId('message').textContent = 'Beginning of queue.';
     return;
   }
+  invalidateDecision();
   if (!row && mode === 'undecided' && (direction === 'forward' || direction === 'jump')) advance(rank);
   current = row;
   byId('tagWorkspace').hidden = !row;

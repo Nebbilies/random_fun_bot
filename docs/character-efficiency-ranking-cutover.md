@@ -173,7 +173,7 @@ node scripts/recalculateCharacterRanking.js \
   --payload-hash RETURNED_SHA256 --idempotency-key UNIQUE_REQUEST_KEY
 ```
 
-Previews expire after ten minutes. Failed confirmations retain their request key for exact retries. These maintenance commands do not rerun bootstrap or reset gameplay settings/buffs. Mudae rank and URL edits use portal curation; no Mudae gallery/page requests occur.
+Previews expire ten minutes after evidence collection completes. Failed confirmations retain their request key for exact retries. These maintenance commands do not rerun bootstrap or reset gameplay settings/buffs. Mudae rank and URL edits use portal curation; no Mudae gallery/page requests occur.
 
 ## Rollback
 
@@ -183,7 +183,7 @@ After gameplay resumes, restoring the old backup discards later player actions. 
 
 ## Local verification evidence
 
-Local checks ran on Windows with Node 22.23.2 and disposable databases. The complete Node suite finished with 1,890 tests: 1,889 passed, one skipped, zero failed or cancelled. The expanded catalog typecheck, shell deployment harness and real Chrome acceptance also passed. Browser checks cover both portal entrypoints, admin/moderator, desktop/mobile, copyright warnings, removed controls, exact retries, and stale queue confirmations after input/navigation/late responses. The [implementation completion](./character-efficiency-ranking-plan.md#8-implementation-completion-and-local-evidence) records the verification scope.
+Local checks ran on Windows with Node 22.23.2 and disposable databases. After PR review fixes, the complete Node suite finished with 1,895 tests: 1,894 passed, one skipped, zero failed or cancelled. The expanded catalog typecheck, shell deployment harness and real Chrome acceptance also passed. Browser checks cover both portal entrypoints, admin/moderator, desktop/mobile, copyright warnings, removed controls, exact retries, and stale queue confirmations after input/navigation/late responses. The [implementation completion](./character-efficiency-ranking-plan.md#8-implementation-completion-and-local-evidence) records the verification scope.
 
 The supplied CSV bytes were rehearsed against **synthetic** predecessor names/ranks and all 15,409 real exported UUIDs. The fixture included 1,541 marriages, source links, memberships, tag overwrites/clears and personal/server/queued buff snapshots. Native backup/restore, rollback-only conversion, committed conversion, identical retry, old-binary rejection of the new layout, new-binary rejection of the predecessor and old-binary startup after restoration passed. Both binaries were exercised from local application sources; no production catalog was opened.
 

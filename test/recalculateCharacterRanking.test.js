@@ -21,6 +21,27 @@ test('stored-input maintenance publishes a bound audited preview without network
   } finally { db.close(); }
 });
 
+test('refresh preview lifetime starts after slow evidence collection completes', async t => {
+  let now = 1000;
+  t.mock.method(Date, 'now', () => now);
+  const db = new DatabaseSync(':memory:'); db.exec('PRAGMA foreign_keys=ON'); installEmptyFinalCatalog(db);
+  try {
+    const id = '00000000-0000-4000-8000-000000000001';
+    db.prepare("INSERT INTO character_identities(id,creation_method) VALUES(?,'manual')").run(id);
+    db.prepare("INSERT INTO characters(id,rank,tie_order,favourites,likes_source,danbooru_post_count) VALUES(?,1,1,0,'generated',0)").run(id);
+    db.prepare("INSERT INTO tag_decisions VALUES(?,'approve','slow_tag','manual','test')").run(id);
+    const api = new DanbooruApi({ gapMs: 0, fetchImpl: async () => {
+      now += 700000;
+      return new Response(JSON.stringify([{ name: 'slow_tag', category: 4, post_count: 0, is_deprecated: false }]));
+    } });
+    const auth = { account: 'operator', role: 'admin' };
+    const p = await previewRankingMaintenance(db, { ...auth, refresh: true, api });
+    assert.equal(p.expiresAt, 1301000);
+    const result = confirmRankingMaintenance(db, { ...auth, previewId: p.previewId, payloadHash: p.payloadHash, idempotencyKey: 'slow-refresh' });
+    assert.equal(result.refreshed, 1);
+  } finally { db.close(); }
+});
+
 test('maintenance CLI projects read-only, refuses sidecar reports and confirms only a stored attributed preview', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'ranking-maintenance-cli-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -52,7 +73,7 @@ test('external refresh publishes the complete scope or leaves stored inputs and 
     const auth = { account: 'operator', role: 'admin' };
     const api = fail => new DanbooruApi({ gapMs: 0, fetchImpl: async url => {
       const name = url.searchParams.get('search[name]');
-      if (name === 'tag_1' && fail) return new Response('', { status: 503 });
+      if (name === 'tag_1' && fail) return new Response('', { status: 503, headers: { 'retry-after': '0.001' } });
       return new Response(JSON.stringify([{ name, category: 4, post_count: name === 'tag_0' ? 0 : 149200, is_deprecated: false }]));
     } });
     await assert.rejects(previewRankingMaintenance(db, { ...auth, refresh: true, api: api(true), now: 1000 }), /503/);
