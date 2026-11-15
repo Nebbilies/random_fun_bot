@@ -11,6 +11,12 @@
     "skipLibCheck": true
   },
   "include": [
+    "lib/catalogRanking*.js",
+    "lib/catalogPreRanking*.js",
+    "lib/catalogMutations.js",
+    "lib/manualCharacterMutations.js",
+    "lib/catalogSourceMutations.js",
+    "lib/sourceCatalogPublication.js",
     "lib/catalogDb.js",
     "lib/gameRecovery.js",
     "lib/recoveryObservation.js",

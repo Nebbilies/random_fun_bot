@@ -4,30 +4,40 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFinalCatalog } from '../lib/catalogDb.js';
+import { validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
+import { hashCatalogPayload } from '../lib/catalogMutationProtocol.js';
 import { previewCatalogMutation, confirmCatalogMutation } from '../lib/catalogMutations.js';
 import { previewSourceMutation as preview, confirmSourceMutation as confirm,
   SOURCE_MUTATION_PREVIEW_TTL_MS as TTL } from '../lib/catalogSourceMutations.js';
 
 const auth = { account: 'editor', role: 'moderator' };
-function fixture() {
+function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'catalog-source-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const db = createFinalCatalog(join(dir, 'catalog.sqlite'));
-  const close = db.close.bind(db);
-  db.close = () => { try { close(); } finally { rmSync(dir, { recursive: true, force: true }); } };
   const ids = [1, 2, 3].map(n => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`);
   for (const [index, likes] of [100, 50, 50].entries()) {
     const id = ids[index];
     db.prepare('INSERT INTO character_identities (id,name_full) VALUES (?,?)').run(id, `Local ${index}`);
     db.prepare("INSERT INTO character_sources (character_id,source,external_id) VALUES (?,'anilist',?)").run(id, String(index + 1));
-    db.prepare('INSERT INTO characters (id,rank,tie_order,favourites,name_full) VALUES (?,?,?,?,?)').run(id, index + 1, index + 1, likes, `Local ${index}`);
+    db.prepare(`INSERT INTO characters
+      (id,rank,tie_order,favourites,name_full,legacy_rank,danbooru_post_count,mudae_claim_rank,efficiency,mudae_character_url)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(id, index + 1, index + 1, likes, `Local ${index}`,
+      [3, 1, 2][index], index < 2 ? 149200 : null, [1, 150837, null][index], [2, 0.5, 0][index],
+      index < 2 ? `https://mudae.net/character/${index + 1}/local` : null);
+    if (index < 2) db.prepare(`INSERT INTO tag_decisions(character_id,status,tag_name,source,updated_at)
+      VALUES (?,'approve',?,'manual','test')`).run(id, `local_${index}`);
   }
   db.prepare("UPDATE characters SET likes_source='generated' WHERE id=?").run(ids[0]);
   db.prepare('DELETE FROM character_sources WHERE character_id=?').run(ids[0]);
   db.prepare("UPDATE character_identities SET creation_method='manual' WHERE id=?").run(ids[0]);
+  assert.equal(validateFinalCatalogSchema(db, { readOnly: false }), true);
   return { db, ids };
 }
 const dump = db => Object.fromEntries(db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all()
   .map(({ name }) => [name, db.prepare(`SELECT * FROM ${name}`).all()]));
+const ranking = db => db.prepare(`SELECT id,rank,legacy_rank,danbooru_post_count,mudae_claim_rank,
+  efficiency,mudae_character_url FROM characters ORDER BY id`).all();
 const source = (id = 44, favourites = 50) => ({ data: { Character: { id, favourites,
   name: { full: 'Verified name' }, image: { large: 'https://example.test/portrait' }, siteUrl: `https://anilist.co/character/${id}` } } });
 function make(db, id, options = {}) {
@@ -39,8 +49,8 @@ const commit = (db, p, options = {}) => confirm(db, { ...auth, previewId: p.prev
 function unchanged(db, fn, pattern) { const before = dump(db); assert.throws(fn, pattern); assert.deepEqual(dump(db), before); }
 async function rejectsUnchanged(db, fn, pattern) { const before = dump(db); await assert.rejects(fn, pattern); assert.deepEqual(dump(db), before); }
 
-test('manual link retains metadata/counts/UUID; fixed verification runs without a transaction; audited retry', async () => {
-  const { db, ids } = fixture();
+test('manual link retains metadata/counts/UUID; fixed verification runs without a transaction; audited retry', async t => {
+  const { db, ids } = fixture(t);
   try {
     const original = db.prepare('SELECT * FROM characters WHERE id=?').get(ids[0]);
     let calls = 0;
@@ -76,29 +86,23 @@ test('manual link retains metadata/counts/UUID; fixed verification runs without 
   } finally { db.close(); }
 });
 
-test('explicit adoption uses verified likes and stable persisted tie order, not UUID; no metadata override', async () => {
-  const { db, ids } = fixture();
+test('imported-likes-adopt is rejected without transport or writes for manual and imported characters', async t => {
+  const { db, ids } = fixture(t);
   try {
-    commit(db, await make(db, ids[0]));
-    // Tie order intentionally differs from rank/UUID order.
-    db.prepare('UPDATE characters SET tie_order=10 WHERE id=?').run(ids[0]);
-    const old = db.prepare('SELECT * FROM characters WHERE id=?').get(ids[0]);
-    const p = await make(db, ids[0], { operation: 'imported-likes-adopt', input: { characterId: ids[0], source: 'anilist' } });
-    assert.equal(p.rankAfter, 3);
-    assert.equal(p.favourites, 50);
-    const result = commit(db, p, { idempotencyKey: 'adopt' });
-    assert.equal(result.likesSource, 'anilist');
-    assert.equal(result.source_revision, 1);
-    assert.equal(result.appearance_revision, 0);
-    const after = db.prepare('SELECT * FROM characters WHERE id=?').get(ids[0]);
-    assert.deepEqual({ ...after, rank: old.rank, favourites: old.favourites, likes_source: old.likes_source }, { ...old });
-    assert.deepEqual(db.prepare('SELECT id FROM characters ORDER BY rank').all().map(row => row.id), [ids[1], ids[2], ids[0]]);
-    await assert.rejects(make(db, ids[0], { operation: 'imported-likes-adopt', input: { characterId: ids[0], source: 'anilist' } }), /already imported/);
+    let calls = 0;
+    db.prepare("UPDATE characters SET likes_source='generated' WHERE id=?").run(ids[1]);
+    for (const id of ids) {
+      await rejectsUnchanged(db, () => make(db, id, { operation: 'imported-likes-adopt',
+        input: { characterId: id, source: 'anilist' }, verifySource: () => { calls++; throw new Error('called'); } }),
+      /Rank is derived; imported-likes-adopt is no longer supported/);
+    }
+    assert.equal(calls, 0);
+    assert.equal(validateFinalCatalogSchema(db, { readOnly: false }), true);
   } finally { db.close(); }
 });
 
-for (const operation of ['source-unlink', 'source-correct']) test(`${operation} freezes imported counts, removes wrong appearances, retains identity/direct history`, async () => {
-  const { db, ids } = fixture();
+for (const operation of ['source-unlink', 'source-correct']) test(`${operation} freezes imported counts, removes wrong appearances, retains identity/direct history`, async t => {
+  const { db, ids } = fixture(t);
   try {
     const id = ids[1];
     db.exec("INSERT INTO franchises (id,display_name,created_at) VALUES (1,'Direct','test')");
@@ -108,6 +112,7 @@ for (const operation of ['source-unlink', 'source-correct']) test(`${operation} 
     db.prepare("UPDATE characters SET anime_ids='[99]',anime_titles='[\"Wrong\"]',anime_adult=1 WHERE id=?").run(id);
     db.exec("INSERT INTO catalog_meta VALUES ('franchise_source_token','source:0')");
     const identity = db.prepare('SELECT * FROM character_identities WHERE id=?').get(id);
+    const beforeRanking = ranking(db);
     const p = await make(db, id, { operation, input: { characterId: id, source: 'anilist', ...(operation === 'source-correct' ? { externalId: '44' } : {}) },
       verifySource: operation === 'source-unlink' ? () => { throw new Error('must not fetch'); } : async () => new Response(JSON.stringify(source())) });
     const result = commit(db, p);
@@ -126,12 +131,14 @@ for (const operation of ['source-unlink', 'source-correct']) test(`${operation} 
     assert.equal(JSON.parse(audit.after_json).appearances.length, 0);
     const links = db.prepare('SELECT external_id FROM character_sources WHERE character_id=?').all(id);
     assert.deepEqual(links.map(row => row.external_id), operation === 'source-correct' ? ['44'] : []);
+    assert.deepEqual(ranking(db), beforeRanking);
+    assert.equal(validateFinalCatalogSchema(db, { readOnly: false }), true);
     assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
   } finally { db.close(); }
 });
 
-test('validation, permission and conflicts fail before transport or transaction', async () => {
-  const { db, ids } = fixture();
+test('validation, permission and conflicts fail before transport or transaction', async t => {
+  const { db, ids } = fixture(t);
   try {
     const never = () => { throw new Error('transport was called'); };
     for (const options of [{ role: 'user' }, { account: '' }, { permissionConfirmed: false }, { permissionConfirmed: 'true' },
@@ -150,8 +157,8 @@ test('validation, permission and conflicts fail before transport or transaction'
   } finally { db.close(); }
 });
 
-test('verification rejects API/mismatched/malformed/oversized responses without writes', async () => {
-  const { db, ids } = fixture();
+test('verification rejects API/mismatched/malformed/oversized responses without writes', async t => {
+  const { db, ids } = fixture(t);
   try {
     for (const transport of [async () => { throw new Error('offline'); }, async () => new Response('', { status: 500 }),
       async () => new Response('not json'), async () => new Response('x'.repeat(65537)),
@@ -162,8 +169,8 @@ test('verification rejects API/mismatched/malformed/oversized responses without 
   } finally { db.close(); }
 });
 
-test('state races during verification, each revision, ownership, expiry and persisted hash are checked', async () => {
-  const { db, ids } = fixture();
+test('state races during verification, each revision, ownership, expiry and persisted hash are checked', async t => {
+  const { db, ids } = fixture(t);
   try {
     await assert.rejects(make(db, ids[0], { verifySource: async () => {
       assert.equal(db.isTransaction, false);
@@ -184,8 +191,8 @@ test('state races during verification, each revision, ownership, expiry and pers
   } finally { db.close(); }
 });
 
-test('commit rechecks source uniqueness even for an uncoordinated writer', async () => {
-  const { db, ids } = fixture();
+test('commit rechecks source uniqueness even for an uncoordinated writer', async t => {
+  const { db, ids } = fixture(t);
   try {
     const p = await make(db, ids[0]);
     db.prepare("UPDATE characters SET likes_source='generated' WHERE id=?").run(ids[1]);
@@ -194,9 +201,9 @@ test('commit rechecks source uniqueness even for an uncoordinated writer', async
   } finally { db.close(); }
 });
 
-test('overflow and late failure roll back source, appearances, rank, audit and result; retry succeeds', async () => {
+test('overflow and late failure roll back source, appearances, rank, audit and result; retry succeeds', async t => {
   for (const key of ['revision', 'source_revision', 'appearance_revision', 'trigger']) {
-    const { db, ids } = fixture();
+    const { db, ids } = fixture(t);
     try {
       if (key !== 'trigger') db.prepare(`UPDATE catalog_state SET ${key}=?`).run(Number.MAX_SAFE_INTEGER);
       const p = await make(db, ids[1], { operation: 'source-correct', input: { characterId: ids[1], source: 'anilist', externalId: 44 } });
@@ -208,8 +215,8 @@ test('overflow and late failure roll back source, appearances, rank, audit and r
 });
 
 for (const operation of ['source-correct', 'source-unlink']) {
-  test(`${operation}: composed manual edit cannot leave only discarded derived franchises`, async () => {
-    const { db, ids } = fixture();
+  test(`${operation}: composed manual edit cannot leave only discarded derived franchises`, async t => {
+    const { db, ids } = fixture(t);
     try {
       const id = ids[0];
       commit(db, await make(db, id));
@@ -244,8 +251,8 @@ for (const operation of ['source-correct', 'source-unlink']) {
   });
 }
 
-test('outer unknown options are rejected before destructuring, verification and confirmation retries', async () => {
-  const { db, ids } = fixture();
+test('outer unknown options are rejected before destructuring, verification and confirmation retries', async t => {
+  const { db, ids } = fixture(t);
   try {
     let calls = 0;
     for (const key of ['favourites', 'rank', 'metadata', 'unexpected']) {
@@ -263,16 +270,16 @@ test('outer unknown options are rejected before destructuring, verification and 
   } finally { db.close(); }
 });
 
-for (const operation of ['source-link', 'source-correct', 'source-unlink', 'imported-likes-adopt']) {
-  test(`${operation}: final-schema late rollback and exact retry`, async () => {
-    const { db, ids } = fixture();
+for (const operation of ['source-link', 'source-correct', 'source-unlink']) {
+  test(`${operation}: final-schema late rollback and exact retry`, async t => {
+    const { db, ids } = fixture(t);
     try {
       const id = operation === 'source-link' ? ids[0] : ids[1];
-      if (operation === 'imported-likes-adopt') db.prepare("UPDATE characters SET likes_source='generated' WHERE id=?").run(id);
+      const beforeRanking = ranking(db);
       db.prepare('INSERT INTO character_anime VALUES (?,99)').run(id);
       const p = await make(db, id, { operation, input: { characterId: id, source: 'anilist',
         ...(['source-link', 'source-correct'].includes(operation) ? { externalId: 44 } : {}) },
-        verifySource: async () => new Response(JSON.stringify(source(operation === 'imported-likes-adopt' ? 2 : 44, 100))) });
+        verifySource: async () => new Response(JSON.stringify(source(44, 100))) });
       db.exec("CREATE TRIGGER fail_result BEFORE INSERT ON catalog_confirmation_results BEGIN SELECT RAISE(ABORT,'late failure'); END");
       unchanged(db, () => commit(db, p), /late failure/);
       db.exec('DROP TRIGGER fail_result');
@@ -280,40 +287,49 @@ for (const operation of ['source-link', 'source-correct', 'source-unlink', 'impo
       const saved = dump(db);
       assert.deepEqual(commit(db, p, { now: p.expiresAt + 1 }), result);
       assert.deepEqual(dump(db), saved);
+      assert.deepEqual(ranking(db), beforeRanking);
+      assert.equal(validateFinalCatalogSchema(db, { readOnly: false }), true);
       assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
     } finally { db.close(); }
   });
 }
 
-for (const operation of ['source-link', 'source-correct', 'source-unlink', 'imported-likes-adopt']) {
-  const incremented = ['revision', ...(operation !== 'imported-likes-adopt' ? ['source_revision'] : []),
+for (const operation of ['source-link', 'source-correct', 'source-unlink']) {
+  const incremented = ['revision', 'source_revision',
     ...(['source-correct', 'source-unlink'].includes(operation) ? ['appearance_revision'] : [])];
-  for (const key of incremented) test(`${operation}: ${key} overflow is write-free on final DDL`, async () => {
-    const { db, ids } = fixture();
+  for (const key of incremented) test(`${operation}: ${key} overflow is write-free on final DDL`, async t => {
+    const { db, ids } = fixture(t);
     try {
       const id = operation === 'source-link' ? ids[0] : ids[1];
-      if (operation === 'imported-likes-adopt') db.prepare("UPDATE characters SET likes_source='generated' WHERE id=?").run(id);
       db.prepare(`UPDATE catalog_state SET ${key}=?`).run(Number.MAX_SAFE_INTEGER);
       const p = await make(db, id, { operation, input: { characterId: id, source: 'anilist',
         ...(['source-link', 'source-correct'].includes(operation) ? { externalId: 44 } : {}) },
-        verifySource: async () => new Response(JSON.stringify(source(operation === 'imported-likes-adopt' ? 2 : 44))) });
+        verifySource: async () => new Response(JSON.stringify(source(44))) });
       unchanged(db, () => commit(db, p), /revision overflow/);
     } finally { db.close(); }
   });
 }
 
-test('adoption rejects rank offset overflow without writes on final DDL', async () => {
-  const { db, ids } = fixture();
+test('confirmation rejects a stored imported-likes-adopt preview without writes', async t => {
+  const { db, ids } = fixture(t);
   try {
-    db.prepare("UPDATE characters SET likes_source='generated',rank=? WHERE id=?").run(Number.MAX_SAFE_INTEGER, ids[1]);
-    const p = await make(db, ids[1], { operation: 'imported-likes-adopt', input: { characterId: ids[1], source: 'anilist' },
-      verifySource: async () => new Response(JSON.stringify(source(2))) });
-    unchanged(db, () => commit(db, p), /rank overflow/);
+    db.prepare("UPDATE characters SET likes_source='generated' WHERE id=?").run(ids[1]);
+    const p = await make(db, ids[1], { operation: 'source-correct',
+      input: { characterId: ids[1], source: 'anilist', externalId: 44 } });
+    const payload = JSON.parse(db.prepare('SELECT payload_json FROM catalog_previews WHERE id=?').get(p.previewId).payload_json);
+    payload.operation = 'imported-likes-adopt';
+    payload.input = { characterId: ids[1], source: 'anilist' };
+    payload.verified.externalId = '2';
+    const payloadHash = hashCatalogPayload(payload);
+    db.prepare('UPDATE catalog_previews SET operation=?,payload_json=?,payload_hash=? WHERE id=?')
+      .run(payload.operation, JSON.stringify(payload), payloadHash, p.previewId);
+    unchanged(db, () => commit(db, { ...p, payloadHash }), /Rank is derived; imported-likes-adopt is no longer supported/);
+    assert.equal(validateFinalCatalogSchema(db, { readOnly: false }), true);
   } finally { db.close(); }
 });
 
-test('schema/FK preconditions and caller transaction are not silently repaired or rolled back', async () => {
-  const { db, ids } = fixture();
+test('schema/FK preconditions and caller transaction are not silently repaired or rolled back', async t => {
+  const { db, ids } = fixture(t);
   try {
     const p = await make(db, ids[0]);
     db.exec('BEGIN');

@@ -45,3 +45,18 @@ test('Mudae links are independent optional references with a bounded exact origi
     assert.throws(() => validateMudaeCharacterUrl(url), /Mudae/);
   }
 });
+
+test('distinct exact scores retain order even when floating scores round to the same value', () => {
+  const low = row(1, Number.MAX_SAFE_INTEGER - 1), high = row(2, Number.MAX_SAFE_INTEGER);
+  assert.equal(scoreCharacter(low), scoreCharacter(high));
+  assert.deepEqual(projectCharacterRanking([low, high]).map(row => row.id), [id(2), id(1)]);
+});
+
+test('mixed legacy ties are deterministic across every permutation and claims break an exact weighted tie', () => {
+  const input = [row(1, 0, null, 1), row(2), row(3, null, null, 20), row(4, null, null, 2), row(5, 0, 150837)];
+  const permutations = rows => rows.length ? rows.flatMap((row, index) => permutations(rows.filter((_, i) => i !== index)).map(tail => [row, ...tail])) : [[]];
+  for (const permutation of permutations(input)) assert.deepEqual(projectCharacterRanking(permutation).map(row => row.id),
+    [id(5), id(4), id(3), id(1), id(2)]);
+  const scores = [row(1, 447600, 150837), row(2, 0, 1)];
+  assert.deepEqual(projectCharacterRanking(scores).map(row => [row.id, row.efficiency]), [[id(2), 1.5], [id(1), 1.5]]);
+});

@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { getMeta, openCatalog, saveDecision, transaction } from '../lib/catalogDb.js';
+import { hasCharacterRanking } from '../lib/catalogFinalSchema.js';
 import { DanbooruApi } from '../lib/danbooruApi.js';
 import { inspectDanbooruResult } from '../lib/danbooruSearchResult.js';
 import { normalizeTag, searchNames } from '../lib/danbooruTagMatcher.js';
@@ -85,7 +86,7 @@ async function inspectResult(api, character, result) {
   return identity ? { tag: checked.tag.name, reason: identity } : { reason: 'Character or anime identity is ambiguous' };
 }
 
-function saveAttempt(db, row, query, results, outcome) {
+function saveAttempt(db, row, query, results, outcome, evidence = null) {
   return transaction(db, () => {
     if (db.prepare('SELECT 1 FROM tag_decisions WHERE character_id = ?').get(row.id))
       return false;
@@ -98,7 +99,7 @@ function saveAttempt(db, row, query, results, outcome) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(row.id, query, results[0]?.url ?? null,
         results[1]?.url ?? null, outcome.tag ? 'approved' : 'manual',
         outcome.tag ?? null, outcome.details, new Date().toISOString());
-    if (outcome.tag) saveDecision(db, row.id, 'approve', outcome.tag, 'automatic');
+    if (outcome.tag) saveDecision(db, row.id, 'approve', outcome.tag, 'automatic', evidence);
     return true;
   });
 }
@@ -135,7 +136,8 @@ export async function matchGoogleTags({ db, api, page, limit = 25, delayMs = 10_
       }
     }
     const outcome = { tag: match?.tag ?? null, details: reasons.join('; ') };
-    if (!dryRun && !saveAttempt(db, row, query, results, outcome)) {
+    const evidence = !dryRun && outcome.tag && hasCharacterRanking(db) ? await api.verifyRankingTag(outcome.tag, { allowCopyright: false }) : null;
+    if (!dryRun && !saveAttempt(db, row, query, results, outcome, evidence)) {
       log(`Character #${formatNumber(row.rank)}: ${row.name_full} - already decided; skipped.`);
       continue;
     }

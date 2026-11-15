@@ -8,6 +8,7 @@ import { openCatalog, openCatalogReadOnly, createFinalCatalog, openFinalCatalog,
   openFinalCatalogReadOnly } from '../lib/catalogDb.js';
 import { convertLegacyCatalogToFinal } from '../lib/characterIdentityMigration.js';
 import { validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
+import { validateFinalCatalogSchema as validatePreRankingCatalogSchema } from '../lib/catalogPreRankingSchema.js';
 
 const uuid = '12345678-1234-4123-8123-123456789abc';
 function file(t) {
@@ -58,8 +59,8 @@ test('creation accepts zero bytes only, and strict startup never creates or upgr
   rmSync(path);
   openCatalog(path).close();
   const before = readFileSync(path);
-  assert.throws(() => openFinalCatalog(path), /version 12/);
-  assert.throws(() => openFinalCatalogReadOnly(path), /version 12/);
+  assert.throws(() => openFinalCatalog(path), /ranking migration required/i);
+  assert.throws(() => openFinalCatalogReadOnly(path), /ranking migration required/i);
   assert.deepEqual(readFileSync(path), before);
   const legacy = openCatalog(path);
   assert.equal(legacy.prepare('PRAGMA user_version').get().user_version, 10);
@@ -91,7 +92,7 @@ test('authoritative inherited UUID/source/count/rank constraints apply to future
   } finally { db.close(); }
 });
 
-test('explicit offline conversion rehearses atomically and commits final on disposable file, then reopens', t => {
+test('numeric conversion rehearses atomically and produces pre-ranking data requiring explicit cutover', t => {
   const path = file(t);
   let db = openCatalog(path);
   db.exec(`INSERT INTO characters(id,rank,favourites,name_full) VALUES(3,1,50,'First'),(1,2,50,'Second');
@@ -115,15 +116,30 @@ test('explicit offline conversion rehearses atomically and commits final on disp
   assert.equal(db.prepare("SELECT value FROM catalog_meta WHERE key='scan_page'").get(), undefined);
   assert.equal(db.prepare("SELECT value FROM catalog_meta WHERE key='keep_this'").get().value, 'retained');
   const ids = db.prepare('SELECT id FROM characters ORDER BY rank').all();
+  assert.equal(validatePreRankingCatalogSchema(db, { readOnly: false }), true);
+  assert.equal(db.prepare("SELECT 1 FROM sqlite_schema WHERE name='character_ranking_policy'").get(), undefined);
+  assert.throws(() => validateFinalCatalogSchema(db), /ranking migration required/i);
+  const converted = snapshot(db);
   db.close();
-  for (const open of [openFinalCatalog, openFinalCatalogReadOnly, openCatalog, openCatalogReadOnly]) {
-    db = open(path);
-    assert.deepEqual(db.prepare('SELECT id FROM characters ORDER BY rank').all(), ids);
-    assert.equal(db.prepare('SELECT count(*) n FROM character_wishes').get().n, 1);
-    assert.deepEqual(db.prepare('SELECT name,seq FROM sqlite_sequence ORDER BY name').all().map(r => [r.name, r.seq]),
-      [['character_rolls',800],['marriages',900],['mystery_sessions',700]]);
-    db.close();
+  const bytes = readFileSync(path);
+  for (const readOnly of [false, true]) {
+    db = new DatabaseSync(path, { readOnly });
+    try {
+      assert.equal(validatePreRankingCatalogSchema(db, { readOnly }), true);
+      assert.deepEqual(db.prepare('SELECT id FROM characters ORDER BY rank').all(), ids);
+      assert.equal(db.prepare('SELECT count(*) n FROM character_wishes').get().n, 1);
+      assert.deepEqual(db.prepare('SELECT name,seq FROM sqlite_sequence ORDER BY name').all().map(r => [r.name, r.seq]),
+        [['character_rolls',800],['marriages',900],['mystery_sessions',700]]);
+    } finally { db.close(); }
+    assert.deepEqual(readFileSync(path), bytes);
   }
+  for (const open of [openFinalCatalog, openFinalCatalogReadOnly, openCatalog, openCatalogReadOnly]) {
+    assert.throws(() => open(path), /ranking migration required.*explicit offline ranking cutover/i);
+    assert.deepEqual(readFileSync(path), bytes);
+  }
+  db = new DatabaseSync(path);
+  try { assert.deepEqual(snapshot(db), converted); }
+  finally { db.close(); }
 });
 
 test('unsupported, spoofed partial v12, corrupt final fail before persistent mutation', t => {

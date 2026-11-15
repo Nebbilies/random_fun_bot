@@ -6,6 +6,8 @@
     "test": "node --test test/*.test.js",
     "items:sync-discovery": "node scripts/syncItemDiscovery.js",
     "catalog:import": "node scripts/importCharacterCatalog.js",
+    "catalog:ranking-migrate": "node scripts/migrateCharacterRanking.js",
+    "catalog:ranking": "node scripts/recalculateCharacterRanking.js",
     "catalog:match": "node scripts/matchCharacterTags.js",
     "catalog:google-match": "node scripts/matchGoogleTags.js",
     "catalog:duckduckgo-match": "node scripts/matchDuckDuckGoTags.js",

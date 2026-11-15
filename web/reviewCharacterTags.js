@@ -2,6 +2,8 @@ import { handleGenderReviewRequest } from './reviewCharacterGenders.js';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { previewCatalogMutation, confirmCatalogMutation } from '../lib/catalogMutations.js';
+import { hasCharacterRanking } from '../lib/catalogFinalSchema.js';
+import { nestedCatalogMutationConnection } from '../lib/catalogMutationProtocol.js';
 import { isValidCharacterId } from '../lib/gameCharacterLookup.js';
 import { createPortalAuth, loadPortalEnvironment } from './portalAuth.js';
 import { readFileSync } from 'node:fs';
@@ -83,8 +85,42 @@ function safePreviewUrl(value) {
 export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImpl = fetch, host = '127.0.0.1', publicHost = host, port = 8787, authConfig, sourcePermissionConfirmed = false, verifySource }) {
   const auth = createPortalAuth(authConfig);
   const isV12 = db.prepare('PRAGMA user_version').get().user_version === 12;
+  async function rankedDecision(request, response, body, reported = false) {
+    const allowed = ['characterId', 'tag', 'preview', 'previewId', 'payloadHash', 'idempotencyKey', reported ? 'outcome' : 'status'];
+    if (!body || Object.keys(body).some(key => !allowed.includes(key))) throw new Error('Unsupported decision fields');
+    const { characterId, tag, outcome } = body;
+    const status = reported ? 'approve' : body.status;
+    if (!isValidCharacterId(characterId, db) || !db.prepare('SELECT 1 FROM characters WHERE id=?').get(characterId)) throw new Error('Unknown character');
+    const attribution = { account: request.portalAccount.username, role: request.portalAccount.role };
+    if (reported && outcome === 'dismissed') {
+      transaction(db, () => resolveCharacterTagReports(db, characterId, outcome));
+      return json(response, 200, { saved: true });
+    }
+    if (!['approve', 'no_match'].includes(status) || reported && outcome !== 'corrected') throw new Error('Invalid decision');
+    if (body.preview === true) {
+      if (reported && !db.prepare('SELECT 1 FROM character_tag_reports WHERE character_id=? AND resolved_at IS NULL').get(characterId)) throw new Error('No open reports');
+      const expectedRevision = db.prepare('SELECT revision FROM catalog_state WHERE singleton=1').get().revision;
+      const evidence = status === 'approve' ? await api.verifyRankingTag(tag) : null;
+      const preview = previewCatalogMutation(db, { ...attribution, operation: 'tag',
+        input: { characterId, status, ...(status === 'approve' ? { tagName: tag } : {}) },
+        tagEvidence: evidence, expectedRevision, ...(reported ? { reportOutcome: outcome } : {}) });
+      return json(response, 200, preview);
+    }
+    const result = transaction(db, () => {
+      const stored = db.prepare('SELECT payload_json FROM catalog_previews WHERE id=?').get(body.previewId);
+      const payload = stored && JSON.parse(stored.payload_json);
+      if (!payload || payload.input.characterId !== characterId || payload.input.status !== status
+        || (payload.reportOutcome ?? null) !== (reported ? outcome : null)) throw new Error('Decision preview mismatch');
+      const result = confirmCatalogMutation(nestedCatalogMutationConnection(db), { ...attribution,
+        previewId: body.previewId, payloadHash: body.payloadHash, idempotencyKey: body.idempotencyKey });
+      if (reported) resolveCharacterTagReports(db, characterId, outcome);
+      return result;
+    });
+    return json(response, 200, { saved: true, ...result });
+  }
   // Only trusted exact-tag verification supplies evidence to the shared service.
   async function verifiedTag(tag) {
+    if (hasCharacterRanking(db)) return api.verifyRankingTag(tag);
     const canonical = await api.exactTag(tag);
     if (!canonical || canonical.category !== 4 || canonical.is_deprecated
       || typeof canonical.name !== 'string' || !/^(?!.*[*,A-Z])[\x21-\x7E]{2,120}$/.test(canonical.name)) return null;
@@ -224,6 +260,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
       } else if (request.method === 'GET' && url.pathname === '/api/status') {
         const count = (sql) => db.prepare(sql).get().n;
         json(response, 200, {
+          efficiencyRanking: hasCharacterRanking(db),
           total: count('SELECT COUNT(*) AS n FROM characters'),
           matched: count('SELECT COUNT(*) AS n FROM tag_match_progress'),
           automatic: count("SELECT COUNT(*) AS n FROM tag_decisions WHERE source = 'automatic'"),
@@ -287,7 +324,9 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
           return json(response, 403, { error: 'Invalid origin' });
         if (!request.headers['content-type']?.startsWith('application/json'))
           return json(response, 415, { error: 'JSON required' });
-        const { characterId, status, tag } = await readJsonBody(request);
+        const body = await readJsonBody(request);
+        if (hasCharacterRanking(db)) return await rankedDecision(request, response, body);
+        const { characterId, status, tag } = body;
         // Schema-bound UUID/legacy validation; never resolve a source ID.
         if (!isValidCharacterId(characterId, db) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
           return json(response, 400, { error: 'Unknown character' });
@@ -308,7 +347,9 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
           return json(response, 403, { error: 'Invalid origin' });
         if (!request.headers['content-type']?.startsWith('application/json'))
           return json(response, 415, { error: 'JSON required' });
-        const { characterId, outcome, tag } = await readJsonBody(request);
+        const body = await readJsonBody(request);
+        if (hasCharacterRanking(db)) return await rankedDecision(request, response, body, true);
+        const { characterId, outcome, tag } = body;
         if (!isValidCharacterId(characterId, db) || !db.prepare('SELECT id FROM characters WHERE id = ?').get(characterId))
           return json(response, 400, { error: 'Unknown character' });
         if (!['corrected', 'dismissed'].includes(outcome)) return json(response, 400, { error: 'Invalid resolution' });
@@ -332,7 +373,11 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
         json(response, 404, { error: 'Not found' });
       }
     } catch (error) {
-      json(response, 500, { error: error.message });
+      const decisionRequest = isV12 && ['/api/decision', '/api/reports/resolve'].includes(new URL(request.url, 'http://localhost').pathname);
+      const stale = /stale|expired|already confirmed|No open reports/i.test(error.message);
+      const invalid = /^(Invalid|Unknown|Unsupported|Tag must|Missing Danbooru|Fresh trusted|Decision preview|Exact literal|Danbooru HTTP)/.test(error.message);
+      json(response, decisionRequest && stale ? 409 : decisionRequest && invalid ? 400 : 500,
+        { error: error.message, ...(decisionRequest && stale ? { refreshPreview: true } : {}) });
     }
   });
   server.listen(port, host);

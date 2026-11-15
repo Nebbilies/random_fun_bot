@@ -4,6 +4,7 @@ import { DanbooruApi } from '../lib/danbooruApi.js';
 import { chooseTag, chooseTagByCount } from '../lib/danbooruTagMatcher.js';
 import { getMeta, openCatalog, saveDecision, transaction } from '../lib/catalogDb.js';
 import { formatNumber } from '../lib/formatNumber.js';
+import { hasCharacterRanking } from '../lib/catalogFinalSchema.js';
 
 export function removeSavedAliasSources(db, log = console.log) {
   const removed = db.prepare(`DELETE FROM tag_candidates
@@ -19,7 +20,8 @@ export function removeSavedAliasSources(db, log = console.log) {
   return removed;
 }
 
-export function approveSearchedByCount(db, log = console.log) {
+export function approveSearchedByCount(db, log = console.log, api = null) {
+  if (hasCharacterRanking(db)) return approveRankedSavedCandidates(db, api, log);
   const pending = db.prepare(`SELECT c.* FROM characters c
     JOIN tag_match_progress p ON p.character_id = c.id
     LEFT JOIN tag_decisions d ON d.character_id = c.id
@@ -51,6 +53,25 @@ export function approveSearchedByCount(db, log = console.log) {
   return approved;
 }
 
+async function approveRankedSavedCandidates(db, api, log) {
+  if (!api) throw new Error('Fresh Danbooru verifier required for ranked approvals');
+  const pending = db.prepare(`SELECT c.* FROM characters c JOIN tag_match_progress p ON p.character_id=c.id
+    LEFT JOIN tag_decisions d ON d.character_id=c.id WHERE d.character_id IS NULL ORDER BY c.rank`).all();
+  let count = 0;
+  for (const row of pending) {
+    const tags = db.prepare('SELECT tag_name AS name,post_count FROM tag_candidates WHERE character_id=?').all(row.id);
+    const verdict = chooseTagByCount({ name: row.name_full, alternatives: JSON.parse(row.name_alternatives || '[]'), animeTitles: JSON.parse(row.anime_titles || '[]') }, tags);
+    if (!verdict) continue;
+    const evidence = await api.verifyRankingTag(verdict.tag, { allowCopyright: false });
+    transaction(db, () => {
+      if (db.prepare('SELECT 1 FROM tag_decisions WHERE character_id=?').get(row.id)) return;
+      saveDecision(db, row.id, 'approve', verdict.tag, 'automatic', evidence); count++;
+    });
+  }
+  if (count) log(`Approved ${count} saved candidates with fresh ranking evidence.`);
+  return count;
+}
+
 export async function refreshAliasCounts(db, api, log = console.log) {
   const aliases = db.prepare(`SELECT DISTINCT tag_name FROM tag_candidates
     WHERE reason LIKE 'Active alias from %' AND post_count = 0`).all();
@@ -75,7 +96,7 @@ export async function matchTags({ db, api, limit = Infinity, log = console.log }
     && getMeta(db, 'import_phase') !== 'complete') throw new Error('Publish the AniList catalog before matching tags');
   await refreshAliasCounts(db, api, log);
   removeSavedAliasSources(db, log);
-  approveSearchedByCount(db, log);
+  await approveSearchedByCount(db, log, api);
   let processed = 0;
   while (processed < limit) {
     const row = db.prepare(`SELECT c.* FROM characters c
@@ -91,6 +112,8 @@ export async function matchTags({ db, api, limit = Infinity, log = console.log }
     };
     const tags = await api.candidates(character);
     const verdict = chooseTag(character, tags);
+    const evidence = hasCharacterRanking(db) && verdict.status === 'automatic'
+      ? await api.verifyRankingTag(verdict.tag, { allowCopyright: false }) : null;
     const saved = transaction(db, () => {
       const decision = db.prepare('SELECT source FROM tag_decisions WHERE character_id = ?').get(row.id);
       if (decision && decision.source !== 'automatic') return false;
@@ -99,7 +122,7 @@ export async function matchTags({ db, api, limit = Infinity, log = console.log }
         (character_id, tag_name, post_count, reason) VALUES (?, ?, ?, ?)`);
       for (const tag of tags) insert.run(row.id, tag.name, tag.post_count,
         tag.aliasFrom ? `Active alias from ${tag.aliasFrom}` : 'Character-tag name search');
-      if (verdict.status === 'automatic') saveDecision(db, row.id, 'approve', verdict.tag, 'automatic');
+      if (verdict.status === 'automatic') saveDecision(db, row.id, 'approve', verdict.tag, 'automatic', evidence);
       db.prepare('INSERT INTO tag_match_progress (character_id, matched_at) VALUES (?, ?)')
         .run(row.id, new Date().toISOString());
       return true;

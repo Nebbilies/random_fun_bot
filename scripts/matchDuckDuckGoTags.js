@@ -4,6 +4,7 @@ import { parseArgs } from 'node:util';
 import { DanbooruApi } from '../lib/danbooruApi.js';
 import { inspectDanbooruResult } from '../lib/danbooruSearchResult.js';
 import { getMeta, openCatalog, openCatalogReadOnly, saveDecision, transaction } from '../lib/catalogDb.js';
+import { hasCharacterRanking } from '../lib/catalogFinalSchema.js';
 import { formatNumber } from '../lib/formatNumber.js';
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -95,7 +96,7 @@ function pendingRows(db, limit, apply) {
   return selected.sort((a, b) => a.rank - b.rank);
 }
 
-function saveAttempt(db, row, searches, outcome, suggestions) {
+function saveAttempt(db, row, searches, outcome, suggestions, evidence = null) {
   const [{ query, results }] = searches;
   return transaction(db, () => {
     if (db.prepare('SELECT 1 FROM tag_decisions WHERE character_id = ?').get(row.id)
@@ -105,7 +106,7 @@ function saveAttempt(db, row, searches, outcome, suggestions) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(row.id, query, results[0]?.url ?? null,
         results[1]?.url ?? null, outcome.tag ? 'approved' : 'manual',
         outcome.tag ?? null, outcome.details, new Date().toISOString());
-    if (outcome.tag) saveDecision(db, row.id, 'approve', outcome.tag, 'automatic');
+    if (outcome.tag) saveDecision(db, row.id, 'approve', outcome.tag, 'automatic', evidence);
     else {
       const insert = db.prepare(`INSERT OR IGNORE INTO tag_candidates
         (character_id, tag_name, post_count, reason) VALUES (?, ?, ?, ?)`);
@@ -159,7 +160,8 @@ export async function matchDuckDuckGoTags({ db, api, fetchImpl = fetch, limit = 
       if (match) break;
     }
     const outcome = { tag: match?.tag ?? null, details: reasons.join('; ') };
-    if (apply && !saveAttempt(db, row, searches, outcome, suggestions)) {
+    const evidence = apply && outcome.tag && hasCharacterRanking(db) ? await api.verifyRankingTag(outcome.tag, { allowCopyright: false }) : null;
+    if (apply && !saveAttempt(db, row, searches, outcome, suggestions, evidence)) {
       log(`Character #${formatNumber(row.rank)}: ${row.name_full} - already decided; skipped.`);
       continue;
     }

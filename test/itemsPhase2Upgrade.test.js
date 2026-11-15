@@ -3,14 +3,14 @@ import { test } from 'node:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openCatalog } from '../lib/catalogDb.js';
+import { openCatalog } from './helpers/preRankingCatalog.js';
 import { convertLegacyCatalogToFinal } from '../lib/characterIdentityMigration.js';
 import { DatabaseSync } from 'node:sqlite';
-import { PRE_AFFECTION_CATALOG_DDL, installEmptyFinalCatalog, validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
+import { PRE_AFFECTION_CATALOG_DDL, installEmptyFinalCatalog, validateFinalCatalogSchema } from '../lib/catalogPreRankingSchema.js';
 import { CHARACTER_GENDER_DDL } from '../lib/characterGenderSchema.js';
 import { OWNERSHIP_HISTORY_DDL } from '../lib/ownershipHistorySchema.js';
 import { ITEM_REWARD_SOURCE_DDL } from '../lib/itemRewardSourceSchema.js';
-import { upgradeFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
+import { upgradeFortuneCatalog } from '../lib/catalogPreRankingUpgrade.js';
 
 function previous(t) {
   const db = new DatabaseSync(':memory:');

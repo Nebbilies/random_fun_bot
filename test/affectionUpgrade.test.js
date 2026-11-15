@@ -4,9 +4,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PRE_AFFECTION_CATALOG_DDL, validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
-import { upgradeFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
-import { createFinalCatalog, openFinalCatalog, openFinalCatalogReadOnly } from '../lib/catalogDb.js';
+import { PRE_AFFECTION_CATALOG_DDL, validateFinalCatalogSchema } from '../lib/catalogPreRankingSchema.js';
+import { upgradeFortuneCatalog } from '../lib/catalogPreRankingUpgrade.js';
+import { createFinalCatalog, openFinalCatalog, openFinalCatalogReadOnly } from './helpers/preRankingCatalog.js';
 
 test('exact pre-affection predecessor rehearses, preserves legacy event evidence, and reopens', t => {
   const dir=mkdtempSync(join(tmpdir(),'affection-upgrade-')); t.after(()=>rmSync(dir,{recursive:true,force:true}));

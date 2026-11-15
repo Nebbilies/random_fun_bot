@@ -131,7 +131,7 @@ export function getItemHelpBullet(def) {
     case 'hourglass_of_haste':
       return `• **${tier.emoji} Hourglass of Haste**: Click the button on \`!inv\` or type \`!use hourglass\` to instantly reset your hourly roll limit.`;
     case 'four_leaf_clover':
-      return `• **${tier.emoji} Four-Leaf Clover**: Click the button on \`!inv\` or type \`!use clover\` to boost high-favorite character rates for 5 rolls.`;
+      return `• **${tier.emoji} Four-Leaf Clover**: Click the button on \`!inv\` or type \`!use clover\` to boost characters ranked #1500 or better for 5 rolls.`;
     case 'binoculars':
       return `• **${tier.emoji} Binoculars**: Click **Use Binoculars** during an eligible mystery minigame to receive the answer in DMs. Optional; spent only after successful delivery. (1 charge)`;
     case 'love_letter':
@@ -141,7 +141,7 @@ export function getItemHelpBullet(def) {
     case 'sirens_call':
       return `• **${tier.emoji} Siren's Call**: Type \`!use siren @user\` to lure a married character owned by target user into attempting an escape.`;
     case 'rolling_fever':
-      return `• **${tier.emoji} Rolling Fever**: Click the button on \`!inv\` or type \`!use fever\` to gain +2 rolls every time you roll a 1,000+ favorite character.`;
+      return `• **${tier.emoji} Rolling Fever**: Click the button on \`!inv\` or type \`!use fever\` to refund up to 2 used rolls when you roll a character ranked #1500 or better.`;
     case 'adrenaline_rush':
       return `• **${tier.emoji} Adrenaline Rush**: Click the button on \`!inv\` or type \`!use adrenaline\` to double your hourly roll allowance for 1 hour.`;
     case 'pinata':

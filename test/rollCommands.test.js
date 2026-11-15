@@ -72,7 +72,7 @@ test('card shows anime under the name and keeps one report button', () => {
   assert.ok(content.indexOf('A Show') > content.indexOf('# A'));
   assert.ok(content.indexOf('A Show') < content.indexOf('**Rank:** #1,234'));
   assert.match(content, /\*\*Rank:\*\* #1,234/);
-  assert.match(content, /\*\*Likes:\*\* 1,234/);
+  assert.doesNotMatch(content, /Likes|Favorites/);
   assert.match(content, /Report tag/);
   assert.match(content, /6 rolls left/);
   assert.doesNotMatch(content, /Other names:|Image source|Next|Previous/);
@@ -82,11 +82,11 @@ test('card shows anime under the name and keeps one report button', () => {
   assert.match(JSON.stringify(unknown.components.map((component) => component.toJSON())), /1 roll left/);
 });
 
-test('roll cards label generated likes but leave imported counts unchanged', () => {
+test('roll cards hide archived likes for generated and imported characters', () => {
   const character = { name_full: 'Chell', anime_titles: null, rank: 100, favourites: 5050, likes_source: 'generated' };
   const render = (value) => JSON.stringify(rollCard(value, null, 6).components.map((component) => component.toJSON()));
-  assert.match(render(character), /5,050 \[generated\]/);
-  assert.doesNotMatch(render({ ...character, likes_source: 'anilist' }), /\[generated\]/);
+  assert.doesNotMatch(render(character), /5,050|Likes|\[generated\]/);
+  assert.doesNotMatch(render({ ...character, likes_source: 'anilist' }), /5,050|Likes|\[generated\]/);
 });
 
 test('shared 1% prank chance runs before character selection in either pool', async (t) => {
@@ -106,7 +106,7 @@ test('shared 1% prank chance runs before character selection in either pool', as
     const components = payload.components[0].toJSON().components;
     assert.equal(components[0].content, `# ${title}`);
     assert.equal(components[1].content, '- ');
-    assert.equal(components[2].content, '**Rank:** ?\n**Likes:** ?');
+    assert.equal(components[2].content, '**Rank:** ?');
     assert.equal(components[3].items[0].media.url, `attachment://${prank}.gif`);
     assert.ok(existsSync(payload.files[0].attachment));
     assert.equal(payload.files[0].name, `${prank}.gif`);

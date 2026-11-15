@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
-import { upgradeFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
+import { upgradeFortuneCatalog } from '../lib/catalogPreRankingUpgrade.js';
 import { FORTUNE_DDL } from '../lib/vaultFortuneSchema.js';
 import { initGameConfig, saveConfigSection } from '../lib/gameConfig.js';
-import { validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
+import { validateFinalCatalogSchema } from '../lib/catalogPreRankingSchema.js';
 import { initItemStorage, addItemToInventory, getInventory, getUsableInventory } from '../lib/itemStorage.js';
 
 test('canonical upgrade backfills once from one rollout instant and retains confirming source authority', () => {

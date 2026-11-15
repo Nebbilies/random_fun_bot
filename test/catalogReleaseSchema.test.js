@@ -55,7 +55,7 @@ test('explicit release extensions preserve foundation and survive raw file reope
     db.exec('PRAGMA foreign_keys = ON');
     assert.equal(version(db), 12);
     assert.equal(db.prepare('SELECT count(*) AS n FROM effective_character_franchises').get().n, 1);
-    assert.throws(() => openCatalog(path), /Unsupported catalog database version 12/);
+    assert.throws(() => openCatalog(path), /ranking migration required/);
     assert.throws(() => initializeCatalogReleaseSchema(db), /version 11/);
     assert.equal(version(db), 12);
   } finally {

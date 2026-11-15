@@ -8,6 +8,17 @@ let mode = 'undecided';
 let historyOffset = 0;
 let previewRequest = 0;
 let navigationRequest = 0;
+let efficiencyRanking = false;
+let pendingDecision = null;
+let decisionVersion = 0;
+let confirmingDecision = false;
+function invalidateDecision() {
+  decisionVersion++;
+  pendingDecision = null;
+  byId('decisionPreview').hidden = true;
+  byId('confirmDecision').disabled = true;
+  return decisionVersion;
+}
 function advance(rank) { after = rank; localStorage.setItem('character-review-rank', String(rank)); }
 const safeUrl = (value) => { try { const url = new URL(value); return url.protocol === 'https:' ? url.href : ''; } catch { return ''; } };
 async function read(url, options) {
@@ -18,6 +29,7 @@ async function read(url, options) {
 }
 async function status() {
   const data = await read('/api/status');
+  efficiencyRanking = data.efficiencyRanking === true;
   byId('status').replaceChildren();
   const cards = [
     ['Undecided characters', data.queue, 'Ready for your review', '#9c76df'],
@@ -46,7 +58,7 @@ function tagOption(tag, container) {
   radio.name = 'tag';
   radio.value = tag.name;
   radio.checked = tag.name === selected;
-  radio.addEventListener('change', () => { selected = tag.name; byId('custom').value = ''; preview(); });
+  radio.addEventListener('change', () => { invalidateDecision(); selected = tag.name; byId('custom').value = ''; preview(); });
   const copy = document.createElement('span');
   copy.className = 'candidate-copy';
   const name = document.createElement('span');
@@ -60,6 +72,7 @@ function tagOption(tag, container) {
   container.append(label);
 }
 async function navigate(direction = 'resume') {
+  invalidateDecision();
   previewRequest++;
   const request = ++navigationRequest;
   feedback(byId('message'), '');
@@ -99,7 +112,7 @@ async function navigate(direction = 'resume') {
   if (mode === 'undecided') advance(row.rank - 1);
   byId('name').textContent = row.name;
   byId('position').textContent = `Rank ${row.rank.toLocaleString('en-US')}`;
-  byId('details').textContent = `${row.nativeName || ''}\n${row.animeTitles.join(' · ')}\n${row.favourites} AniList favourites${row.adultAnime ? ' · adult anime' : ''}${row.decision?.source === 'automatic' ? ' · automatic match audit' : ''}`;
+  byId('details').textContent = `${row.nativeName || ''}\n${row.animeTitles.join(' · ')}${row.adultAnime ? ' · adult anime' : ''}${row.decision?.source === 'automatic' ? ' · automatic match audit' : ''}`;
   byId('details').style.whiteSpace = 'pre-line';
   byId('portrait').alt = `Portrait of ${row.name}`;
   byId('portrait').src = safeUrl(row.imageUrl);
@@ -133,9 +146,21 @@ async function preview() {
 }
 async function decide(decision) {
   if (!current) return;
+  const version = invalidateDecision();
   const tag = byId('custom').value.trim() || selected;
   if ((decision === 'approve' || decision === 'corrected') && !tag) { byId('message').textContent = 'Select or enter a tag.'; return; }
   try {
+    if (efficiencyRanking && decision !== 'dismissed') {
+      const endpoint = mode === 'reported' ? '/api/reports/resolve' : '/api/decision';
+      const body = mode === 'reported' ? { characterId: current.id, outcome: decision, tag } : { characterId: current.id, status: decision, tag };
+      const preview = await read(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, preview: true }) });
+      if (version !== decisionVersion) return;
+      pendingDecision = { endpoint, body: { ...body, previewId: preview.previewId, payloadHash: preview.payloadHash, idempotencyKey: crypto.randomUUID() } };
+      byId('decisionPreviewText').textContent = `${preview.warning || ''} Verified count: ${preview.danbooru_post_count ?? 'NULL'}. Efficiency: ${preview.efficiency}. Proposed rank: #${preview.rank}.`;
+      byId('decisionPreview').hidden = false;
+      byId('confirmDecision').disabled = confirmingDecision;
+      return;
+    }
     await read(mode === 'reported' ? '/api/reports/resolve' : '/api/decision', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(mode === 'reported'
@@ -145,8 +170,23 @@ async function decide(decision) {
     await status();
     await navigate('forward');
     if (mode === 'reported') await loadHistory(true);
-  } catch (error) { feedback(byId('message'), error.message, 'error'); }
+  } catch (error) { if (version === decisionVersion) feedback(byId('message'), error.message, 'error'); }
 }
+byId('confirmDecision').addEventListener('click', async () => {
+  if (!pendingDecision || confirmingDecision) return;
+  const decision = pendingDecision, version = decisionVersion;
+  confirmingDecision = true;
+  byId('confirmDecision').disabled = true;
+  try {
+    await read(decision.endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(decision.body) });
+    if (version !== decisionVersion) return;
+    invalidateDecision();
+    await status(); await navigate('forward');
+    if (mode === 'reported') await loadHistory(true);
+  } catch (error) { if (version === decisionVersion) feedback(byId('message'), error.message, 'error'); }
+  finally { confirmingDecision = false; byId('confirmDecision').disabled = !pendingDecision; }
+});
+byId('custom').addEventListener('input', invalidateDecision);
 async function loadHistory(reset = false) {
   if (reset) { historyOffset = 0; byId('reportHistory').replaceChildren(); }
   const rows = await read(`/api/reports/history?offset=${historyOffset}`);

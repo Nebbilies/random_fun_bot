@@ -143,7 +143,7 @@ async function showPreview(operation, body) {
   pending = { operation, previewId: data.previewId, payloadHash: data.payloadHash, idempotencyKey: crypto.randomUUID() };
   $('previewDetails').open = false;
   $('previewData').textContent = JSON.stringify(data, null, 2);
-  $('previewSummary').textContent = `Operation: ${operation}. ${data.rank != null ? `Final rank #${data.rank}. ` : ''}${data.favourites != null ? `${data.favourites} likes${data.likesSource === 'anilist' ? '' : ' [generated]'}. ` : ''}${operation === 'create' ? (data.tagName ? `Danbooru tag: ${data.tagName} (verified). ` : 'No Danbooru tag selected. ') : ''}Review neighbors and all changes below.`;
+  $('previewSummary').textContent = `Operation: ${operation}. ${data.rank != null ? `Final rank #${data.rank}. Efficiency: ${data.efficiency}. Verified post count: ${data.danbooru_post_count ?? 'NULL'}. ` : ''}${data.tagName ? `Danbooru tag: ${data.tagName} (verified). ` : ''}${data.warning || ''} Review all changes below.`;
   $('duplicates').replaceChildren();
   for (const warning of data.duplicateWarnings || []) {
     const row = document.createElement('article');
@@ -205,7 +205,7 @@ async function search(offset = 0, isActive = () => true) {
   if (!data.characters.length) $('results').textContent = data.count ? 'No matches.' : 'The catalog is empty. Create a franchise and your first manual character below.';
   for (const row of data.characters) {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary';
-    button.textContent = `#${row.rank} · ${row.name_full} · ${row.favourites} likes${row.likes_source === 'generated' ? ' [generated]' : ''}`;
+    button.textContent = `#${row.rank} · ${row.name_full}`;
     button.addEventListener('click', () => loadCharacter(row.id).catch(fail)); $('results').append(button);
   }
 }
@@ -214,24 +214,25 @@ function editor(row = null) {
   invalidate(); current = row;
   franchiseSelection = [...(row?.franchiseIds || [])];
   $('editorTitle').textContent = row ? 'Edit character metadata' : 'New manual character';
-  $('identity').textContent = row ? `${row.id} · ${row.creationMethod} · rank #${row.rank} · ${row.favourites} likes${row.likes_source === 'generated' ? ' [generated]' : ''}` : 'Identity and likes are generated server-side.';
+  $('identity').textContent = row ? `${row.id} · ${row.creationMethod} · rank #${row.rank} · efficiency ${row.efficiency} · post count ${row.danbooru_post_count ?? 'NULL'}` : 'Identity and rank are generated during preview.';
   $('characterForm').reset(); $('createTag').setCustomValidity(''); $('portrait').hidden = true;
   const imported = row && row.creationMethod !== 'manual';
   for (const id of ['name', 'gender', 'portraitUrl', 'description']) $(id).disabled = Boolean(imported);
   $('franchiseSearch').value = ''; franchiseActive = -1;
   closeFranchisePicker(); renderFranchiseSelection();
-  $('createRank').hidden = Boolean(row); $('rank').required = !row;
   $('createTagField').hidden = Boolean(row);
   $('existingActions').hidden = !row;
-  $('sourceForm').reset(); $('tagForm').reset(); $('repositionForm').reset();
+  $('sourceForm').reset(); $('rankingForm').reset();
+  $('mudaeLink').hidden = !row?.mudae_character_url;
+  if (row?.mudae_character_url) $('mudaeLink').href = row.mudae_character_url;
   if (!row) return;
   $('name').value = row.name_full || ''; $('aliases').value = row.aliases.join('\n');
   $('gender').value = ({ Female: 'female', Male: 'male', 'Non-binary': 'nonbinary' })[row.gender] || 'unknown';
   $('portraitUrl').value = row.image_url || ''; $('description').value = row.description || '';
-  $('referenceUrl').value = row.referenceUrl || ''; $('targetRank').value = row.rank;
+  $('referenceUrl').value = row.referenceUrl || ''; $('mudaeUrl').value = row.mudae_character_url || '';
   $('externalId').value = row.sources.find(source => source.source === 'anilist')?.external_id || '';
-  $('tag').value = row.tag?.tag_name || '';
-  $('tagStatus').value = row.tag?.status || 'approve';
+  $('rankingTag').value = row.tag?.tag_name || '';
+  $('rankingClaimRank').value = row.mudae_claim_rank ?? '';
 }
 async function loadCharacter(id, isActive = () => true) {
   if (!isActive()) return;
@@ -295,25 +296,24 @@ $('franchisePicker').addEventListener('focusout', event => {
 $('createTag').addEventListener('input', () => $('createTag').setCustomValidity(''));
 renderFranchiseSelection();
 onForm('characterForm', () => {
-  const input = { aliases: lines('aliases'), franchiseIds: selectedFranchises(), referenceUrl: $('referenceUrl').value || null };
+  const input = { aliases: lines('aliases'), franchiseIds: selectedFranchises(), referenceUrl: $('referenceUrl').value || null,
+    mudaeCharacterUrl: $('mudaeUrl').value || null };
   if (!current || current.creationMethod === 'manual') Object.assign(input, {
     name: $('name').value, gender: $('gender').value, portraitUrl: $('portraitUrl').value,
     description: $('description').value || null, referenceUrl: $('referenceUrl').value || null,
   });
   if (current) input.characterId = current.id;
-  else if ($('createTag').value.trim()) input.tagName = $('createTag').value.trim();
-  return showPreview(current ? 'edit' : 'create', current ? { input } : { input, rank: Number($('rank').value) });
+  else Object.assign(input, { tagName: $('createTag').value.trim() || null, mudaeClaimRank: $('createClaimRank').value === '' ? null : Number($('createClaimRank').value) });
+  return showPreview(current ? 'edit' : 'create', { input });
 });
-onForm('repositionForm', () => showPreview('reposition', { input: { characterId: current.id,
-  rank: Number($('targetRank').value), switchToGenerated: $('switchGenerated').value === 'true' } }));
 onForm('sourceForm', () => {
   const action = $('sourceOperation').value;
   const linked = current.sources.some(source => source.source === 'anilist');
-  return showPreview('source', { operation: action === 'unlink' ? 'source-unlink' : action === 'switch_likes' ? 'imported-likes-adopt' : linked ? 'source-correct' : 'source-link',
+  return showPreview('source', { operation: action === 'unlink' ? 'source-unlink' : linked ? 'source-correct' : 'source-link',
     input: { characterId: current.id, source: 'anilist', ...(action === 'link' ? { externalId: $('externalId').value } : {}) } });
 });
-onForm('tagForm', () => showPreview('tag', { input: { characterId: current.id, status: $('tagStatus').value,
-  ...($('tagStatus').value === 'approve' ? { tagName: $('tag').value } : {}) } }));
+onForm('rankingForm', () => showPreview('ranking', { input: { characterId: current.id, tagName: $('rankingTag').value.trim() || null,
+  mudaeClaimRank: $('rankingClaimRank').value === '' ? null : Number($('rankingClaimRank').value) } }));
 onForm('franchiseForm', () => showPreview('franchise', { operation: $('franchiseEditId').value ? 'franchise_edit' : 'franchise_create', input: {
   ...($('franchiseEditId').value ? { franchiseId: Number($('franchiseEditId').value) } : {}),
   displayName: $('franchiseName').value, aliases: lines('franchiseAliases'), coverUrl: $('coverUrl').value || null,

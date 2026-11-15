@@ -10,7 +10,7 @@ import { reportCharacterGender } from '../lib/characterGenderReviews.js';
 import { reportCharacterTag } from '../lib/catalogDb.js';
 import { getMarriage } from '../lib/characterMarriage.js';
 import { formatNumber } from '../lib/formatNumber.js';
-import { formatCharacterLikes } from "../lib/characterLikes.js";
+import { validateMudaeCharacterUrl } from '../lib/catalogRanking.js';
 
 const PAGE_SIZE = 25;
 
@@ -69,7 +69,8 @@ function buildCardComponents(character, image, position, hasMoreImages, canGoBac
   const details = [
     `**${series.label}:** ${escapeMarkdown(series.text)}`,
     ...(names.length ? ['**Other names:**', ...names.map((name) => `• ${escapeMarkdown(short(name))}`)] : []),
-    `**Rank:** #${formatNumber(character.rank)} • **Favorites:** ${formatCharacterLikes(character)}`,
+    `**Rank:** #${formatNumber(character.rank)}`,
+    ...(character.mudae_character_url ? [`[Mudae character](${validateMudaeCharacterUrl(character.mudae_character_url)})`] : []),
   ];
   const container = new ContainerBuilder().setAccentColor(0x5865f2)
     .addTextDisplayComponents(
