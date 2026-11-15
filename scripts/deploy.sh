@@ -105,6 +105,23 @@ if [[ -e node_modules || -L node_modules ]]; then
   mv node_modules "$stage/previous-node_modules"
 fi
 mv "$stage/node_modules" node_modules
+
+# Validate with the installed target code before either service can restart.
+# Version 12 alone does not distinguish pre-ranking, partial, and final layouts.
+if ! node --input-type=module -e '
+  import { DatabaseSync } from "node:sqlite";
+  import { validateFinalCatalogSchema } from "./lib/catalogFinalSchema.js";
+  const db = new DatabaseSync("data/bot.sqlite", { readOnly: true });
+  try {
+    db.exec("PRAGMA busy_timeout=5000");
+    validateFinalCatalogSchema(db, { readOnly: true });
+  } finally { db.close(); }
+'; then
+  echo 'Final catalog schema readiness failed. Both services remain stopped.' >&2
+  echo 'Inspect the schema and complete the manual ranking cutover with scripts/migrateCharacterRanking.js on a verified offline copy before restarting either service.' >&2
+  exit 1
+fi
+
 # Linux uptime is monotonic; wall-clock changes must not extend readiness waits.
 monotonic_ms() {
   local uptime ignored

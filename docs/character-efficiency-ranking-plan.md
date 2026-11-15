@@ -1,6 +1,6 @@
 # Character efficiency ranking — implementation plan
 
-Status: Phase 3 approved by the user; test-first implementation and verification are authorized. The user approved [the revised Phase 2 design](./character-efficiency-ranking-design.md). The latest instruction selects a `feat/` branch from updated main and permits separate implementation commits. Deployment remains unauthorized.
+Status: Implementation and local verification completed on `feat/character-efficiency-ranking`, based on updated `origin/main` (`164e93f`). The user approved [the revised Phase 2 design](./character-efficiency-ranking-design.md), this plan and its test seams, test-first implementation, verification, and separate implementation commits. Pushes and deployment remain unauthorized. The phase descriptions below retain the approved planning record; final operator commands and limitations are documented in the [cutover runbook](./character-efficiency-ranking-cutover.md).
 
 ## 1. Scope and approval boundary
 
@@ -220,3 +220,19 @@ The operation uses an offline working copy and whole-database promotion; it does
 Documentation verification passed: both documents' relative links resolve, fenced blocks are paired, no trailing whitespace was found, and Git whitespace checks reported no errors. Referenced missing code/test paths are explicitly proposed additions. Self-review also made the schema-versus-full-conversion dependency explicit and recorded the existing synthetic benchmark's size limit. No application tests, typecheck, migration rehearsal, live-database coverage check, branch creation, or production changes are claimed during Phase 3. Preserve the existing unrelated worktree changes, including `GLOSSARY.md`, promotion metadata, and item-expansion documents.
 
 The user approved the plan and test seams, authorizing phases 4–6 on a `feat/` branch from updated main with separate implementation commits. Report unexpected flaws/degradation for user decisions. Deployment requires separate authorization.
+
+## 8. Implementation completion and local evidence
+
+The implementation preserves the agreed data, ordering, publication, portal, gameplay, and offline cutover contracts. The original unrelated worktree remains untouched. No dependency was added.
+
+Verification used Node 22.23.2 and disposable databases:
+
+- Complete Node suite: 1,890 tests, 1,889 passed, one skipped, zero failed or cancelled.
+- Expanded catalog TypeScript check, deployment shell harness, and Git whitespace checks passed.
+- Real Chrome acceptance passed for both portal entrypoints, admin/moderator roles, and desktop/mobile layouts, including copyright warnings and stale confirmation invalidation.
+- Synthetic release benchmark passed for 1,000 and 10,000 characters with 20 iterations.
+- The exact supplied CSV bytes passed read-only preflight, rollback-only rehearsal, disposable committed conversion, and identical retry for all 15,409 UUIDs. Native backup restoration, frozen archives, unaffected-state hashes, old/new application rejection checks, and restored old-application startup passed.
+
+The full CSV rehearsal used synthetic predecessor names, ranks, relationships, and gameplay state. It did not open production data or establish actual target coverage. The runbook records observed resource usage and the remaining target rehearsal, maintenance, promotion, and rollback steps. Production services and databases were not changed.
+
+Completion self-review: approved. Built interfaces and verification cover the approved seams; historical conversion tests remain isolated from the new startup contract. The runbook makes deployment concrete without granting deployment authority.

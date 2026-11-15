@@ -13,7 +13,28 @@ echo ubuntu
 EOF
 cat > "$mocks/node" <<'EOF'
 #!/usr/bin/env bash
+set -euo pipefail
 if [[ "$1" == --version ]]; then echo v22.23.2; exit 0; fi
+if [[ "$*" == *'./lib/catalogFinalSchema.js'* ]]; then
+  [[ "$PWD" == "$FAKE_APP" ]]
+  [[ "$(git rev-parse HEAD)" == "$FAKE_TARGET" ]]
+  [[ "$(cat node_modules/version)" == new ]]
+  [[ -f "${FAKE_LOG}.stopped.random-fun-bot" && -f "${FAKE_LOG}.stopped.random-fun-bot-portal" ]]
+  ! grep -q '^systemctl restart ' "$FAKE_LOG"
+  [[ "$*" == *'new DatabaseSync("data/bot.sqlite", { readOnly: true })'* ]]
+  [[ "$*" == *'validateFinalCatalogSchema(db, { readOnly: true })'* ]]
+  [[ "$*" == *'finally { db.close(); }'* ]]
+  [[ "$*" != *'PRAGMA user_version'* ]]
+  echo 'final catalog schema readiness' >> "$FAKE_LOG"
+  case "$FAKE_CATALOG_LAYOUT" in
+    final) exit 0 ;;
+    pre-ranking) echo 'Character ranking migration required' >&2 ;;
+    partial|unknown) echo 'Invalid final catalog schema' >&2 ;;
+    *) exit 2 ;;
+  esac
+  exit 1
+fi
+[[ "$*" == *'assertCatalogRuntimeRestartReady'* ]]
 echo 'runtime restart preflight' >> "$FAKE_LOG"
 exit "${FAKE_RUNTIME_BLOCKED:-0}"
 EOF
@@ -39,8 +60,11 @@ case "$unit" in
   *) exit 2 ;;
 esac
 case "$1" in
-  stop) touch "${FAKE_LOG}.stopped.$unit" ;;
+  stop)
+    [[ "${FAKE_STOP_FAIL:-none}" != "$unit" ]] || exit 18
+    touch "${FAKE_LOG}.stopped.$unit" ;;
   restart)
+    [[ "${FAKE_RESTART_FAIL:-none}" != "$unit" ]] || exit 19
     [[ -f "${FAKE_LOG}.stopped.random-fun-bot" && -f "${FAKE_LOG}.stopped.random-fun-bot-portal" ]] || exit 2
     [[ "$(cat "$FAKE_APP/node_modules/version")" == new ]] || exit 2
     touch "${FAKE_LOG}.started.$unit" ;;
@@ -140,6 +164,7 @@ cat > "$mocks/git" <<'EOF'
 if [[ "$1" == merge ]]; then
   echo merge >> "$FAKE_LOG"
   [[ -f "${FAKE_LOG}.stopped.random-fun-bot" && -f "${FAKE_LOG}.stopped.random-fun-bot-portal" ]] || exit 2
+  [[ "${FAKE_MERGE_FAIL:-0}" == 0 ]] || exit 20
 fi
 exec "$REAL_GIT" "$@"
 EOF
@@ -184,6 +209,8 @@ setup_case() {
   git -C "$home/seed" commit -qm update
   git -C "$home/seed" push -q origin main
   target=$(git -C "$home/seed" rev-parse HEAD)
+  export FAKE_TARGET="$target" FAKE_CATALOG_LAYOUT=final FAKE_RUNTIME_BLOCKED=0
+  export FAKE_STOP_FAIL=none FAKE_RESTART_FAIL=none FAKE_MERGE_FAIL=0
   sed -e "s|/home/ubuntu|$home|g" \
       -e "s|systemctl=/usr/bin/systemctl|systemctl=$mocks/systemctl|" \
       -e '/^monotonic_ms() {$/,/^}$/c\monotonic_ms() { fake_monotonic_ms; }' \
@@ -209,6 +236,30 @@ assert_untouched() {
   assert_data
 }
 
+for layout in pre-ranking partial unknown; do
+  setup_case "catalog-$layout"
+  export FAKE_CATALOG_LAYOUT=$layout
+  if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then
+    echo "FAIL: $layout catalog passed deployment" >&2
+    exit 1
+  fi
+  [[ -f "${FAKE_LOG}.stopped.random-fun-bot" && -f "${FAKE_LOG}.stopped.random-fun-bot-portal" ]]
+  ! grep -q '^systemctl restart ' "$FAKE_LOG"
+  ! grep -q '^curl ' "$FAKE_LOG"
+  grep -q '^final catalog schema readiness$' "$FAKE_LOG"
+  grep -Fq 'Both services remain stopped.' "$home/output"
+  grep -Fq 'manual ranking cutover' "$home/output"
+  grep -Fq 'scripts/migrateCharacterRanking.js' "$home/output"
+  grep -Fq 'no automatic code or database rollback' "$home/output"
+  [[ "$(git -C "$app" rev-parse HEAD)" == "$target" ]]
+  [[ "$(cat "$app/node_modules/version")" == new ]]
+  recovery=("$home"/random-fun-bot-deploy.*/previous-node_modules)
+  [[ "$(cat "${recovery[0]}/version")" == old ]]
+  grep -Fq "Recovery files retained at: ${recovery[0]%/previous-node_modules}" "$home/output"
+  assert_data
+done
+echo 'PASS: pre-ranking, partial and unknown catalogs leave both services stopped for manual ranking cutover'
+
 setup_case preserve-data
 bash "$home/deploy.sh" "$target" > "$home/output" 2>&1 || { cat "$home/output"; exit 1; }
 [[ "$(git -C "$app" rev-parse HEAD)" == "$target" ]]
@@ -222,8 +273,8 @@ expected=$(printf '%s\n' \
   'permission stop random-fun-bot-portal' 'permission restart random-fun-bot-portal' \
   'systemctl show random-fun-bot-portal -p ActiveState --value' \
   install 'runtime restart preflight' 'systemctl stop random-fun-bot' 'systemctl stop random-fun-bot-portal' \
-  merge swap swap 'systemctl restart random-fun-bot' 'systemctl restart random-fun-bot-portal')
-[[ "$(head -n 15 "$FAKE_LOG")" == "$expected" ]]
+  merge swap swap 'final catalog schema readiness' 'systemctl restart random-fun-bot' 'systemctl restart random-fun-bot-portal')
+[[ "$(head -n 16 "$FAKE_LOG")" == "$expected" ]]
 [[ "$(grep -c '^systemctl is-active --quiet random-fun-bot-portal$' "$FAKE_LOG")" -ge 12 ]]
 assert_data
 echo 'PASS: both services preflight/install/stop/swap/restart in order; runtime data preserved'
@@ -304,6 +355,36 @@ if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
 assert_untouched
 export FAKE_RUNTIME_BLOCKED=0
 echo 'PASS: runtime restart blockers are rejected before either service stops'
+
+for unit in random-fun-bot random-fun-bot-portal; do
+  setup_case "stop-failure-$unit"
+  export FAKE_STOP_FAIL=$unit
+  if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+  [[ "$(git -C "$app" rev-parse HEAD)" == "$previous" ]]
+  [[ "$(cat "$app/node_modules/version")" == old ]]
+  ! grep -Eq '^(merge|swap|final catalog schema readiness|systemctl restart )' "$FAKE_LOG"
+  assert_data
+
+  setup_case "restart-failure-$unit"
+  export FAKE_RESTART_FAIL=$unit
+  if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+  grep -q '^final catalog schema readiness$' "$FAKE_LOG"
+  [[ ! -f "${FAKE_LOG}.started.$unit" ]]
+  [[ "$(grep -c '^systemctl restart ' "$FAKE_LOG")" == "$([[ "$unit" == random-fun-bot ]] && echo 1 || echo 2)" ]]
+  [[ "$(git -C "$app" rev-parse HEAD)" == "$target" ]]
+  [[ "$(cat "$app/node_modules/version")" == new ]]
+  grep -Fq 'Recovery files retained at:' "$home/output"
+  assert_data
+done
+setup_case update-failure
+export FAKE_MERGE_FAIL=1
+if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
+[[ -f "${FAKE_LOG}.stopped.random-fun-bot" && -f "${FAKE_LOG}.stopped.random-fun-bot-portal" ]]
+[[ "$(git -C "$app" rev-parse HEAD)" == "$previous" ]]
+[[ "$(cat "$app/node_modules/version")" == old ]]
+! grep -Eq '^(swap|final catalog schema readiness|systemctl restart )' "$FAKE_LOG"
+assert_data
+echo 'PASS: stop, update and restart failures never bypass readiness or trigger recovery restarts'
 
 setup_case dirty-code
 echo manual-change >> "$app/app.js"
