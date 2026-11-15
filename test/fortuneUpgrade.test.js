@@ -5,9 +5,9 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
-import { validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
-import { upgradeFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
-import { openCatalog, openCatalogReadOnly, openFinalCatalog, openFinalCatalogReadOnly } from '../lib/catalogDb.js';
+import { validateFinalCatalogSchema } from '../lib/catalogPreRankingSchema.js';
+import { upgradeFortuneCatalog } from '../lib/catalogPreRankingUpgrade.js';
+import { openCatalog, openCatalogReadOnly, openFinalCatalog, openFinalCatalogReadOnly } from './helpers/preRankingCatalog.js';
 
 // Frozen fixture independent of the evolving target DDL and runtime initializers.
 function previous(db) {
@@ -130,7 +130,7 @@ test('concurrent first starts serialize and recheck after acquiring the migratio
           upgradeFortuneCatalog(connection, { dryRun: false });
           connection.close();
         })().catch(error => { throw error; });
-      `, { eval: true, workerData: { path, module: new URL('../lib/vaultFortuneUpgrade.js', import.meta.url).href } });
+      `, { eval: true, workerData: { path, module: new URL('../lib/catalogPreRankingUpgrade.js', import.meta.url).href } });
       workers.push(worker);
       worker.on('error', reject);
       worker.on('exit', code => code === 0 ? resolve() : reject(new Error(`Worker exit ${code}`)));
@@ -182,7 +182,7 @@ test('startup upgrade waits beyond five seconds for another migration and restor
         } finally { db.close(); }
       })().catch(error => { throw error; });
     `, { eval: true, workerData: { path, holder, busyTimeout, release: release.buffer,
-      module: new URL('../lib/vaultFortuneUpgrade.js', import.meta.url).href } });
+      module: new URL('../lib/catalogPreRankingUpgrade.js', import.meta.url).href } });
     workers.push(worker);
     const ready = new Promise((resolve, reject) => {
       worker.once('message', resolve);

@@ -27,8 +27,9 @@ for (const source of ['generated', 'anilist', 'corrupt']) test(`ordinary delayed
   await runRoll({message,yoshiko},'w',()=>0.5,{now:()=>1000});
   const content=JSON.stringify(sent[0].components.map(c=>c.toJSON()));
   assert.match(content,/# Original/); assert.doesNotMatch(content,/Edited|9,999/);
-  assert.match(content,/\*\*Rank:\*\* #1/); assert.match(content,/1,234/);
-  if(source==='generated') assert.match(content,/\[generated\]/); else assert.doesNotMatch(content,/\[generated\]/);
+  assert.match(content,/\*\*Rank:\*\* #1/);
+  assert.doesNotMatch(content,/Likes|1,234|\[generated\]/);
   const stored=JSON.parse(db.prepare('SELECT character_snapshot_json FROM character_rolls').get().character_snapshot_json);
   assert.equal(stored.name_full,'Original'); assert.equal(stored.likes_source,source); assert.equal(stored.rank,1);
+  assert.equal(stored.favourites,1234);
 });

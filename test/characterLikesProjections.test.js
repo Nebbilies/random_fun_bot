@@ -51,7 +51,7 @@ for (const source of ['legacy', 'anilist', 'generated']) {
     assert.equal(roll.character.id, id);
     check(roll.character, source);
     const card = render(rollCard(roll.character, null, roll.remaining));
-    assert.equal(card.includes('[generated]'), source === 'generated');
+    assert.doesNotMatch(card, /Likes|5,050|\[generated\]/);
     let selected;
     const mystery = reserveRoll(db, { ...request, guildId: '2', commandMessageId: '101', mystery: {
       eventChannelId: '10', selectEvent: ({ character }) => {
@@ -73,7 +73,7 @@ for (const source of ['legacy', 'anilist', 'generated']) {
       now: () => 1000, setTimer: () => 1, clearTimer: () => {} });
     assert.equal(result.status, 'started');
     check(result.character, source);
-    assert.equal(render(sent[0]).includes('[generated]'), source === 'generated');
+    assert.doesNotMatch(render(sent[0]), /Likes|5,050|\[generated\]/);
   });
 
   test(`${source}: mystery start, winner and timeout re-reads retain provenance`, t => {

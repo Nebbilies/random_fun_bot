@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 // Run the actual browser module with controllable fetch completion and a small DOM.
-function browser() {
+function browser(module = 'catalog') {
   class Element {
-    constructor(value = '') { this.value = String(value); this.children = []; this.listeners = {}; this.hidden = false; this.open = false; this.disabled = false; this.dataset = {}; this.attributes = {}; }
+    constructor(value = '') { this.value = String(value); this.children = []; this.listeners = {}; this.hidden = false; this.open = false; this.disabled = false; this.dataset = {}; this.attributes = {}; this.style = { setProperty() {} }; }
     addEventListener(name, fn) { (this.listeners[name] ??= []).push(fn); }
     async fire(name, extra = {}) {
       const event = { target: this, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...extra };
@@ -28,23 +28,51 @@ function browser() {
     reportValidity() { return !this.validationMessage; }
     focus() { this.focused = true; }
   }
-  const html = readFileSync(new URL('../web/reviewCatalog.html', import.meta.url), 'utf8');
+  const html = readFileSync(new URL(`../web/${module === 'catalog' ? 'reviewCatalog' : 'reviewCharacterTags'}.html`, import.meta.url), 'utf8');
   const elements = Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, new Element()]));
-  elements.franchisePicker.append(elements.franchiseChips, elements.franchiseSearch, elements.franchiseOptions);
-  elements.characterForm.append(elements.franchisePicker, elements.franchiseIds);
+  if (module === 'catalog') {
+    elements.franchisePicker.append(elements.franchiseChips, elements.franchiseSearch, elements.franchiseOptions);
+    elements.characterForm.append(elements.franchisePicker, elements.franchiseIds);
+  }
   const requests = [];
   let key = 0;
   const context = vm.createContext({
-    document: { getElementById: id => elements[id], createElement: () => new Element(), querySelector: () => null, querySelectorAll: () => ['characterForm', 'sourceForm', 'tagForm', 'repositionForm', 'franchiseForm'].map(id => elements[id]) },
+    document: { getElementById: id => elements[id], createElement: () => new Element(), querySelector: () => null, querySelectorAll: () => ['characterForm', 'sourceForm', 'rankingForm', 'franchiseForm'].map(id => elements[id]) },
     Option: function(text, value) { return Object.assign(new Element(value), { textContent: text }); },
     URL, crypto: { randomUUID: () => `request-key-${++key}` },
+    localStorage: { getItem: () => null, setItem() {} },
     feedback: (el, message) => { el.textContent = message; },
     fetch: (path, init) => new Promise(resolve => requests.push({ path, body: init?.body && JSON.parse(init.body), resolve: (data, status = 200) => resolve({ ok: status >= 200 && status < 300, status, json: async () => data }) })),
   });
-  vm.runInContext(readFileSync(new URL('../web/assets/catalog.js', import.meta.url), 'utf8').replace("import { feedback } from './portal.js';", ''), context);
+  vm.runInContext(readFileSync(new URL(`../web/assets/${module}.js`, import.meta.url), 'utf8').replace("import { feedback } from './portal.js';", ''), context);
   return { elements, requests, run: code => vm.runInContext(code, context) };
 }
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+
+test('navigation discards decisions started while another character was still displayed', async () => {
+  for (const previewFirst of [true, false]) {
+    const b = browser('reviewCharacterTags');
+    b.requests[0].resolve({ efficiencyRanking: true, queue: 2, reports: 0, manual: 0, automatic: 0, matched: 0, total: 2 });
+    await flush();
+    const row = (id, rank) => ({ id, rank, name: id, animeTitles: [], candidates: [], reportCount: 0, firstReportedAt: '2026-01-01' });
+    b.requests.at(-1).resolve(row('A', 1)); await flush();
+    const navigating = b.elements.forward.fire('click');
+    const navigation = b.requests.at(-1);
+    b.elements.custom.value = 'series'; await b.elements.custom.fire('input');
+    const deciding = b.elements.approve.fire('click');
+    const preview = b.requests.at(-1);
+    const result = { previewId: 'A-preview', payloadHash: 'A-hash', rank: 1, efficiency: 0, danbooru_post_count: 0 };
+    if (previewFirst) { preview.resolve(result); await deciding; }
+    navigation.resolve(row('B', 2)); await navigating;
+    if (!previewFirst) { preview.resolve(result); await deciding; }
+    assert.equal(b.elements.name.textContent, 'B');
+    assert.equal(b.elements.decisionPreview.hidden, true);
+    assert.equal(b.elements.confirmDecision.disabled, true);
+    const count = b.requests.length;
+    await b.elements.confirmDecision.fire('click');
+    assert.equal(b.requests.length, count, 'no confirmation for A can be sent while B is displayed');
+  }
+});
 
 const franchiseRows = [
   { id: 1, display_name: 'One', aliases: ['FIRST SERIES'] },
@@ -162,14 +190,12 @@ test('catalog controls use no checkboxes and preview JSON is collapsed by defaul
   const details = html.match(/<details\b[^>]*\bid="previewDetails"[^>]*>/)?.[0];
   assert.ok(details, 'full JSON preview has a stable details id');
   assert.doesNotMatch(details, /\bopen(?:\s|=|>)/);
-  const select = html.match(/<select\b[^>]*\bid="switchGenerated"[^>]*>([\s\S]*?)<\/select>/)?.[1];
-  assert.ok(select);
-  assert.deepEqual([...select.matchAll(/value="([^"]*)"/g)].map(match => match[1]), ['false', 'true']);
+  assert.doesNotMatch(html, /id="(?:switchGenerated|targetRank|repositionForm)"/);
   assert.match(html, /<input\b[^>]*\bid="createTag"[^>]*>/);
   assert.doesNotMatch(html.match(/<input\b[^>]*\bid="createTag"[^>]*>/)[0], /\brequired\b/);
 });
 
-test('optional creation tag is trimmed and omitted entirely when blank, and never sent on edit', async () => {
+test('optional creation tag is trimmed and NULL when blank, and never sent on edit', async () => {
   for (const value of ['', '   \n  ', '  approved_character  ']) {
     const b = browser();
     b.elements.createTag.value = value;
@@ -177,7 +203,7 @@ test('optional creation tag is trimmed and omitted entirely when blank, and neve
     const request = b.requests.at(-1);
     assert.equal(request.path, '/api/catalog/create/preview');
     if (value.trim()) assert.equal(request.body.input.tagName, 'approved_character');
-    else assert.equal(Object.hasOwn(request.body.input, 'tagName'), false);
+    else assert.equal(request.body.input.tagName, null);
     assert.equal(Object.hasOwn(request.body, 'duplicateOverrideReason'), false);
     assert.equal(Object.hasOwn(request.body.input, 'duplicateOverrideReason'), false);
     request.resolve({ previewId: 'create', payloadHash: 'hash' }); await loading;
@@ -239,16 +265,16 @@ test('creation tag errors attach to the field and verified canonical tag is read
   assert.equal(b.elements.previewDetails.open, false);
 });
 
-test('reposition reads the generated-likes select as a boolean, not a checkbox', async () => {
+test('ranking form sends nullable inputs instead of a manual rank', async () => {
   const b = browser();
   b.run("editor({id: 'imported', creationMethod: 'imported', aliases: [], sources: [], franchiseIds: []})");
-  for (const value of ['false', 'true']) {
-    b.elements.switchGenerated.value = value;
-    const loading = b.elements.repositionForm.fire('submit');
-    const request = b.requests.at(-1);
-    assert.equal(request.body.input.switchToGenerated, value === 'true');
-    request.resolve({ previewId: value, payloadHash: 'hash' }); await loading;
-  }
+  b.elements.rankingTag.value = '';
+  b.elements.rankingClaimRank.value = '123';
+  const loading = b.elements.rankingForm.fire('submit');
+  const request = b.requests.at(-1);
+  assert.equal(request.path, '/api/catalog/ranking/preview');
+  assert.deepEqual(request.body.input, { characterId: 'imported', tagName: null, mudaeClaimRank: 123 });
+  request.resolve({ previewId: 'ranked', payloadHash: 'hash' }); await loading;
 });
 
 test('newest preview wins even when the previous response arrives last', async () => {
@@ -274,10 +300,10 @@ test('imported reference curation, no-match payload, search/history navigation a
   assert.equal(edit.body.input.referenceUrl, 'https://example.test/curated');
   assert.equal('name' in edit.body.input, false);
   edit.resolve({ previewId: 'edit', payloadHash: 'hash' }); await editing;
-  b.elements.tagStatus.value = 'no_match';
-  const tagging = b.elements.tagForm.fire('submit');
-  const tag = b.requests.find(r => r.path === '/api/catalog/tag/preview');
-  assert.equal(tag.body.input.status, 'no_match'); assert.equal('tagName' in tag.body.input, false);
+  b.elements.rankingTag.value = ''; b.elements.rankingClaimRank.value = '';
+  const tagging = b.elements.rankingForm.fire('submit');
+  const tag = b.requests.find(r => r.path === '/api/catalog/ranking/preview');
+  assert.equal(tag.body.input.tagName, null); assert.equal(tag.body.input.mudaeClaimRank, null);
   tag.resolve({ previewId: 'tag', payloadHash: 'hash' }); await tagging;
   const searching = b.elements.searchNext.fire('click');
   const search = b.requests.find(r => r.path.includes('offset=50'));
@@ -456,7 +482,7 @@ test('confirmation retries retain their key, while owned stale responses require
 });
 
 test('a pending detail cannot replace input in any editor form', async () => {
-  for (const form of ['characterForm', 'sourceForm', 'tagForm', 'repositionForm', 'franchiseForm']) {
+  for (const form of ['characterForm', 'sourceForm', 'rankingForm', 'franchiseForm']) {
     for (const event of ['input', 'change']) {
       const b = await ready();
       b.run(`editor(${JSON.stringify(character('A'))})`);

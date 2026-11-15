@@ -20,7 +20,7 @@ test('Piñata describes the shared qualifying rolls and separate personal cooldo
   const db = fixture(t);
   for (const item of [getItemDefinition('pinata'), getResolvedItemDefinition(db, '1', 'pinata')]) {
     assert.match(item.description, /next 10 qualifying rolls.*server/i);
-    assert.match(item.description, /high-favorite/i);
+    assert.match(item.description, /rank.*#1500.*better/i);
     assert.match(item.description, /you.*1 personal extra claim token.*bypasses.*cooldown/i);
     assert.doesNotMatch(item.description, /2x|double|reset/i);
   }
@@ -33,11 +33,11 @@ test('Piñata describes the shared qualifying rolls and separate personal cooldo
 test('resolved Piñata description follows effective server settings', (t) => {
   const db = fixture(t);
   save(db, 'itemEffects', { 'itemEffects.pinata.rolls': 4, 'itemEffects.pinata.claimTokens': 2,
-    'itemEffects.pinata.minFavourites': 2000, 'itemEffects.pinata.maxRank': 500 });
+    'itemEffects.pinata.maxRank': 500 });
   const text = getResolvedItemDefinition(db, '1', 'pinata').description;
   assert.match(text, /next 4 qualifying rolls/);
   assert.match(text, /2 personal extra claim tokens/);
-  assert.match(text, /2000 favorites or.*500/);
+  assert.match(text, /rank.*#500.*better/);
   assert.match(getResolvedItemDefinition(db, '2', 'pinata').description, /next 10 qualifying rolls/);
 });
 
@@ -56,7 +56,7 @@ test('franchise summons describe availability and do not promise a Blood Pact ra
   const db = fixture(t);
   for (const resolve of [id => getItemDefinition(id), id => getResolvedItemDefinition(db, '1', id)]) {
     assert.match(resolve('wish_upon_a_star').description, /top 3/);
-    assert.match(resolve('wish_upon_a_star').description, /otherwise.*most-favorited available/);
+    assert.match(resolve('wish_upon_a_star').description, /otherwise.*best-ranked available/);
     assert.match(resolve('blood_pact').description, /best-ranked available unowned/);
     assert.doesNotMatch(resolve('blood_pact').description, /higher.rank|better than/i);
   }
@@ -77,9 +77,9 @@ test('resolved timed and counted effects use effective values rather than histor
   save(db, 'itemEffects', { 'itemEffects.adrenaline_rush.durationMs': 120000,
     'itemEffects.adrenaline_rush.allowanceMultiplier': 3,
     'itemEffects.rolling_fever.rolls': 4, 'itemEffects.rolling_fever.refundRolls': 3,
-    'itemEffects.rolling_fever.favouritesThreshold': 2500 });
+    'itemEffects.rolling_fever.maxRank': 2500 });
   assert.match(getResolvedItemDefinition(db, '1', 'adrenaline_rush').description, /3x.*2 minutes/);
-  assert.match(getResolvedItemDefinition(db, '1', 'rolling_fever').description, /4 character rolls.*over 2500 favorites.*3 rolls/);
+  assert.match(getResolvedItemDefinition(db, '1', 'rolling_fever').description, /4 character rolls.*ranked #2500.*better.*3 rolls/);
 });
 
 test('Aegis description shows its current effective duration', t => {

@@ -184,7 +184,7 @@ export async function handleFranchiseReviewRequest({ db, request, response, url,
   }
 }
 
-export function createFranchiseReviewServer({ db, host = '127.0.0.1', publicHost = host, port = 8788, authConfig, sourcePermissionConfirmed = false, verifySource }) {
+export function createFranchiseReviewServer({ db, host = '127.0.0.1', publicHost = host, port = 8788, authConfig, sourcePermissionConfirmed = false, verifySource, verifyTag }) {
   const auth = createPortalAuth(authConfig);
   if (!publicHost || publicHost === '0.0.0.0') throw new Error('Set a public host when listening on all interfaces');
   const server = createServer(async (request, response) => {
@@ -202,7 +202,7 @@ export function createFranchiseReviewServer({ db, host = '127.0.0.1', publicHost
       origin = auth.origin(origin);
       const url = new URL(request.url, origin);
       if (await auth.handle(request, response, url, origin)) return;
-      if (await handleCatalogRequest({ db, request, response, url, origin, sourcePermissionConfirmed, verifySource })) return;
+      if (await handleCatalogRequest({ db, request, response, url, origin, sourcePermissionConfirmed, verifySource, verifyTag })) return;
       if (serveAssets(request, response, url)) return;
       if (!await handleFranchiseReviewRequest({ db, request, response, url, origin, mountPath: '' }))
         json(response, 404, { error: 'Not found' });

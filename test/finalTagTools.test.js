@@ -8,6 +8,8 @@ import { matchTags, refreshAliasCounts, removeSavedAliasSources, approveSearched
 import { matchGoogleTags } from '../scripts/matchGoogleTags.js';
 import { matchDuckDuckGoTags } from '../scripts/matchDuckDuckGoTags.js';
 
+import { captureRankingTagEvidence } from '../lib/catalogRankingEvidence.js';
+
 const id = '12345678-1234-4123-8123-123456789abc';
 const tag = { name: 'test_person', category: 4, is_deprecated: false, post_count: 100 };
 const url = 'https://danbooru.donmai.us/posts?tags=test_person';
@@ -32,7 +34,7 @@ function options(db, onVerify = quiet) {
     return tag;
   };
   return { db, limit: 1, delayMs: 0, log: quiet, apply: true,
-    api: { candidates: async () => [await verify()], exactTag: verify, aliases: async () => [] },
+    api: { candidates: async () => [await verify()], exactTag: verify, verifyRankingTag: async name => captureRankingTagEvidence(name, await verify()), aliases: async () => [] },
     fetchImpl: async () => ({ status: 200, text: async () =>
       `<a class="result-link" href="//duckduckgo.com/l/?uddg=${encodeURIComponent(url)}">Result</a>` }),
     page: {
@@ -82,7 +84,12 @@ for (const [name, run] of Object.entries(tools)) {
     const human = openFinalCatalog(path);
     connections.push(human);
     const before = revision(db);
-    await run(options(db, () => saveDecision(human, id, status, status === 'approve' ? 'human_tag' : null, 'manual')));
+    let decided = false;
+    await run(options(db, () => {
+      if (decided) return;
+      decided = true;
+      saveDecision(human, id, status, status === 'approve' ? 'human_tag' : null, 'manual', status === 'approve' ? captureRankingTagEvidence('human_tag', { ...tag, name: 'human_tag' }) : null);
+    }));
     const decision = db.prepare('SELECT * FROM tag_decisions WHERE character_id=?').get(id);
     assert.equal(decision.source, 'manual');
     assert.equal(decision.status, status);
@@ -107,11 +114,28 @@ test('character maintenance preserves human decisions made during alias verifica
     return tag;
   } }, quiet);
   removeSavedAliasSources(db, quiet);
-  approveSearchedByCount(db, quiet);
+  await approveSearchedByCount(db, quiet, options(db).api);
   assert.equal(revision(db), before + 1);
   assert.equal(db.prepare('SELECT status FROM tag_decisions').get().status, 'no_match');
   assert.equal(db.prepare('SELECT count(*) n FROM tag_candidates').get().n, 2);
   assert.equal(db.prepare('SELECT sum(post_count) n FROM tag_candidates').get().n, 0);
+});
+
+test('ranked saved candidates retain active aliases when choosing a fresh approved tag', async t => {
+  const { db } = fixture(t);
+  db.prepare('INSERT INTO tag_match_progress VALUES (?,?)').run(id, 'synthetic');
+  db.prepare('INSERT INTO tag_candidates VALUES (?,?,?,?)').run(id, 'renamed_character', 1000, 'Active alias from test_person');
+  db.prepare('INSERT INTO tag_candidates VALUES (?,?,?,?)').run(id, 'other_character', 1, 'Character-tag name search');
+  let calls = 0;
+  const count = await approveSearchedByCount(db, quiet, { verifyRankingTag: async name => {
+    calls++;
+    assert.equal(name, 'renamed_character');
+    return captureRankingTagEvidence(name, { ...tag, name, post_count: 1000 });
+  } });
+  assert.equal(count, 1);
+  assert.equal(calls, 1);
+  assert.equal(db.prepare('SELECT tag_name FROM tag_decisions WHERE character_id=?').get(id).tag_name, 'renamed_character');
+  assert.equal(db.prepare('SELECT danbooru_post_count FROM characters WHERE id=?').get(id).danbooru_post_count, 1000);
 });
 
 test('Google and DuckDuckGo honor shared completed attempts without source collision or repeat work', async t => {

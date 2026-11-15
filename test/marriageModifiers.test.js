@@ -200,7 +200,8 @@ test('individual card view (!mmi) displays single character card with header, de
   assert.ok(text.includes('# [Casca](https://anilist.co/character/2)'));
   assert.ok(!text.includes('💞'));
   assert.ok(text.includes('**Anime:** Berserk'));
-  assert.ok(text.includes('**Rank:** #247 • **Favorites:** 600'));
+  assert.ok(text.includes('**Rank:** #247'));
+  assert.doesNotMatch(text, /Favorites|600/);
   assert.ok(text.includes("<@101>'s harem • Character 1 of 2"));
 
   // Check buttons

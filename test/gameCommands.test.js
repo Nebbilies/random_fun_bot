@@ -44,7 +44,7 @@ test('character command shows catalog metadata and approved image', async (t) =>
   assert.match(card.components[1].content, /JUJUTSU KAISEN/);
   assert.match(card.components[1].content, /\*\*Other names:\*\*\n• 五条悟\n• Satoru Gojo/);
   assert.match(card.components[1].content, /\*\*Rank:\*\* #1,234/);
-  assert.match(card.components[1].content, /\*\*Favorites:\*\* 999/);
+  assert.doesNotMatch(card.components[1].content, /Favorites|999/);
   assert.doesNotMatch(card.components[1].content, /Gender|Birthday|Age|Description/);
   assert.equal(card.components[2].items[0].media.url, 'https://cdn.donmai.us/image.jpg');
   assert.match(card.components[3].content, /safebooru.donmai.us\/posts\/9/);

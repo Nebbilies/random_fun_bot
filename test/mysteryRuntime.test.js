@@ -125,7 +125,7 @@ test('configured channel receives a hidden portrait card, then Doors starts afte
   assert.equal(event.sent.length, 1);
   assert.equal(intro.payload.content, '# ❓ A mystery character appears!');
   assert.deepEqual(intro.payload.embeds[0].data.fields.map(({ name, value }) => [name, value]),
-    [['Rank', '???'], ['Likes', '????'], ['Anime', '-']]);
+    [['Rank', '???'], ['Anime', '-']]);
   assert.equal(intro.payload.embeds[0].data.title, '??????');
   assert.equal(intro.payload.embeds[0].data.image.url, 'attachment://mystery_roll.png');
   assert.equal(intro.payload.files[0].name, 'mystery_roll.png');
@@ -231,7 +231,7 @@ test('both slot placements use timed reveals; John Pork precedes an unclaimable 
       if (selected !== winning) {
         assert.equal(card.embeds[0].data.title, 'John Pork');
         assert.equal(card.embeds[0].data.description, '-');
-        assert.deepEqual(card.embeds[0].data.fields.map((field) => field.value), ['?', '?']);
+        assert.deepEqual(card.embeds[0].data.fields.map((field) => field.value), ['?']);
         assert.deepEqual(card.reactions, []);
         assert.equal(getMysterySession(db, reservation.sessionId).state, 'countdown');
         await time.advanceTo(11099);

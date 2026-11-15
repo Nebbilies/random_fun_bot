@@ -4,15 +4,15 @@ import { createReviewServer } from '../web/reviewCharacterTags.js';
 import { authConfig, login } from './helpers/portalAuth.js';
 import { onRollReport } from '../lib/characterRollRuntime.js';
 import assert from 'node:assert/strict';
-import { openCatalog } from '../lib/catalogDb.js';
+import { openCatalog } from './helpers/preRankingCatalog.js';
 import { convertLegacyCatalogToFinal } from '../lib/characterIdentityMigration.js';
 import { previewCatalogMutation, confirmCatalogMutation } from '../lib/catalogMutations.js';
 import { reportCharacterGender, genderCase } from '../lib/characterGenderReviews.js';
 import { reportCharacterTag } from '../lib/catalogDb.js';
 import { bindSourceCatalogStaging, publishSourceCatalog } from '../lib/sourceCatalogPublication.js';
 import { CHARACTER_GENDER_DDL } from '../lib/characterGenderSchema.js';
-import { PRE_AFFECTION_CATALOG_DDL, validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
-import { ensureFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
+import { PRE_AFFECTION_CATALOG_DDL, validateFinalCatalogSchema } from '../lib/catalogPreRankingSchema.js';
+import { ensureFortuneCatalog } from '../lib/catalogPreRankingUpgrade.js';
 import { DatabaseSync } from 'node:sqlite';
 import { hydrateOneBatch } from '../scripts/importCharacterCatalog.js';
 

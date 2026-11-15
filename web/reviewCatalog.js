@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { DanbooruApi } from '../lib/danbooruApi.js';
+import { hasCharacterRanking } from '../lib/catalogFinalSchema.js';
+import { captureRankingTagEvidence, requireRankingTagEvidence } from '../lib/catalogRankingEvidence.js';
 import { normalizeOptionalCatalogTagName } from '../lib/catalogMutations.js';
 import { previewManualCharacterCreation, confirmManualCharacterCreation } from '../lib/manualCharacterMutations.js';
 
 const html = readFileSync(new URL('./reviewCatalog.html', import.meta.url));
 const script = readFileSync(new URL('./assets/catalog.js', import.meta.url));
-const operations = new Set(['create', 'edit', 'reposition', 'source', 'tag', 'franchise']);
+const operations = new Set(['create', 'edit', 'ranking', 'reposition', 'source', 'tag', 'franchise']);
 function json(response, status, value) {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   response.end(JSON.stringify(value));
@@ -45,7 +47,8 @@ function character(db, row) {
 // Only server configuration may authorize a fixed source verifier. No client URL,
 // callback, permission flag, or generic fetch is accepted in an HTTP payload.
 export async function handleCatalogRequest({ db, request, response, url, origin,
-  sourcePermissionConfirmed = false, verifySource, verifyTag = tag => new DanbooruApi({ db }).exactTag(tag) }) {
+  sourcePermissionConfirmed = false, verifySource, verifyTag = tag => hasCharacterRanking(db)
+    ? new DanbooruApi({ db }).verifyRankingTag(tag) : new DanbooruApi({ db }).exactTag(tag) }) {
   if (url.pathname !== '/catalog' && url.pathname !== '/assets/catalog.js'
     && url.pathname !== '/api/catalog' && !url.pathname.startsWith('/api/catalog/')) return false;
   const account = request.portalAccount;
@@ -92,7 +95,7 @@ export async function handleCatalogRequest({ db, request, response, url, origin,
       } else json(response, 404, { error: 'Unknown catalog route' });
       return true;
     }
-    const match = /^\/api\/catalog\/(create|edit|reposition|source|tag|franchise)\/(preview|confirm)$/.exec(url.pathname);
+    const match = /^\/api\/catalog\/(create|edit|ranking|reposition|source|tag|franchise)\/(preview|confirm)$/.exec(url.pathname);
     if (!match) { json(response, 404, { error: 'Unknown catalog route' }); return true; }
     if (request.method !== 'POST') { json(response, 405, { error: 'Method not allowed' }); return true; }
     if (request.headers.origin !== origin) { json(response, 403, { error: 'Invalid origin' }); return true; }
@@ -105,9 +108,17 @@ export async function handleCatalogRequest({ db, request, response, url, origin,
     fields(body, action === 'confirm' ? ['previewId', 'payloadHash', 'idempotencyKey']
       : operation === 'create' ? ['input', 'rank', 'duplicateOverrideReason'] : ['operation', 'input']);
     const attribution = { account: account.username, role: account.role };
+    const ranked = hasCharacterRanking(db);
+    const expectedRevision = db.prepare('SELECT revision FROM catalog_state WHERE singleton=1').get().revision;
+    let tagEvidence;
     let value;
     async function verifiedTagName(tagName) {
       const canonical = await verifyTag(tagName);
+      if (ranked) {
+        try { tagEvidence = requireRankingTagEvidence(tagName, canonical); }
+        catch { tagEvidence = captureRankingTagEvidence(tagName, canonical); }
+        return tagEvidence.name;
+      }
       if (!canonical || canonical.category !== 4 || canonical.is_deprecated
         || typeof canonical.name !== 'string' || !/^(?!.*[*,A-Z])[\x21-\x7E]{2,120}$/.test(canonical.name)) {
         throw new Error('Tag must be an active Danbooru character tag');
@@ -119,7 +130,7 @@ export async function handleCatalogRequest({ db, request, response, url, origin,
         const tagName = normalizeOptionalCatalogTagName(body.input.tagName);
         body.input.tagName = tagName === null ? null : await verifiedTagName(tagName);
       }
-      value = action === 'preview' ? previewManualCharacterCreation(db, { ...body, ...attribution })
+      value = action === 'preview' ? previewManualCharacterCreation(db, { ...body, ...attribution, tagEvidence, expectedRevision })
         : confirmManualCharacterCreation(db, { ...body, ...attribution });
     } else {
       // Resolve the shared services on demand: missing parallel work fails closed,
@@ -138,15 +149,23 @@ export async function handleCatalogRequest({ db, request, response, url, origin,
         if (operation === 'franchise' && !['franchise_create', 'franchise_edit'].includes(body.operation)) throw new Error('Invalid franchise operation');
         if (operation === 'source' && !['source-link', 'source-correct', 'source-unlink', 'imported-likes-adopt'].includes(body.operation)) throw new Error('Invalid source operation');
         if (!['franchise', 'source'].includes(operation) && body.operation !== undefined && body.operation !== operation) throw new Error('Operation mismatch');
-        if (operation === 'tag' && body.input?.status === 'approve') {
-          fields(body.input, ['characterId', 'status', 'tagName']);
-          if (typeof body.input.tagName !== 'string' || !/^(?!.*[*,A-Z])[\x21-\x7E]{2,120}$/.test(body.input.tagName)) throw new Error('Invalid character tag');
-          body.input.tagName = await verifiedTagName(body.input.tagName);
+        if ((operation === 'tag' && body.input?.status === 'approve') || operation === 'ranking') {
+          fields(body.input, operation === 'tag' ? ['characterId', 'status', 'tagName'] : ['characterId', 'tagName', 'mudaeClaimRank', 'mudaeCharacterUrl']);
+          if (operation === 'ranking') {
+            if (!Object.hasOwn(body.input, 'tagName')) body.input.tagName = db.prepare("SELECT tag_name FROM tag_decisions WHERE character_id=? AND status='approve'").get(body.input.characterId)?.tag_name ?? null;
+            body.input.tagName = normalizeOptionalCatalogTagName(body.input.tagName);
+          }
+          if (operation === 'ranking' && body.input.tagName === null) {
+            tagEvidence = null;
+          } else {
+            if (typeof body.input.tagName !== 'string' || !/^(?!.*[*,A-Z])[\x21-\x7E]{2,120}$/.test(body.input.tagName)) throw new Error('Invalid character tag');
+            body.input.tagName = await verifiedTagName(body.input.tagName);
+          }
         }
         value = operation === 'source' ? await service.previewSourceMutation(db, { ...body, ...attribution,
           permissionConfirmed: sourcePermissionConfirmed === true, verifySource })
           : await service.previewCatalogMutation(db, { input: body.input, operation: operation === 'franchise' ? body.operation : operation,
-            ...attribution });
+            ...attribution, ...(ranked ? { tagEvidence, expectedRevision } : {}) });
       }
     }
     json(response, 200, value);

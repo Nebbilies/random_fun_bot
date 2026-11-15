@@ -49,23 +49,31 @@ A one-charge Legendary item that starts a franchise divorce chain in its user's 
 _Avoid_: Domino Effect, Requiem of Fate
 
 **Character catalog**:
-The growing set of published characters and their display metadata. Published characters remain in the catalog, while popularity ranks can change on refresh.
+The growing set of published characters and their display metadata. Published characters remain in the catalog; gameplay ranks can change when ranking inputs or catalog membership are published.
 _Avoid_: Ownership registry
 
 **Manual character**:
 A character added to the catalog through curation rather than an automatic source import.
 _Avoid_: Fake character, custom copy
 
-**Generated likes**:
-A curated character's assigned like count, generated to fit its requested insertion rank rather than obtained from AniList. The count stays fixed across source refreshes unless explicitly edited and is labeled when displayed.
-_Avoid_: AniList likes, imported likes
+**Efficiency**:
+A stored score from fixed normalization bounds: Danbooru total post count weighted 0.5 and Mudae claim rank weighted 1.5. Missing inputs contribute zero; bounds are not clamped.
+_Avoid_: Favourites, roster-relative score
 
-**Insertion rank**:
-The requested catalog position when a character is added, not a permanent reservation of that rank. Later catalog changes may move the character.
-_Avoid_: Pinned rank, permanent rank
+**Gameplay rank**:
+The consecutive catalog position in `characters.rank`, derived from efficiency and deterministic tiebreaks. Approval and source publication recalculate positions.
+_Avoid_: Manual rank, insertion rank
+
+**Legacy rank**:
+The frozen pre-cutover position in `characters.legacy_rank`. Later additions have no legacy rank. It breaks ties only when both ranking inputs are missing.
+_Avoid_: Live rank, fallback score
+
+**Generated likes**:
+Historical curated like counts retained for compatibility and archived snapshots. They no longer affect gameplay ranking or current presentation.
+_Avoid_: Efficiency, gameplay rank
 
 **Character tag mapping**:
-The association between a character and a tag used to find that character's images.
+The association between a character and an approved Danbooru tag shared by ranking counts and image lookup. A copyright tag covers a franchise and requires a preview warning.
 _Avoid_: Character mapping, tag match
 
 **Character tag report**:

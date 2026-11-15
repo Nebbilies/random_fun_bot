@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { openCatalog } from '../lib/catalogDb.js';
 import { convertLegacyCatalogToFinal } from '../lib/characterIdentityMigration.js';
+import { migrateCharacterRanking } from '../lib/catalogRankingMigration.js';
 import { loadCharacterIndex, findCharacters } from '../lib/gameCharacterLookup.js';
 import { loadFranchiseIndex, findFranchises, loadFranchiseCharacters } from '../lib/franchiseLookup.js';
 import { createCatalogCache } from '../lib/catalogCache.js';
@@ -129,6 +130,11 @@ function run(size, iterations) {
     const migration = timed(() => convertLegacyCatalogToFinal(db, { dryRun: false }));
     assert.equal(migration.value.committed, true);
     assert.equal(db.prepare('PRAGMA user_version').get().user_version, 12);
+    const ranking = timed(() => migrateCharacterRanking(db, { actor: 'synthetic-benchmark', dryRun: false,
+      inputs: { hashes: { danbooru: 'a'.repeat(64), mudae: 'b'.repeat(64) },
+        records: db.prepare('SELECT id,rank FROM characters ORDER BY rank').all().map(row => ({ id: row.id,
+          tag: null, danbooru_post_count: null, mudae_claim_rank: row.rank, mudae_character_url: null })) } }));
+    assert.equal(ranking.value.committed, true);
     db.close(); db = undefined;
     const finalOpen = timed(() => openCatalog(path)); // Normal startup, not raw SQLite or bridge schema.
     db = finalOpen.value;
@@ -143,7 +149,7 @@ function run(size, iterations) {
     assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
     return { characters: size, iterations, semanticComparison: 'equal (ranks/names/memberships/ownership; IDs intentionally change)',
       counts: { old: old.counts, final: current.counts },
-      ms: { seed: rounded(seeded.ms), migrationV10ToFinalV12: rounded(migration.ms),
+      ms: { seed: rounded(seeded.ms), migrationV10ToPreRankingV12: rounded(migration.ms), rankingCutover: rounded(ranking.ms),
         old: { normalReopen: rounded(legacyOpen.ms), ...old.ms },
         final: { normalReopen: rounded(finalOpen.ms), ...current.ms } } };
   } finally {

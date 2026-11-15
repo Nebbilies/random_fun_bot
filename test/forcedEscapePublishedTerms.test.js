@@ -57,9 +57,8 @@ function delivery(db, directive, extra = {}) {
 function assertOld(text, generated = true) {
   assert.match(text, /Original name/);
   assert.match(text, /Old anime/);
-  assert.match(text, /1,234/);
+  assert.doesNotMatch(text, /Likes|1,234|\[generated\]/);
   assert.match(text, /#1/);
-  if (generated) assert.match(text, /\[generated\]/);
   assert.doesNotMatch(text, /Edited name|9,876|#999|New anime/);
 }
 

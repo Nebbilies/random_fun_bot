@@ -12,6 +12,7 @@ import { createReviewServer } from '../web/reviewCharacterTags.js';
 import { createFranchiseReviewServer } from '../web/reviewFranchises.js';
 import { authConfig, password } from '../test/helpers/portalAuth.js';
 import { previewCatalogMutation, confirmCatalogMutation } from '../lib/catalogMutations.js';
+import { captureRankingTagEvidence } from '../lib/catalogRankingEvidence.js';
 const { values } = parseArgs({ options: { browser: { type: 'string' } } });
 if (!values.browser) throw new Error('Explicit Chrome/Edge executable required via --browser');
 const root = mkdtempSync(join(tmpdir(), 'catalog-browser-'));
@@ -67,6 +68,13 @@ try {
   const fill = (id, value) => evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   const click = id => evaluate(`document.getElementById(${JSON.stringify(id)}).click()`);
   const submit = id => evaluate(`document.getElementById(${JSON.stringify(id)}).requestSubmit()`);
+  const trackRequests = () => evaluate(`(()=>{const send=window.fetch;window.catalogRequests=0;window.fetch=async(...args)=>{
+    window.catalogRequests++;
+    try { const response=await send(...args); const json=response.json.bind(response);
+      response.json=async()=>{try{return await json();}finally{setTimeout(()=>window.catalogRequests--,0);}};
+      return response;
+    } catch(error) {window.catalogRequests--;throw error;}
+  };})()`);
   const confirm = async () => {
     await wait("!document.getElementById('previewPanel').hidden");
     assert.equal(await evaluate("document.getElementById('previewDetails').open"), false);
@@ -77,16 +85,12 @@ try {
   };
   for (const [name, factory] of [['combined', createReviewServer], ['standalone', createFranchiseReviewServer]]) {
     db = createFinalCatalog(join(root, `${name}.sqlite`));
-    // Deterministic exact-tag verification; never call live Danbooru.
-    for (const [tag, tags] of [
-      ['browser_character', [{ name: 'browser_character', category: 4, is_deprecated: false }]],
-      ['browser_invalid', [{ name: 'browser_invalid', category: 0, is_deprecated: false }]],
-    ]) {
-      const query = '/tags.json?' + new URLSearchParams({ 'search[name]': tag, 'search[category]': '4', limit: '5' });
-      db.prepare('INSERT INTO tag_search_cache (query,response,fetched_at) VALUES (?,?,?)')
-        .run(query, JSON.stringify(tags), new Date().toISOString());
-    }
+    // Fresh deterministic HTTP-boundary evidence; never call live Danbooru.
+    const verifyTag = async name => captureRankingTagEvidence(name, { name,
+      category: name === 'browser_invalid' ? 0 : name === 'browser_copyright' ? 3 : 4,
+      post_count: 149200, is_deprecated: false });
     server = factory({ db, port: 0, authConfig, sourcePermissionConfirmed: true,
+      verifyTag, api: { verifyRankingTag: verifyTag, request: async () => [], searchTagsLiteral: async () => [] },
       verifySource: async (_url, options) => {
         const id = JSON.parse(options.body).variables.id;
         return id === 999999 ? new Response('', { status: 503 }) : new Response(JSON.stringify({
@@ -107,16 +111,11 @@ try {
       // Keep confirmation followups (franchises/search/detail) from racing the
       // next edit. Retire each request one task after JSON consumption so a
       // chained followup starts before the outstanding count reaches zero.
-      await evaluate(`(()=>{const send=window.fetch;window.catalogRequests=0;window.fetch=async(...args)=>{
-        window.catalogRequests++;
-        try { const response=await send(...args); const json=response.json.bind(response);
-          response.json=async()=>{try{return await json();}finally{setTimeout(()=>window.catalogRequests--,0);}};
-          return response;
-        } catch(error) {window.catalogRequests--;throw error;}
-      };})()`);
+      await trackRequests();
       const label = `${name}-${role}`;
       assert.equal(await evaluate("document.querySelectorAll('input[type=checkbox]').length"), 0);
-      assert.deepEqual(await evaluate("Array.from(document.getElementById('switchGenerated').options,o=>o.value)"), ['false', 'true']);
+      assert.equal(await evaluate("document.getElementById('repositionForm')"), null);
+      assert.equal(await evaluate("document.getElementById('switchGenerated')"), null);
       await fill('franchiseName', `Franchise ${label}`); await submit('franchiseForm'); await confirm();
       await wait("document.getElementById('franchiseIds').options.length>0");
       await fill('name', `Character ${label}`); await fill('gender', 'unknown'); await fill('portraitUrl', 'https://example.invalid/portrait.png');
@@ -125,7 +124,7 @@ try {
       const beforeTags = db.prepare('SELECT count(*) n FROM tag_decisions').get().n;
       if (role === 'admin') {
         await fill('createTag', 'browser_invalid'); await submit('characterForm');
-        await wait("document.getElementById('message').textContent.includes('active Danbooru character tag')");
+        await wait("document.getElementById('message').textContent.includes('active Danbooru character or copyright tag')");
         assert.equal(db.prepare('SELECT count(*) n FROM characters').get().n, beforeCreate);
         assert.equal(db.prepare('SELECT count(*) n FROM tag_decisions').get().n, beforeTags);
       }
@@ -149,7 +148,7 @@ try {
       await evaluate("new Promise(r=>setTimeout(r,150))");
       await fill('aliases', `Browser Alias ${label}`); await submit('characterForm'); await confirm();
       assert.equal(db.prepare('SELECT count(*) AS n FROM character_curated_aliases WHERE alias=?').get(`Browser Alias ${label}`).n, 1, JSON.stringify({ message: await evaluate("document.getElementById('message').textContent"), aliases: db.prepare('SELECT * FROM character_curated_aliases').all(), editor: await evaluate("document.getElementById('name').value+'|'+document.getElementById('aliases').value") }));
-      assert.ok(await evaluate("document.getElementById('identity').textContent.includes('[generated]')"));
+      assert.equal(await evaluate("/likes|generated/i.test(document.getElementById('identity').textContent)"), false);
 
       // A competing editor publishes after preview. The browser must retain
       // unsaved input and require a new preview, then permit an exact retry.
@@ -174,9 +173,14 @@ try {
       assert.equal(db.prepare('SELECT count(*) n FROM catalog_mutations').get().n, auditsBefore + 1);
       await wait("!document.getElementById('existingActions').hidden && document.getElementById('aliases').value.includes('Retained after conflict')");
 
-      // Reposition and source verification/adoption use the same rendered
-      // confirmation flow. Transports are deterministic and never call AniList.
-      await fill('targetRank', '1'); await submit('repositionForm'); await confirm();
+      // Ranking inputs and source references use the rendered confirmation flow.
+      await fill('rankingTag', 'browser_copyright');
+      await fill('rankingClaimRank', '1');
+      await submit('rankingForm');
+      await wait("!document.getElementById('previewPanel').hidden");
+      assert.ok(await evaluate("document.getElementById('previewSummary').textContent.includes('franchise-wide')"));
+      await confirm();
+      assert.equal(db.prepare('SELECT efficiency FROM characters WHERE id=?').get(originalId).efficiency, 2);
       await wait("!document.getElementById('existingActions').hidden");
       const externalId = role === 'admin' ? '7001' : '7002';
       await fill('sourceOperation', 'link'); await fill('externalId', externalId);
@@ -191,15 +195,8 @@ try {
       await wait("document.getElementById('message').textContent.includes('HTTP failure')");
       assert.equal(await evaluate("document.getElementById('externalId').value"), '999999');
       assert.equal(db.prepare('SELECT external_id FROM character_sources WHERE character_id=?').get(originalId).external_id, externalId);
-      await fill('sourceOperation', 'switch_likes');
-      await submit('sourceForm'); await confirm();
-      await wait("document.getElementById('identity').textContent.includes('23 likes') && !document.getElementById('identity').textContent.includes('[generated]')");
-      assert.equal(db.prepare('SELECT favourites FROM characters WHERE id=?').get(originalId).favourites, 23);
-      assert.ok(!await evaluate("document.getElementById('identity').textContent.includes('[generated]')"));
-      await fill('switchGenerated', 'true'); await fill('targetRank', '1');
-      await submit('repositionForm'); await confirm();
-      await wait("document.getElementById('identity').textContent.includes('[generated]') && !document.getElementById('existingActions').hidden");
-      assert.equal(db.prepare('SELECT likes_source FROM characters WHERE id=?').get(originalId).likes_source, 'generated');
+      assert.equal(await evaluate("Array.from(document.getElementById('sourceOperation').options).some(o=>o.value==='switch_likes')"), false);
+      assert.equal(db.prepare('SELECT efficiency FROM characters WHERE id=?').get(originalId).efficiency, 2);
 
       // Duplicate warnings are advisory for add/edit: normal Confirm needs no
       // reason, override, or extra preview. Occupied sources remain refused.
@@ -223,13 +220,44 @@ try {
       await wait("document.getElementById('message').textContent.includes('already belongs')");
       const forbidden = await evaluate("fetch('/api/config').then(r=>r.status)");
       if (role === 'moderator') assert.equal(forbidden, 403);
+      if (name === 'combined') {
+        const reviewId = db.prepare('SELECT id FROM characters WHERE id NOT IN (SELECT character_id FROM tag_decisions) ORDER BY rank LIMIT 1').get().id;
+        await call('Page.navigate', { url: `${origin}/` });
+        await wait("document.getElementById('first') && document.readyState==='complete' && document.getElementById('status').children.length===4");
+        await trackRequests();
+        await click('first'); await wait("!document.getElementById('tagWorkspace').hidden && window.catalogRequests===0");
+        await fill('custom', 'browser_copyright'); await click('approve');
+        await wait("!document.getElementById('decisionPreview').hidden");
+        assert.ok(await evaluate("document.getElementById('decisionPreviewText').textContent.includes('franchise-wide')"));
+        await fill('custom', 'browser_character');
+        assert.equal(await evaluate("document.getElementById('decisionPreview').hidden"), true, 'input revokes tag confirmation');
+        await fill('custom', 'browser_copyright'); await click('approve');
+        await wait("!document.getElementById('decisionPreview').hidden");
+        await click('forward');
+        assert.equal(await evaluate("document.getElementById('decisionPreview').hidden"), true, 'navigation revokes tag confirmation');
+        await click('first'); await wait("!document.getElementById('tagWorkspace').hidden && window.catalogRequests===0");
+        await evaluate(`(()=>{const send=window.fetch;window.decisionHeld=false;window.decisionReleased=false;
+          const gate=new Promise(resolve=>window.releaseDecision=resolve);window.fetch=async(...args)=>{
+          const response=await send(...args);if(String(args[0])==='/api/decision'&&JSON.parse(args[1].body).preview){
+          window.decisionHeld=true;await gate;window.decisionReleased=true;}return response;};})()`);
+        await fill('custom', 'browser_copyright'); await click('approve');
+        await wait('window.decisionHeld'); await fill('custom', 'browser_character');
+        await evaluate('window.releaseDecision()'); await wait('window.decisionReleased');
+        await evaluate('new Promise(resolve=>setTimeout(resolve,50))');
+        assert.equal(await evaluate("document.getElementById('decisionPreview').hidden"), true, 'late preview cannot restore confirmation');
+        await fill('custom', 'browser_copyright'); await click('approve');
+        await wait("!document.getElementById('decisionPreview').hidden");
+        await click('confirmDecision');
+        await wait("document.getElementById('decisionPreview').hidden");
+        assert.equal(db.prepare('SELECT tag_name FROM tag_decisions WHERE character_id=?').get(reviewId).tag_name, 'browser_copyright');
+      }
       await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent.startsWith('Sign out (')).click()");
       await wait("location.pathname==='/login' && document.readyState==='complete'");
       assert.equal(await evaluate("fetch('/api/catalog/search').then(r=>r.status)"), 401);
       console.log(JSON.stringify({ entrypoint: name, role, viewport: role === 'admin' ? 'desktop' : 'mobile',
         create: true, optionalCreateTag: true, previewDoesNotPersist: true, collapsedDetails: true, noCheckboxes: true,
-        search: true, edit: true, generatedLabel: true, staleInputRetained: true, exactRetry: true,
-        reposition: true, sourceVerify: true, sourceFailure: true, likesAdoption: true, duplicates: true, sourceConflict: true, logout: true }));
+        search: true, edit: true, hiddenLikes: true, staleInputRetained: true, exactRetry: true,
+        derivedRank: true, copyrightWarning: true, sourceVerify: true, sourceFailure: true, duplicates: true, sourceConflict: true, logout: true }));
     }
     assert.deepEqual(browserErrors, [], 'No uncaught browser module errors');
     await new Promise(resolve => server.close(resolve)); server = null; db.close(); db = null;
