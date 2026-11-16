@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { createFinalCatalog, openCatalog, openCatalogReadOnly } from '../lib/catalogDb.js';
 import { runRoll, onRollReaction, recoverRollRuntime, recoverForcedEscapes,
   startForcedEscape, recoverOpenEscapes } from '../lib/characterRollRuntime.js';
@@ -106,6 +107,144 @@ async function heart(f, card, userId = '202') {
   await onRollReaction({ catalogDb: f.db }, { emoji: { name: '❤️' }, message: card }, { id: userId });
 }
 const codes = f => inspectCatalogRuntimeRestart(f.db).blockers.map(b => b.code);
+
+for (const interruption of ['reservation', 'channel-fetch', 'intro-send', 'intro-ack', 'legacy-capture']) {
+  test(`unbound mystery ${interruption} survives real reopen and retries without recharging`, async t => {
+    const f = fixture(t);
+    const eventDraw = (MYSTERY_ROSTER.findIndex(e => e.id === 'doors') + 0.1) / MYSTERY_ROSTER.length;
+    const draws = [0, 0, eventDraw][Symbol.iterator]();
+    const r = reserveMysteryAwareRoll(f.db, { guildId: '1', channelId: '10', commandMessageId: '100',
+      userId: '101', pool: 'w', now: f.time.now(), mysteryEnabled: true, random: () => draws.next().value });
+    assert.equal(r.status, 'mystery');
+    const allowance = f.db.prepare('SELECT * FROM roll_allowances').all();
+    const snapshot = terms(f, r.rollId);
+    const send = f.channel.send;
+    let lock;
+    t.mock.method(f.channel, 'send', async payload => {
+      if (interruption === 'intro-send') throw new Error('intro transport failed');
+      const sent = await send(payload);
+      if (interruption === 'intro-ack') {
+        lock = new DatabaseSync(f.path);
+        lock.exec('BEGIN IMMEDIATE');
+      }
+      return sent;
+    });
+    const fetch = f.client.channels.fetch;
+    if (interruption === 'channel-fetch') t.mock.method(f.client.channels, 'fetch', async () => { throw new Error('channel unavailable'); });
+    if (!['reservation', 'legacy-capture'].includes(interruption)) {
+      try {
+        await assert.rejects(startMysteryRoll({ db: f.db, client: f.client,
+          message: interruption === 'channel-fetch' ? { ...f.message(), channelId: '99' } : f.message(),
+          reservation: r, ...f.time }), /failed|unavailable|locked/);
+      } finally { if (lock) { lock.exec('ROLLBACK'); lock.close(); } }
+    }
+    if (interruption === 'legacy-capture') {
+      const state = JSON.parse(getMysterySession(f.db, r.sessionId).stateJson);
+      state.runtime = { version: 1, phase: 'reserved', remaining: r.remaining };
+      f.db.prepare('UPDATE mystery_sessions SET state_json=? WHERE id=?').run(JSON.stringify(state), r.sessionId);
+    }
+    f.channel.send.mock.restore();
+    if (f.client.channels.fetch !== fetch) f.client.channels.fetch.mock.restore();
+    // Model Discord's best-effort nonce deduplication after send-before-ack.
+    t.mock.method(f.channel, 'send', async payload => {
+      const prior = payload.enforceNonce && f.sent.find(m => m.payload.nonce === payload.nonce);
+      return prior || send(payload);
+    });
+    f.reopen(true);
+    const before = rows(f.db);
+    assert.doesNotThrow(() => assertCatalogRuntimeRestartReady(f.db));
+    assert.deepEqual(rows(f.db), before, 'preflight remains read-only');
+    f.reopen();
+    const recovered = await recoverMysteryRuntime({ db: f.db, client: f.client, ...f.time });
+    assert.deepEqual(recovered.blockers, []);
+    assert.deepEqual(recovered.deferred, []);
+    assert.deepEqual(recovered.recovered, [r.sessionId]);
+    assert.equal(f.sent.length, 1, 'one canonical intro across retry');
+    assert.ok(f.sent[0].payload.nonce);
+    assert.equal(f.sent[0].payload.enforceNonce, true);
+    assert.deepEqual(f.db.prepare('SELECT * FROM roll_allowances').all(), allowance);
+    assert.deepEqual(terms(f, r.rollId), snapshot);
+    await f.time.advance(getMysterySession(f.db, r.sessionId).nextAt);
+    assert.equal(getMysterySession(f.db, r.sessionId).state, 'running');
+  });
+}
+
+for (const lockedCleanup of [false, true]) test(`mystery intro failure preserves paid state and original error; competing writer=${lockedCleanup}`, async t => {
+  const f = fixture(t);
+  const failure = new Error('original Discord send failure');
+  let lock;
+  t.mock.method(f.channel, 'send', async () => {
+    if (lockedCleanup) { lock = new DatabaseSync(f.path); lock.exec('BEGIN IMMEDIATE'); }
+    throw failure;
+  });
+  const eventDraw = (MYSTERY_ROSTER.findIndex(e => e.id === 'doors') + 0.1) / MYSTERY_ROSTER.length;
+  const draws = [0.5, 0, 0, eventDraw][Symbol.iterator]();
+  try {
+    await assert.rejects(runRoll({ message: f.message(), yoshiko: { catalogDb: f.db, client: f.client,
+      mysteryEnabled: true, vaultEnabled: false } }, 'w', () => draws.next().value, f.time), error => error === failure);
+  } finally { if (lock) { lock.exec('ROLLBACK'); lock.close(); } }
+  assert.equal(getMysterySession(f.db, 1).state, 'reserved');
+  assert.equal(f.db.prepare('SELECT state FROM character_rolls').get().state, 'pending');
+  assert.doesNotThrow(() => assertCatalogRuntimeRestartReady(f.db));
+});
+
+test('overlapping intro startup and periodic recovery share delivery and timer', async t => {
+  const f = fixture(t);
+  const draws = [0, 0, 0][Symbol.iterator]();
+  const r = reserveMysteryAwareRoll(f.db, { guildId: '1', channelId: '10', commandMessageId: '100',
+    userId: '101', pool: 'w', now: f.time.now(), mysteryEnabled: true, random: () => draws.next().value });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const send = f.channel.send;
+  t.mock.method(f.channel, 'send', async payload => { await gate; return send(payload); });
+  const startup = startMysteryRoll({ db: f.db, client: f.client, message: f.message(), reservation: r, ...f.time });
+  const recovery = recoverMysteryRuntime({ db: f.db, client: f.client, ...f.time });
+  release();
+  await startup;
+  assert.deepEqual((await recovery).recovered, [r.sessionId]);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.time.pending(), 1);
+});
+
+test('unbound intro transport failure defers without blocking startup and retries later', async t => {
+  const f = fixture(t);
+  const draws = [0, 0, 0][Symbol.iterator]();
+  const r = reserveMysteryAwareRoll(f.db, { guildId: '1', channelId: '10', commandMessageId: '100',
+    userId: '101', pool: 'w', now: f.time.now(), mysteryEnabled: true, random: () => draws.next().value });
+  const before = rows(f.db);
+  const send = f.channel.send;
+  t.mock.method(f.channel, 'send', async () => { throw new Error('Discord unavailable'); });
+  for (let i = 0; i < 2; i++) {
+    const report = await recoverMysteryRuntime({ db: f.db, client: f.client, ...f.time });
+    assert.deepEqual(report.blockers, []);
+    assert.equal(report.deferred[0].sessionId, r.sessionId);
+    assert.deepEqual(rows(f.db), before);
+    assert.doesNotThrow(() => assertCatalogRuntimeRestartReady(f.db));
+  }
+  f.channel.send.mock.restore();
+  const report = await recoverMysteryRuntime({ db: f.db, client: f.client, ...f.time });
+  assert.deepEqual(report.recovered, [r.sessionId]);
+  assert.equal(f.sent.length, 1);
+});
+
+for (const corruption of ['runtime', 'remaining', 'deadline', 'partial-binding', 'phase']) {
+  test(`unbound mystery ${corruption} corruption remains a read-only blocker`, t => {
+    const f = fixture(t);
+    const draws = [0, 0, 0][Symbol.iterator]();
+    const r = reserveMysteryAwareRoll(f.db, { guildId: '1', channelId: '10', commandMessageId: '100',
+      userId: '101', pool: 'w', now: f.time.now(), mysteryEnabled: true, random: () => draws.next().value });
+    const state = JSON.parse(getMysterySession(f.db, r.sessionId).stateJson);
+    if (corruption === 'runtime') delete state.runtime;
+    if (corruption === 'remaining') state.runtime.remaining = -1;
+    if (corruption === 'phase') state.runtime.phase = 'running';
+    f.db.prepare('UPDATE mystery_sessions SET state_json=? WHERE id=?').run(JSON.stringify(state), r.sessionId);
+    if (corruption === 'deadline') f.db.exec('UPDATE mystery_sessions SET deadline_at=started_at');
+    if (corruption === 'partial-binding') f.db.exec("UPDATE mystery_sessions SET event_message_id='500'");
+    const before = rows(f.db);
+    assert.throws(() => assertCatalogRuntimeRestartReady(f.db), /mystery_runtime_missing/);
+    assert.deepEqual(rows(f.db), before);
+  });
+}
 
 // Behavioral acceptance: a read-only ready preflight must be followed by real
 // coordinator recovery, preserving paid terms, bindings, deadlines and costs.
