@@ -103,7 +103,8 @@ test('durable own-character card has no seeded claim heart and credits one saved
  assert.deepEqual(payload.allowedMentions.parse,[]);
  assert.ok(texts.includes('❤️ An appearance from your harem'));
  assert.ok(texts.includes('❤️ **+100** affection\n🔓 **1 item reward** unlocked\n🔓 **Windfall · 8%** unlocked'));
- assert.equal(texts.filter(text=>text.includes('Character 1')).length,1,'only the title repeats the character name');
+ assert.ok(texts.includes('-# Character 1'),'the footer repeats the character name below the image');
+ assert.equal(texts.filter(text=>text.includes('Character 1')).length,2,'the title and footer repeat the character name');
  assert.doesNotMatch(texts.join('\n'),/No claim needed|100 total/);
  await deliverReservedRoll(db,client,{rollId:r.rollId,channel,now:()=>now+2});
  assert.equal(sends,2);
