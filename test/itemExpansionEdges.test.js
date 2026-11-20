@@ -67,9 +67,32 @@ function legacy(db, kind, user = '101', target = '202', name = 'Original') {
     { now, random: () => 0 });
 }
 
+for (const [ownRank, targetRank, status] of [
+  [201, 100, 'invalid'],
+  [201, 101, 'awaiting_delivery'],
+  [201, 10_000, 'awaiting_delivery'],
+  [100, 1, 'awaiting_delivery'],
+]) test(`Hostage ranks #${ownRank} and #${targetRank}: ${status}`, (t) => {
+  const { db } = fixture(t);
+  db.prepare('UPDATE characters SET rank=? WHERE id=1').run(ownRank);
+  const stake = own(db, 1, '101');
+  const target = own(db, 2, '202');
+  const { item, action } = prepare(db, 'hostage_note', { own: stake, targets: [{ ...target, rank: 150 }] });
+  db.prepare('UPDATE characters SET rank=? WHERE id=2').run(targetRank);
+
+  const result = activate(db, action);
+  assert.equal(result.status, status);
+  if (status === 'invalid') {
+    assert.match(result.message, /#101/);
+    assert.deepEqual(getInventory(db, '1', '101'), [item]);
+    assert.deepEqual(reservations(db), []);
+  }
+});
+
 test('restart cancels an unconfirmed Hostage, refunds its exact Note and Crown only once', (t) => {
   const f = fixture(t, true);
   let db = f.db;
+  db.exec('UPDATE characters SET rank=201 WHERE id=1');
   const stake = own(db, 1, '101');
   const target = own(db, 2, '202');
   const defense = crown(db, own(db, 3, '202'));
