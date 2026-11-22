@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { parseFranchiseCommand } from '../lib/franchiseModifiers.js';
 import { parseTopCommand } from '../lib/topModifiers.js';
-const gameCommands = new Set(['affection', 'aff', 'soulmate', 'sm', 'help', 'char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'topo', 'ts', 'tsl', 'topserv', 'wish', 'wl', 'wishlist']);
+const gameCommands = new Set(['affection', 'aff', 'soulmate', 'sm', 'profile', 'help', 'char', 'im', 'ima', 'imar', 'divorce', 'w', 'h', 'mu', 'ru', 'daily', 'inv', 'itemlist', 'il', 'use', 'me', 'trade', 'give', 'cancel', 'top', 'topo', 'ts', 'tsl', 'topserv', 'wish', 'wl', 'wishlist']);
 export function resolveGameCommand(token) {
     if (/^(mm|mymarry)([a-z]*)$/.test(token))
         return 'mm';

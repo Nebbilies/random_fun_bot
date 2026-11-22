@@ -17,6 +17,7 @@ export async function run(ctx) {
         '**divorce <character>** — Divorce one of your married characters.',
       ].join('\n') },
       { name: 'HAREM', value: [
+        '**profile** — Render your collection profile card.',
         '**mm [@user]** — View married characters. Alias: **mymarry**.',
         '**mmr [@user]** — Sort married characters by rank.',
         '**mma [@user]** — Group married characters by franchise.',
