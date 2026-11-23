@@ -1,7 +1,7 @@
 import { unregisterPendingTransfer } from '../../lib/characterAvailability.js';
 import { getGameConfig } from '../../lib/gameConfig.js';
 /**
- * @typedef {{characterId: string | number, name: string, marriageId: number}} TransferCharacter
+ * @typedef {{characterId: string | number, name: string, rank: number, marriageId: number}} TransferCharacter
  * @typedef {object} TransferSession
  * @property {number} id
  * @property {ReturnType<typeof getGameConfig>} rules
@@ -11,8 +11,8 @@ import { getGameConfig } from '../../lib/gameConfig.js';
  * @property {string} initiatorId
  * @property {string} recipientId
  * @property {'awaiting_offer' | 'awaiting_target' | 'awaiting_confirm'} state
- * @property {TransferCharacter | null} offer
- * @property {TransferCharacter | null} target
+ * @property {TransferCharacter[]} offer
+ * @property {TransferCharacter[]} target
  * @property {string} prefix
  */
 const terminationCallbacks = new WeakMap();
@@ -78,8 +78,11 @@ export function endSession(db, session, reason = 'ended') {
  */
 export function prepareTransferCancellation(db, guildId, selected) {
     const matches = [...sessionStore(db).values()].filter((session) => session.guildId === guildId
-        && selected.some((row) => (session.offer != null && session.offer.characterId === row.characterId && session.offer.marriageId === row.marriageId && session.initiatorId === row.ownerId)
-            || (session.target != null && session.target.characterId === row.characterId && session.target.marriageId === row.marriageId && session.recipientId === row.ownerId)));
+        && selected.some((row) => {
+            const side = row.ownerId === session.initiatorId ? session.offer
+                : row.ownerId === session.recipientId ? session.target : [];
+            return side.some(character => character.characterId === row.characterId && character.marriageId === row.marriageId);
+        }));
     return () => {
         for (const session of matches) {
             if (!liveSession(db, session))

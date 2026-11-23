@@ -6,9 +6,8 @@ import { isCharacterBusy, invalidateCharacterCrown } from '../../lib/characterAv
 /**
  * Ownership transfers for character trades and gifts.
  *
- * A trade swaps two characters between two players in one guild; a gift hands
- * one character over. Both reuse the `marriages` table so harem lists, escape
- * rules and protection locks keep working unchanged: only `owner_id` moves.
+ * Trades exchange characters between two players in one guild. Gifts move
+ * characters one way. Both update the existing marriage owner and timestamp.
  */
 function validDiscordId(value) {
     return typeof value === 'string' && /^\d+$/.test(value);
@@ -22,15 +21,9 @@ function validateIdentity(db, guildId, characterId, ownerId) {
  * @typedef {{status: 'transferred' | 'traded' | 'not_owned' | 'unknown_character' | 'locked' | 'escaping' | 'busy' | 'same_owner',
  *   name?: string, characterId?: string | number, ownerId?: string, first?: string, second?: string, rollback?: boolean}} TransferResult
  * @typedef {{status: 'ok' | 'not_owned' | 'unknown_character' | 'locked' | 'escaping' | 'busy', name?: string}} TransferCheck
+ * @typedef {{characterId: string | number, marriageId: number}} MarriageSnapshot
+ * @typedef {{characterId: string | number, marriageId?: number, fromOwnerId: string, toOwnerId: string}} OwnershipMove
  */
-/**
- * Turns a failed check into a result that aborts the transaction.
- * @param {TransferCheck} check
- * @returns {TransferResult & {rollback: true}}
- */
-function refuse(check) {
-    return { status: /** @type {any} */ (check.status), name: check.name, rollback: true };
-}
 /**
  * Runs a callback inside a transaction and rolls back when the callback asks for it.
  * @template T
@@ -40,20 +33,15 @@ function refuse(check) {
  */
 function atomic(db, now, callback) {
     db.exec('BEGIN IMMEDIATE');
-    let result;
     try {
-        result = withOwnershipOperationClock(db, now, callback);
-    }
-    catch (error) {
-        db.exec('ROLLBACK');
-        throw error;
-    }
-    if (result && typeof result === 'object' && 'rollback' in result && result.rollback) {
-        db.exec('ROLLBACK');
+        const result = withOwnershipOperationClock(db, now, callback);
+        db.exec(result && typeof result === 'object' && 'rollback' in result && result.rollback ? 'ROLLBACK' : 'COMMIT');
         return result;
     }
-    db.exec('COMMIT');
-    return result;
+    catch (error) {
+        if (db.isTransaction) db.exec('ROLLBACK');
+        throw error;
+    }
 }
 /**
  * Reads the character row a player owns in a guild.
@@ -94,6 +82,73 @@ function checkTransferable(db, guildId, characterId, ownerId, now, marriageId) {
         return { status: 'busy', name: row.name };
     return { status: 'ok', name: row.name };
 }
+
+/** @param {DatabaseSync} db @param {string} guildId @param {OwnershipMove[]} moves @param {number} now */
+function moveCharacters(db, guildId, moves, now) {
+    return atomic(db, now, () => {
+        const names = [];
+        for (const { characterId, fromOwnerId, marriageId } of moves) {
+            const { status, name } = checkTransferable(db, guildId, characterId, fromOwnerId, now, marriageId);
+            if (status !== 'ok') return { status, name, characterId, rollback: true };
+            names.push(name);
+        }
+        const marriedAt = new Date(now).toISOString();
+        for (const [index, { characterId, fromOwnerId, toOwnerId, marriageId }] of moves.entries()) {
+            try {
+                if (!writeOwnership(db, guildId, characterId, fromOwnerId, toOwnerId, marriedAt, marriageId)) {
+                    return { status: /** @type {const} */ ('not_owned'), name: names[index], characterId, rollback: true };
+                }
+                invalidateCharacterCrown(db, guildId, characterId);
+            } catch (error) {
+                throw Object.assign(new Error(error instanceof Error ? error.message : String(error), { cause: error }), { characterId });
+            }
+        }
+        return { status: /** @type {const} */ ('ok'), names };
+    });
+}
+
+/** @param {DatabaseSync} db @param {string} guildId @param {OwnershipMove[]} moves */
+function validateBatch(db, guildId, moves) {
+    if (!moves.length || new Set(moves.map(move => move.characterId)).size !== moves.length) {
+        throw new Error('A transfer batch requires distinct characters');
+    }
+    for (const { characterId, marriageId, fromOwnerId, toOwnerId } of moves) {
+        validateIdentity(db, guildId, characterId, fromOwnerId);
+        validateIdentity(db, guildId, characterId, toOwnerId);
+        if (!marriageId || !Number.isSafeInteger(marriageId) || marriageId < 1) throw new Error('Invalid marriage ID');
+    }
+}
+
+/**
+ * @param {DatabaseSync} db
+ * @param {{guildId: string, fromOwnerId: string, toOwnerId: string, characters: MarriageSnapshot[], now?: number}} request
+ * @returns {TransferResult}
+ */
+export function transferCharacters(db, { guildId, fromOwnerId, toOwnerId, characters, now = Date.now() }) {
+    const moves = characters.map(character => ({ ...character, fromOwnerId, toOwnerId }));
+    validateBatch(db, guildId, moves);
+    if (fromOwnerId === toOwnerId) return { status: 'same_owner' };
+    const result = moveCharacters(db, guildId, moves, now);
+    return result.status === 'ok' ? { status: 'transferred' } : result;
+}
+
+/**
+ * @param {DatabaseSync} db
+ * @param {{guildId: string, first: {ownerId: string, characters: MarriageSnapshot[]},
+ *   second: {ownerId: string, characters: MarriageSnapshot[]}, now?: number}} request
+ * @returns {TransferResult}
+ */
+export function swapCharacterBatches(db, { guildId, first, second, now = Date.now() }) {
+    if (!first.characters.length || !second.characters.length) throw new Error('A trade requires characters on both sides');
+    const moves = [
+        ...first.characters.map(character => ({ ...character, fromOwnerId: first.ownerId, toOwnerId: second.ownerId })),
+        ...second.characters.map(character => ({ ...character, fromOwnerId: second.ownerId, toOwnerId: first.ownerId })),
+    ];
+    validateBatch(db, guildId, moves);
+    if (first.ownerId === second.ownerId) return { status: 'same_owner' };
+    const result = moveCharacters(db, guildId, moves, now);
+    return result.status === 'ok' ? { status: 'traded' } : result;
+}
 /**
  * Moves one character to a new owner.
  * @param {DatabaseSync} db
@@ -106,14 +161,9 @@ export function transferCharacter(db, request) {
     validateIdentity(db, guildId, characterId, toOwnerId);
     if (fromOwnerId === toOwnerId)
         return { status: 'same_owner' };
-    return atomic(db, now, () => {
-        const check = checkTransferable(db, guildId, characterId, fromOwnerId, now, request.marriageId);
-        if (check.status !== 'ok')
-            return refuse(check);
-        writeOwnership(db, guildId, characterId, fromOwnerId, toOwnerId, new Date(now).toISOString());
-        invalidateCharacterCrown(db, guildId, characterId);
-        return { status: 'transferred', name: check.name, characterId };
-    });
+    const result = moveCharacters(db, guildId, [{ characterId, fromOwnerId, toOwnerId, marriageId: request.marriageId }], now);
+    if (result.status === 'ok') return { status: 'transferred', name: result.names[0], characterId };
+    return { status: result.status, name: result.name, rollback: true };
 }
 /**
  * Swaps two characters between two players. Either both move or neither does.
@@ -130,18 +180,10 @@ export function swapCharacters(db, request) {
         return { status: 'same_owner' };
     if (first.ownerId === second.ownerId)
         return { status: 'same_owner' };
-    return atomic(db, now, () => {
-        const firstCheck = checkTransferable(db, guildId, first.characterId, first.ownerId, now, first.marriageId);
-        if (firstCheck.status !== 'ok')
-            return refuse(firstCheck);
-        const secondCheck = checkTransferable(db, guildId, second.characterId, second.ownerId, now, second.marriageId);
-        if (secondCheck.status !== 'ok')
-            return refuse(secondCheck);
-        const marriedAt = new Date(now).toISOString();
-        writeOwnership(db, guildId, first.characterId, first.ownerId, second.ownerId, marriedAt);
-        writeOwnership(db, guildId, second.characterId, second.ownerId, first.ownerId, marriedAt);
-        invalidateCharacterCrown(db, guildId, first.characterId);
-        invalidateCharacterCrown(db, guildId, second.characterId);
-        return { status: 'traded', first: firstCheck.name, second: secondCheck.name };
-    });
+    const result = moveCharacters(db, guildId, [
+        { ...first, fromOwnerId: first.ownerId, toOwnerId: second.ownerId },
+        { ...second, fromOwnerId: second.ownerId, toOwnerId: first.ownerId },
+    ], now);
+    if (result.status === 'ok') return { status: 'traded', first: result.names[0], second: result.names[1] };
+    return { status: result.status, name: result.name, rollback: true };
 }

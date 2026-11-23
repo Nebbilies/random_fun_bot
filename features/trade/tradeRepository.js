@@ -26,8 +26,8 @@ export function readOpenEscape(db, guildId, characterId, now) {
     WHERE guild_id = ? AND character_id = ? AND escape_marriage_id IS NOT NULL AND state = 'open'
       AND (expires_at IS NULL OR expires_at > ?)`, guildId, characterId, now);
 }
-export function writeOwnership(db, guildId, characterId, fromOwnerId, toOwnerId, marriedAt) {
-    db.prepare(`UPDATE marriages SET owner_id = ?, married_at = ?
-      WHERE guild_id = ? AND character_id = ? AND owner_id = ?`)
-        .run(toOwnerId, marriedAt, guildId, characterId, fromOwnerId);
+export function writeOwnership(db, guildId, characterId, fromOwnerId, toOwnerId, marriedAt, marriageId) {
+    return db.prepare(`UPDATE marriages SET owner_id = ?, married_at = ?
+      WHERE guild_id = ? AND character_id = ? AND owner_id = ? AND id = COALESCE(?, id)`)
+        .run(toOwnerId, marriedAt, guildId, characterId, fromOwnerId, marriageId ?? null).changes === 1;
 }

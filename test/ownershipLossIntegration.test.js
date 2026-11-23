@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { installEmptyFinalCatalog, validateFinalCatalogSchema } from '../lib/catalogFinalSchema.js';
-import { getMarriage, marryCharacter } from '../lib/characterMarriage.js';
-import { swapCharacters } from '../lib/characterTrade.js';
+import { divorceCharacters, getMarriage, marryCharacter } from '../lib/characterMarriage.js';
+import { swapCharacterBatches, swapCharacters, transferCharacters } from '../lib/characterTrade.js';
 import { getLatestOwnershipLoss } from '../lib/characterOwnershipHistory.js';
 import { claimRoll, getClaimStatus, getRoll, publishRoll, reserveRoll } from '../lib/characterRolls.js';
 import { addItemToInventory, getInventory } from '../lib/itemStorage.js';
-import { getItemAction } from '../lib/itemActionStorage.js';
+import { getCounterfeitCrown, getItemAction, setCounterfeitCrown } from '../lib/itemActionStorage.js';
 import { activateItemAction, confirmHostageDelivery, createItemAction, resolveHostage } from '../lib/itemActions.js';
 
 const start = 1_800_000_000_000;
@@ -84,6 +84,43 @@ for (const fail of [false, true]) test(`UUID swap records both losses atomically
   assert.equal(getMarriage(db, '1', ids[0]).ownerId, '202');
   assert.equal(getMarriage(db, '1', ids[1]).ownerId, '101');
 });
+
+for (const action of ['trade', 'gift', 'divorce']) {
+  test(`a late ${action} batch failure rolls back ownership, history, and Crown invalidation`, t => {
+    const { db, own } = fixture(t);
+    const first = own(0);
+    const second = own(1);
+    const last = own(2, action === 'trade' ? '202' : '101');
+    const ids = [first.characterId, second.characterId, last.characterId];
+    const before = ids.map(id => getMarriage(db, '1', id));
+    const crown = setCounterfeitCrown(db, '1', '101', first);
+    const common = { guildId: '1', now: start + 1234 };
+    const apply = () => {
+      if (action === 'trade') return swapCharacterBatches(db, { ...common,
+        first: { ownerId: '101', characters: [first, second] }, second: { ownerId: '202', characters: [last] },
+      });
+      const characters = [first, second, last];
+      return action === 'gift'
+        ? transferCharacters(db, { ...common, fromOwnerId: '101', toOwnerId: '202', characters })
+        : divorceCharacters(db, { ...common, ownerId: '101', characters });
+    };
+
+    const event = action === 'divorce' ? 'DELETE' : 'UPDATE';
+    db.exec(`CREATE TRIGGER reject_last BEFORE ${event} ON marriages WHEN OLD.character_id='${last.characterId}'
+      BEGIN SELECT RAISE(ABORT,'injected batch failure'); END`);
+    assert.throws(apply, { message: 'injected batch failure', characterId: last.characterId });
+    assert.deepEqual(ids.map(id => getMarriage(db, '1', id)), before);
+    noLoss(db);
+    assert.deepEqual(getCounterfeitCrown(db, '1', '101'), crown);
+
+    db.exec('DROP TRIGGER reject_last');
+    const expectedStatus = { trade: 'traded', gift: 'transferred', divorce: 'divorced' };
+    assert.equal(apply().status, expectedStatus[action]);
+    for (const character of [first, second, last]) loss(db, character, common.now);
+    lossCount(db, 3);
+    assert.equal(getCounterfeitCrown(db, '1', '101'), null);
+  });
+}
 
 function escape(db) {
   const roll = reserveRoll(db, { guildId: '1', channelId: '10', commandMessageId: '100',
