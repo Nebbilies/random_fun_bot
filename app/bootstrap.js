@@ -47,6 +47,7 @@ export async function startBot(config, options = {}) {
         config,
         cooldowns: client.cooldowns,
         catalogDb: client.catalogDb,
+        catalogCache,
         get catalogSnapshot() { return catalogCache.get(); },
         get characterIndex() { return catalogCache.get().characterIndex; },
         get franchiseIndex() { return catalogCache.get().franchiseIndex; },
@@ -87,7 +88,10 @@ export async function prepareGameRuntime({ yoshiko, startup, catalogCache, recov
         db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker,
         startup: true, observer: startup, operations: recoveryOperations,
     }));
-    startup.runSync('search-cache', () => catalogCache.get());
+    startup.runSync('search-cache', () => {
+        catalogCache.get();
+        catalogCache.warmRollPools?.();
+    });
     setReady();
     console.log('Character game ready.');
     startup.finish(stats);
