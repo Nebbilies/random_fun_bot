@@ -48,6 +48,68 @@ function content(payload) {
     .map((component) => component.content).join('\n') ?? String(payload);
 }
 
+test('divorce previews and ends every marriage in a named batch on confirmation', async (t) => {
+  const db = fixture(t);
+  marryCharacter(db, '1', 11, '101');
+  marryCharacter(db, '1', 12, '101');
+  const mock = context(db, ['divorce', 'Eleven$Twelve']);
+  await divorce(mock.ctx);
+  assert.match(content(mock.payload()), /Eleven/);
+  assert.match(content(mock.payload()), /Twelve/);
+  assert.ok(getMarriage(db, '1', 11));
+  assert.ok(getMarriage(db, '1', 12));
+  await mock.collector.listeners('collect')[0]({
+    customId: 'divorce:confirm', user: { id: '101' }, guildId: '1',
+    deferUpdate: async () => {},
+  });
+  assert.equal(getMarriage(db, '1', 11), null);
+  assert.equal(getMarriage(db, '1', 12), null);
+});
+
+test('batch divorce keeps the exact choice for an ambiguous name', async (t) => {
+  const db = fixture(t);
+  for (const id of [11, 13, 14]) marryCharacter(db, '1', id, '101');
+  const mock = context(db, ['divorce', 'Shared$Eleven']);
+  await divorce(mock.ctx);
+  const controls = mock.payload().components[0].toJSON().components.flatMap(row => row.components ?? []);
+  const picker = controls.find(component => component.options);
+  const interaction = { user: { id: '101' }, guildId: '1', deferUpdate: async () => {} };
+  await mock.collector.listeners('collect')[0]({ ...interaction, customId: picker.custom_id, values: ['14'] });
+  assert.match(content(mock.payload()), /#4 • \*\*Shared\*\*\n#1 • \*\*Eleven\*\*/);
+  await mock.collector.listeners('collect')[0]({ ...interaction, customId: 'divorce:confirm' });
+  assert.equal(getMarriage(db, '1', 14), null);
+  assert.equal(getMarriage(db, '1', 11), null);
+  assert.equal(getMarriage(db, '1', 13)?.ownerId, '101');
+});
+
+for (const changed of ['marriage', 'reservation', 'permission']) {
+  test(`a batch divorce preserves all marriages after a change to ${changed}`, async (t) => {
+    const db = fixture(t);
+    marryCharacter(db, '1', 11, '102');
+    const { marriage } = marryCharacter(db, '1', 12, '102');
+    assert.ok(marriage);
+    const mock = context(db, ['divorce', '<@102>', 'Eleven', '$', 'Twelve'], { admin: true });
+    await divorce(mock.ctx);
+
+    if (changed === 'marriage') {
+      divorceCharacter(db, '1', 12, '102', marriage.id);
+      marryCharacter(db, '1', 12, '103');
+    } else if (changed === 'reservation') {
+      db.prepare('INSERT INTO item_character_reservations VALUES (?, ?, ?, ?, ?)')
+        .run('1', 12, 'test-reservation', '102', marriage.id);
+    }
+    await mock.collector.listeners('collect')[0]({
+      customId: 'divorce:confirm', user: { id: '101' }, guildId: '1',
+      memberPermissions: { has: () => changed !== 'permission' },
+      deferUpdate: async () => {},
+    });
+    assert.match(content(mock.payload()), /Nothing was divorced/);
+    if (changed !== 'permission') assert.match(content(mock.payload()), /Twelve/);
+    assert.equal(getMarriage(db, '1', 11)?.ownerId, '102');
+    assert.equal(getMarriage(db, '1', 12)?.ownerId, changed === 'marriage' ? '103' : '102');
+  });
+}
+
 test('mm and mymarry show newest marriages first; mmr uses current rank', async (t) => {
   const db = fixture(t);
   db.prepare("UPDATE characters SET image_url = 'https://example.com/top.png' WHERE id = 11").run();

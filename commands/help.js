@@ -1,4 +1,5 @@
 import { EmbedBuilder, escapeMarkdown } from 'discord.js';
+import { CHARACTER_BATCH_LIMIT } from '../lib/characterBatchSelection.js';
 
 export async function run(ctx) {
   const prefix = ctx.prefix ?? '!';
@@ -14,7 +15,7 @@ export async function run(ctx) {
         '**ru [@user]** — Check remaining rolls and reset time.',
         '**mu [@user]** — Check claim availability and reset time.',
         '**daily** — Claim your daily roll refill.',
-        '**divorce <character>** — Divorce one of your married characters.',
+        `**divorce <character>** — Divorce up to ${CHARACTER_BATCH_LIMIT} characters. Example: \`${escapeMarkdown(prefix)}divorce Makima$Power\`.`,
       ].join('\n') },
       { name: 'HAREM', value: [
         '**profile** — Render your collection profile card.',
@@ -46,7 +47,8 @@ export async function run(ctx) {
       ].join('\n') },
       { name: 'TRADING & GIFTS', value: [
         '**me @user** — Start a character trade. Alias: **trade**.',
-        '**give @user** — Offer a character as a gift.',
+        '**give @user** — Offer characters as a gift.',
+        `Reply with names separated by \`$\` (up to ${CHARACTER_BATCH_LIMIT} per list).`,
         '**cancel** — Cancel your pending trade or gift.',
       ].join('\n') },
       { name: 'ITEMS', value: [

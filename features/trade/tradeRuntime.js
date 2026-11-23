@@ -1,11 +1,13 @@
-import { PICKER_OPTION_LIMIT, mentions, confirmationUser, pickerComponents, confirmationComponents, resultPayload } from './tradePresentation.js';
+import { mentions, confirmationUser, confirmationComponents, resultPayload, transferSummary } from './tradePresentation.js';
 import { createSession, findSessionByChannel, findSessionByUser, liveSession, endSession, setPicker, getPicker, clearPicker } from './tradeSessions.js';
 export { prepareTransferCancellation } from './tradeSessions.js';
-import { escapeMarkdown, MessageFlags } from 'discord.js';
+import { MessageFlags } from 'discord.js';
 import { getGameConfig } from '../../lib/gameConfig.js';
 import { listMarriages } from '../../lib/characterMarriage.js';
-import { getOwnedCharacter, swapCharacters, transferCharacter } from './tradeService.js';
-import { searchCharacters } from '../../lib/gameCharacterLookup.js';
+import { getOwnedCharacter, swapCharacterBatches, transferCharacters } from './tradeService.js';
+import { CHARACTER_BATCH_LIMIT, characterSelectionProgress, planCharacterSelection } from '../../lib/characterBatchSelection.js';
+import { CHARACTER_BATCH_INSTRUCTIONS, CHARACTER_PICKER_PAGE_SIZE, characterBatchLine,
+    characterPickerComponents, characterPickerPage, displayCharacterQuery } from '../../lib/characterBatchPresentation.js';
 import { haremListComponents, haremPageCount } from '../../lib/haremView.js';
 import { markCharacterOwnership } from '../../lib/characterOwnershipDisplay.js';
 import { isCharacterBusy, registerPendingTransfer } from '../../lib/characterAvailability.js';
@@ -15,11 +17,9 @@ function runtimeFor(session) { return handlesBySession.get(session); }
 /**
  * Runtime for character trades and gifts.
  *
- * A trade walks three players' steps in one channel: the initiator offers one of
- * their characters, the recipient offers one of theirs, and the initiator
- * confirms the swap. A gift walks two: the initiator offers a character and the
- * recipient confirms. Answers are typed character names (with a select menu as
- * a fallback for ambiguous names) and the final step also takes a yes/no.
+ * The initiator offers characters, the recipient chooses theirs for a trade,
+ * and the initiator confirms. For a gift, the recipient confirms the offer.
+ * Players type names and use a select menu when a name needs clarification.
  *
  * Sessions live in memory only: a trade is a short conversation, and a restart
  * simply drops it instead of leaving half finished ownership changes behind.
@@ -28,10 +28,14 @@ function runtimeFor(session) { return handlesBySession.get(session); }
 const YES_WORDS = new Set(['y', 'yes', 'yeah', 'yep', 'yup', 'ok', 'okay', 'sure', 'confirm']);
 const NO_WORDS = new Set(['n', 'no', 'nope', 'nah', 'cancel', 'decline']);
 /** @typedef {import('./tradeSessions.js').TransferSession} TransferSession */
+/** @typedef {import('./tradeSessions.js').TransferCharacter} TransferCharacter */
+/** @typedef {import('../../lib/characterMarriage.js').MarriageRow} MarriageRow */
+/** @typedef {import('../../lib/characterBatchSelection.js').SelectionEntry} SelectionEntry */
 function armTimer(db, session) {
     if (!liveSession(db, session))
         return;
-    registerPendingTransfer(db, `trade:${session.id}`, session.guildId, [session.offer?.characterId, session.target?.characterId].filter((id) => id != null), Date.now() + session.rules.trades.stepTimeoutMs);
+    const selectedIds = [...session.offer, ...session.target].map(character => character.characterId);
+    registerPendingTransfer(db, `trade:${session.id}`, session.guildId, selectedIds, Date.now() + session.rules.trades.stepTimeoutMs);
     if (runtimeFor(session).timer)
         clearTimeout(runtimeFor(session).timer);
     runtimeFor(session).timer = setTimeout(() => { void expireSession(db, session); }, session.rules.trades.stepTimeoutMs);
@@ -135,51 +139,86 @@ async function sendHarem(request) {
     return sent;
 }
 /**
- * Sends a select menu for names that match more than one character.
+ * Sends a paged menu for the current name. Each menu belongs to one answer.
  * @param {any} db
  * @param {TransferSession} session
  * @param {string} responderId
- * @param {any[]} matches
+ * @param {SelectionEntry[]} entries
+ * @param {SelectionEntry} entry
  */
-async function sendCharacterPicker(db, session, responderId, matches) {
-    const pickerToken = {};
-    setPicker(session, pickerToken);
+async function sendCharacterPicker(db, session, responderId, entries, entry) {
+    const { matches, query } = entry;
+    const expectedState = session.state;
+    const isCurrent = () => liveSession(db, session) && session.state === expectedState && getPicker(session) === entries;
+    const chooseId = 'xfer:choose';
+    const previousId = 'xfer:pick:prev';
+    const nextId = 'xfer:pick:next';
+    const pages = Math.ceil(matches.length / CHARACTER_PICKER_PAGE_SIZE);
+    let page = 0;
+    let busy = false;
+    let closed = false;
+    const render = (disabled = false) => characterPickerComponents({ matches, page, chooseId, previousId, nextId, disabled,
+        title: matches.length === 1 ? 'Did you mean this character?' : 'Several characters match',
+        detail: `<@${responderId}>, pick the character you meant by **${displayCharacterQuery(query)}**.`,
+    });
     const sent = await runtimeFor(session).channel.send({
         flags: MessageFlags.IsComponentsV2,
-        components: pickerComponents(session, responderId, matches),
+        components: render(),
         allowedMentions: mentions(session),
     });
+    if (!isCurrent()) {
+        await sent?.edit?.({ components: render(true) });
+        return;
+    }
     const collector = sent?.createMessageComponentCollector?.({ time: session.rules.controls.lifetimeMs });
     collector?.on('collect', async (interaction) => {
+        let ownsLock = false;
         try {
             if (interaction.user.id !== responderId || interaction.guildId !== session.guildId) {
-                await interaction.reply({
-                    content: 'Only the player choosing from this list can pick a character.',
-                    flags: MessageFlags.Ephemeral,
-                });
+                await interaction.reply({ content: 'Only the player choosing from this list can pick a character.', flags: MessageFlags.Ephemeral });
                 return;
             }
-            const expectedState = responderId === session.initiatorId ? 'awaiting_offer' : 'awaiting_target';
-            if (!liveSession(db, session) || session.state !== expectedState || getPicker(session) !== pickerToken) {
+            if (closed || !isCurrent()) {
                 await interaction.reply({ content: 'This character picker has expired.', flags: MessageFlags.Ephemeral });
                 return;
             }
-            const value = interaction.values?.[0];
-            const picked = matches.slice(0, PICKER_OPTION_LIMIT)
-                .find((row) => String(row.characterId ?? row.id) === value);
-            if (!picked)
+            if (busy) {
+                await interaction.deferUpdate();
                 return;
+            }
+            busy = true;
+            ownsLock = true;
             await interaction.deferUpdate();
-            if (getPicker(session) !== pickerToken)
+            if (closed || !isCurrent()) return;
+            const id = interaction.customId;
+            if (id === previousId && page > 0) {
+                page--;
+            } else if (id === nextId && page < pages - 1) {
+                page++;
+            } else if (id === chooseId) {
+                const picked = characterPickerPage(matches, page).find(row => String(row.characterId) === interaction.values?.[0]);
+                if (!picked) return;
+                entry.row = picked;
+                closed = true;
+                collector.stop();
+                void sent.edit({ components: render(true) }).catch(console.error);
+                await finishCharacterSelection(db, session, responderId, entries);
                 return;
-            clearPicker(session);
-            await acceptCharacter(db, session, responderId, picked);
+            } else {
+                return;
+            }
+            await sent.edit({ components: render() });
         }
         catch (error) {
             console.error('Character pick failed:', error);
         }
+        finally { if (ownsLock) busy = false; }
     });
-    return sent;
+    collector?.on('end', () => {
+        if (closed) return;
+        closed = true;
+        void sent.edit({ components: render(true) }).catch(console.error);
+    });
 }
 /**
  * Sends the final yes/no step of a trade or gift.
@@ -187,7 +226,7 @@ async function sendCharacterPicker(db, session, responderId, matches) {
  * @param {TransferSession} session
  */
 async function sendConfirmation(db, session) {
-    if (!session.offer)
+    if (!session.offer.length)
         return null;
     const sent = await runtimeFor(session).channel.send({
         flags: MessageFlags.IsComponentsV2,
@@ -211,6 +250,7 @@ async function sendConfirmation(db, session) {
                 return;
             }
             await interaction.deferUpdate();
+            if (!liveSession(db, session) || session.state !== 'awaiting_confirm' || runtimeFor(session).confirmMessage !== sent) return;
             if (interaction.customId === 'xfer:confirm')
                 await completeTransfer(db, session, sent);
             else if (interaction.customId === 'xfer:cancel')
@@ -232,50 +272,64 @@ async function sendConfirmation(db, session) {
 async function handleCharacterInput(db, session, responderId, query) {
     clearPicker(session);
     const rows = listMarriages(db, session.guildId, responderId, 'rank');
-    const { matches, matchType } = searchCharacters(rows, query);
-    if (!matches.length) {
-        await sendText(session, `No character matching **${escapeMarkdown(query)}** in <@${responderId}>'s harem. Type the character name again.`);
-        return;
-    }
-    const needsTypoAcceptance = matchType === 'fuzzy'
-        && (session.kind === 'give' || session.state === 'awaiting_target');
-    if (matches.length > 1 || needsTypoAcceptance) {
-        await sendCharacterPicker(db, session, responderId, matches);
-        return;
-    }
-    await acceptCharacter(db, session, responderId, matches[0]);
+    const selection = planCharacterSelection(rows, query, {
+        confirmFuzzy: session.kind === 'give' || session.state === 'awaiting_target',
+    });
+    if (selection.status === 'limit') return sendText(session, `Choose up to ${CHARACTER_BATCH_LIMIT} characters. Type the list again.`);
+    if (selection.status === 'empty') return sendText(session, 'A character name is missing before or after `$`. Type the list again.');
+    if (selection.status === 'missing') return sendText(session,
+        `No character matching **${displayCharacterQuery(selection.query)}** in <@${responderId}>'s harem. Type the name or list again.`);
+    setPicker(session, selection.entries);
+    await finishCharacterSelection(db, session, responderId, selection.entries);
+}
+
+/** @param {any} db @param {TransferSession} session @param {string} responderId @param {SelectionEntry[]} entries */
+async function finishCharacterSelection(db, session, responderId, entries) {
+    if (!liveSession(db, session) || getPicker(session) !== entries) return;
+    const selection = characterSelectionProgress(entries);
+    if (selection.status === 'choose') return sendCharacterPicker(db, session, responderId, entries, selection.entry);
+    clearPicker(session);
+    if (selection.status === 'duplicate') return sendText(session,
+        `**${displayCharacterQuery(selection.row.name_full)}** is listed more than once. Type the corrected list.`);
+    await acceptCharacters(db, session, responderId, selection.rows);
 }
 /**
- * Records the picked character and moves the session to its next step.
+ * Records the resolved batch and advances the session.
  * @param {any} db
  * @param {TransferSession} session
  * @param {string} responderId
- * @param {any} row
+ * @param {MarriageRow[]} rows
  */
-async function acceptCharacter(db, session, responderId, row) {
+async function acceptCharacters(db, session, responderId, rows) {
     if (!liveSession(db, session))
         return;
     if ((session.state !== 'awaiting_offer' || responderId !== session.initiatorId)
         && (session.state !== 'awaiting_target' || responderId !== session.recipientId))
         return;
-    const characterId = row.characterId ?? row.id;
-    const name = row.name_full || `Character ${characterId}`;
-    const owned = getOwnedCharacter(db, session.guildId, responderId, characterId);
-    if (!owned) {
-        await sendText(session, `<@${responderId}> does not own **${escapeMarkdown(name)}** anymore.`);
-        return;
-    }
-    if (isCharacterBusy(db, session.guildId, characterId, Date.now(), `trade:${session.id}`)) {
-        await sendText(session, 'That character is committed to another action. Pick another character.');
-        return;
+    const now = Date.now();
+    /** @type {TransferCharacter[]} */
+    const characters = [];
+    for (const row of rows) {
+        const { characterId } = row;
+        const name = row.name_full || `Character ${characterId}`;
+        const owned = getOwnedCharacter(db, session.guildId, responderId, characterId);
+        if (owned?.marriageId !== row.id) return sendText(session,
+            `The marriage for **${displayCharacterQuery(name)}** has changed. Type the name or list again.`);
+        if (session.offer.some(character => character.characterId === characterId)) return sendText(session,
+            `**${displayCharacterQuery(name)}** is already on the other side of the trade. Type the corrected list.`);
+        if (isCharacterBusy(db, session.guildId, characterId, now, `trade:${session.id}`)) return sendText(session,
+            `**${displayCharacterQuery(name)}** is committed to another action. Type the corrected list.`);
+        characters.push({ characterId, name, rank: owned.rank, marriageId: owned.marriageId });
     }
     if (session.state === 'awaiting_offer') {
-        session.offer = { characterId, name, marriageId: owned.marriageId };
+        session.offer = characters;
         armTimer(db, session);
         if (session.kind === 'trade') {
             session.state = 'awaiting_target';
             const recipientRows = listMarriages(db, session.guildId, session.recipientId, 'rank');
-            const notice = `## 📨 <@${session.initiatorId}> wants to trade **${escapeMarkdown(name)}**\n<@${session.recipientId}>, type the name of the character you want to trade for.`;
+            const offer = characters.length === 1 ? ` **${displayCharacterQuery(characters[0].name)}**`
+                : ` these characters\n${characters.map(characterBatchLine).join('\n')}`;
+            const notice = `## 📨 <@${session.initiatorId}> wants to trade${offer}\n<@${session.recipientId}>, type what you want to offer. ${CHARACTER_BATCH_INSTRUCTIONS}`;
             await sendHarem({
                 db,
                 session,
@@ -295,11 +349,7 @@ async function acceptCharacter(db, session, responderId, row) {
         return;
     }
     if (session.state === 'awaiting_target') {
-        if (characterId === session.offer?.characterId) {
-            await sendText(session, 'Pick a different character to trade for.');
-            return;
-        }
-        session.target = { characterId, name, marriageId: owned.marriageId };
+        session.target = characters;
         armTimer(db, session);
         session.state = 'awaiting_confirm';
         await sendConfirmation(db, session);
@@ -308,12 +358,12 @@ async function acceptCharacter(db, session, responderId, row) {
 }
 function describeStatus(status) {
     switch (status) {
-        case 'not_owned': return 'that character is no longer owned by the giver';
-        case 'unknown_character': return 'that character no longer exists';
-        case 'locked': return 'that character is soulbound';
-        case 'escaping': return 'that character is trying to escape';
-        case 'busy': return 'that character is committed to another action';
-        case 'same_owner': return 'both characters belong to the same player';
+        case 'not_owned': return 'the marriage has changed';
+        case 'unknown_character': return 'the marriage no longer exists';
+        case 'locked': return 'the character is soulbound';
+        case 'escaping': return 'the character is trying to escape';
+        case 'busy': return 'the character is committed to another action';
+        case 'same_owner': return 'both sides belong to the same player';
         default: return status;
     }
 }
@@ -327,30 +377,31 @@ async function completeTransfer(db, session, sent) {
     if (!liveSession(db, session) || session.state !== 'awaiting_confirm')
         return;
     endSession(db, session);
-    const offer = session.offer;
-    const target = session.target;
-    if (!offer)
-        return;
-    const result = session.kind === 'trade'
-        ? swapCharacters(db, {
-            guildId: session.guildId,
-            first: { characterId: offer.characterId, ownerId: session.initiatorId, marriageId: offer.marriageId },
-            second: { characterId: target?.characterId ?? offer.characterId, ownerId: session.recipientId, marriageId: target?.marriageId },
-        })
-        : transferCharacter(db, {
-            guildId: session.guildId,
-            characterId: offer.characterId,
-            marriageId: offer.marriageId,
-            fromOwnerId: session.initiatorId,
-            toOwnerId: session.recipientId,
-        });
-    const succeeded = session.kind === 'trade' ? result.status === 'traded' : result.status === 'transferred';
-    const text = succeeded
-        ? (session.kind === 'trade'
-            ? `🤝 <@${session.initiatorId}> and <@${session.recipientId}> traded **${escapeMarkdown(offer.name)}** for **${escapeMarkdown(target?.name ?? '')}**.`
-            : `🎁 <@${session.initiatorId}> gave **${escapeMarkdown(offer.name)}** to <@${session.recipientId}>.`)
-        : `⚠️ The ${session.kind} could not be completed: ${describeStatus(result.status)}. Nothing changed.`;
-    await editResult(sent, text);
+    const { offer, target, kind, guildId, initiatorId, recipientId } = session;
+    const findName = (id) => [...offer, ...target].find(character => character.characterId === id)?.name;
+    const failureMessage = (reason, name) => `⚠️ The ${kind} could not be completed. ${name ? `**${displayCharacterQuery(name)}** — ` : ''}${reason}. Nothing changed.`;
+    let result;
+    try {
+        result = kind === 'trade'
+            ? swapCharacterBatches(db, { guildId,
+                first: { ownerId: initiatorId, characters: offer }, second: { ownerId: recipientId, characters: target },
+            })
+            : transferCharacters(db, { guildId, fromOwnerId: initiatorId, toOwnerId: recipientId, characters: offer });
+    } catch (error) {
+        console.error('Transfer write failed:', error);
+        return editResult(sent, failureMessage('the ownership update failed', findName(error?.characterId)));
+    }
+    if (result.status !== 'traded' && result.status !== 'transferred') return editResult(sent,
+        failureMessage(describeStatus(result.status), result.name || findName(result.characterId)));
+    const initiator = `<@${initiatorId}>`;
+    const recipient = `<@${recipientId}>`;
+    const name = displayCharacterQuery(offer[0].name);
+    if (kind === 'trade' && offer.length === 1 && target.length === 1) return editResult(sent,
+        `🤝 ${initiator} and ${recipient} traded **${name}** for **${displayCharacterQuery(target[0].name)}**.`);
+    if (kind === 'give' && offer.length === 1) return editResult(sent, `🎁 ${initiator} gave **${name}** to ${recipient}.`);
+    const title = kind === 'trade' ? `🤝 ${initiator} and ${recipient} completed the trade.`
+        : `🎁 ${initiator} gave ${offer.length} characters to ${recipient}.`;
+    await editResult(sent, `${title}\n${transferSummary(session)}`);
 }
 /**
  * Ends the session without changing ownership.
@@ -451,8 +502,8 @@ async function beginTransfer(ctx, kind) {
         initiatorId,
         recipientId: targetId,
         state: 'awaiting_offer',
-        offer: null,
-        target: null,
+        offer: [],
+        target: [],
         prefix,
     }, reason => {
         const handles = runtimeFor(session);
@@ -465,8 +516,8 @@ async function beginTransfer(ctx, kind) {
     });
     handlesBySession.set(session, { channel: message.channel, confirmMessage: null, timer: null });
     const notice = kind === 'trade'
-        ? `## 🤝 Trade with <@${targetId}>\n<@${initiatorId}>, type the name of the character you want to offer.`
-        : `## 🎁 Gift for <@${targetId}>\n<@${initiatorId}>, type the name of the character you want to give.`;
+        ? `## 🤝 Trade with <@${targetId}>\n<@${initiatorId}>, type the characters you want to offer. ${CHARACTER_BATCH_INSTRUCTIONS}`
+        : `## 🎁 Gift for <@${targetId}>\n<@${initiatorId}>, type the characters you want to give. ${CHARACTER_BATCH_INSTRUCTIONS}`;
     await sendHarem({
         db,
         session,

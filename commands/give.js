@@ -1,7 +1,7 @@
 import { startGift } from '../lib/tradeRuntime.js';
 
 /**
- * !give @user — hand one of your characters over to another player.
+ * !give @user — offer characters to another player.
  * @param {any} ctx
  */
 export async function run(ctx) {

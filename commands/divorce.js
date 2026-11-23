@@ -1,57 +1,39 @@
 import { getGameConfig } from '../lib/gameConfig.js';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder,
-  escapeMarkdown, MessageFlags, PermissionFlagsBits, StringSelectMenuBuilder,
-  TextDisplayBuilder } from 'discord.js';
-import { divorceCharacter, getMarriage, listMarriages } from '../lib/characterMarriage.js';
-import { findCharacters } from '../lib/gameCharacterLookup.js';
+import { ButtonBuilder, ButtonStyle, ContainerBuilder, MessageFlags, PermissionFlagsBits, TextDisplayBuilder } from 'discord.js';
+import { divorceCharacters, listMarriages } from '../lib/characterMarriage.js';
 import { formatNumber } from '../lib/formatNumber.js';
-
-const PAGE_SIZE = 25;
-
-
-/** @param {import('discord.js').MessageActionRowComponentBuilder[]} components */
-function actionRow(...components) {
-  return /** @type {ActionRowBuilder<import('discord.js').MessageActionRowComponentBuilder>} */ (
-    new ActionRowBuilder().addComponents(components));
-}
+import { CHARACTER_BATCH_LIMIT, characterSelectionProgress, planCharacterSelection } from '../lib/characterBatchSelection.js';
+import { CHARACTER_PICKER_PAGE_SIZE, characterActionRow, characterBatchLine, characterPickerComponents,
+  characterPickerPage, displayCharacterQuery } from '../lib/characterBatchPresentation.js';
 
 function button(id, label, style = ButtonStyle.Secondary, disabled = false) {
   return new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style).setDisabled(disabled);
 }
 
-function pickerComponents(matches, page, disabled = false) {
-  const pages = Math.ceil(matches.length / PAGE_SIZE);
-  const options = matches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((row) => ({
-    label: `#${formatNumber(row.rank)} • ${(row.name_full || `Character ${row.characterId}`).slice(0, 65)} • ID ${row.characterId}`.slice(0, 100),
-    value: String(row.characterId),
-  }));
-  const container = new ContainerBuilder().setAccentColor(0x5865f2)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `## Choose a marriage to end\nPage ${page + 1} of ${pages}`,
-    ))
-    .addActionRowComponents(actionRow(
-      new StringSelectMenuBuilder().setCustomId('divorce:choose')
-        .setPlaceholder('Select a character').setDisabled(disabled).addOptions(options),
-    ));
-  if (pages > 1) {
-    container.addActionRowComponents(actionRow(
-      button('divorce:prev', 'Previous', ButtonStyle.Secondary, disabled || page === 0),
-      button('divorce:next', 'Next', ButtonStyle.Secondary, disabled || page === pages - 1),
-    ));
-  }
-  return [container];
-}
-
-function confirmationComponents(row, disabled = false) {
-  const name = escapeMarkdown(row.name_full || `Character ${row.characterId}`);
+/** @param {import('../lib/characterMarriage.js').MarriageRow[]} rows */
+function confirmationComponents(rows, disabled = false) {
+  const [first] = rows;
+  const text = rows.length === 1
+    ? `## Divorce **${displayCharacterQuery(characterName(first))}**?\n#${formatNumber(first.rank)} • Character ID ${first.characterId} • Owner <@${first.ownerId}>`
+    : `## Divorce ${rows.length} characters?\nOwner <@${first.ownerId}>\n${divorceList(rows)}`;
   return [new ContainerBuilder().setAccentColor(0xed4245)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      `## Divorce **${name}**?\n#${formatNumber(row.rank)} • Character ID ${row.characterId} • Owner <@${row.ownerId}>`,
-    ))
-    .addActionRowComponents(actionRow(
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(text))
+    .addActionRowComponents(characterActionRow(
       button('divorce:confirm', 'Divorce', ButtonStyle.Danger, disabled),
       button('divorce:cancel', 'Cancel', ButtonStyle.Secondary, disabled),
     ))];
+}
+
+function characterName(row) {
+  return row.name_full || `Character ${row.characterId}`;
+}
+
+function divorceList(rows) {
+  return rows.map(row => characterBatchLine({ name: characterName(row), rank: row.rank })).join('\n');
+}
+
+function duplicateMessage(row) {
+  return `**${displayCharacterQuery(characterName(row))}** is listed more than once. Run the command with a corrected list.`;
 }
 
 function resultComponents(message) {
@@ -78,34 +60,55 @@ export async function run(ctx) {
   }
   const query = words.join(' ').trim();
   if (!query) {
-    await ctx.message.reply(`Usage: ${ctx.prefix}divorce [@user or user ID] <character name>`);
+    await ctx.message.reply(`Usage: ${ctx.prefix}divorce [@user or user ID] <name or #rank> [$ <name or #rank> ...]. Choose up to ${CHARACTER_BATCH_LIMIT} characters.`);
     return;
   }
 
-  const marriages = listMarriages(ctx.yoshiko.catalogDb, guildId, targetId, 'rank');
-  const matches = query.length === 1
-    ? marriages.filter((row) => row.name_full?.normalize('NFKC').toLocaleLowerCase('en-US')
-      === query.normalize('NFKC').toLocaleLowerCase('en-US'))
-    : findCharacters(marriages, query);
-  if (!matches.length) {
-    await ctx.message.reply('No matching married character found for that user in this server.');
-    return;
-  }
+  const db = ctx.yoshiko.catalogDb;
+  const marriages = listMarriages(db, guildId, targetId, 'rank');
+  const plan = planCharacterSelection(marriages, query, { exactSingleCharacter: true });
+  if (plan.status === 'limit') return ctx.message.reply(`Choose up to ${CHARACTER_BATCH_LIMIT} characters.`);
+  if (plan.status === 'empty') return ctx.message.reply('A character name is missing before or after `$`. Run the command with a corrected list.');
+  if (plan.status === 'missing') return ctx.message.reply({
+    content: `No matching married character found for **${displayCharacterQuery(plan.query)}**. Run the command with a corrected name or list.`,
+    allowedMentions: { parse: [] },
+  });
 
+  const { entries } = plan;
+  let selection = characterSelectionProgress(entries);
+  if (selection.status === 'duplicate') return ctx.message.reply({ content: duplicateMessage(selection.row), allowedMentions: { parse: [] } });
   let page = 0;
-  let selected = matches.length === 1 ? matches[0] : null;
+  let step = 0;
   let expired = false;
   let finished = false;
   let busy = false;
+  function pickerId(action) {
+    return entries.length === 1 ? `divorce:${action}` : `divorce:${action}:${step}`;
+  }
+  function render(disabled = false) {
+    if (selection.status === 'ready') return confirmationComponents(selection.rows, disabled);
+    if (selection.status === 'duplicate') return resultComponents(duplicateMessage(selection.row));
+    const { entry } = selection;
+    return characterPickerComponents({ matches: entry.matches, page, disabled,
+      title: 'Choose a marriage to end', detail: `Pick the character you meant by **${displayCharacterQuery(entry.query)}**.`,
+      chooseId: pickerId('choose'), previousId: pickerId('prev'), nextId: pickerId('next'),
+    });
+  }
   const reply = await ctx.message.reply({
     flags: MessageFlags.IsComponentsV2,
-    components: selected ? confirmationComponents(selected) : pickerComponents(matches, page),
+    components: render(),
     allowedMentions: { parse: [] },
   });
   if (!reply?.createMessageComponentCollector) return;
-  const controlLifetime = getGameConfig(ctx.yoshiko.catalogDb, ctx.message.guildId).controls.lifetimeMs;
+  const controlLifetime = getGameConfig(db, guildId).controls.lifetimeMs;
   const collector = reply.createMessageComponentCollector({ time: controlLifetime });
+  async function finish(message) {
+    finished = true;
+    collector.stop();
+    await reply.edit({ components: resultComponents(message), allowedMentions: { parse: [] } });
+  }
   collector.on('collect', async (interaction) => {
+    let ownsLock = false;
     try {
       if (interaction.user.id !== actorId || interaction.guildId !== guildId) {
         await interaction.reply({ content: 'Only the command user can decide this divorce.', flags: MessageFlags.Ephemeral });
@@ -116,37 +119,56 @@ export async function run(ctx) {
         return;
       }
       busy = true;
+      ownsLock = true;
       await interaction.deferUpdate();
+      if (expired || finished) return;
       const id = interaction.customId;
-      if (id === 'divorce:choose' && !selected) {
-        const choice = matches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-          .find((row) => String(row.characterId) === interaction.values?.[0]);
-        if (choice) {
-          selected = choice;
-          await reply.edit({ components: confirmationComponents(choice) });
+      if (selection.status === 'choose') {
+        const { entry } = selection;
+        if (id === pickerId('choose')) {
+          const choice = characterPickerPage(entry.matches, page).find(row => String(row.characterId) === interaction.values?.[0]);
+          if (!choice) return;
+          entry.row = choice;
+          selection = characterSelectionProgress(entries);
+          page = 0;
+          step++;
+          if (selection.status === 'duplicate') return await finish(duplicateMessage(selection.row));
+        } else if (id === pickerId('prev') && page > 0) {
+          page--;
+        } else if (id === pickerId('next') && (page + 1) * CHARACTER_PICKER_PAGE_SIZE < entry.matches.length) {
+          page++;
+        } else {
+          return;
         }
-      } else if (id === 'divorce:prev' && !selected && page > 0) {
-        page--;
-        await reply.edit({ components: pickerComponents(matches, page) });
-      } else if (id === 'divorce:next' && !selected && (page + 1) * PAGE_SIZE < matches.length) {
-        page++;
-        await reply.edit({ components: pickerComponents(matches, page) });
-      } else if (id === 'divorce:cancel' && selected) {
-        finished = true;
-        await reply.edit({ components: resultComponents('Divorce cancelled.') });
-        collector.stop();
-      } else if (id === 'divorce:confirm' && selected) {
-        const stillAdmin = targetId === actorId || isAdministrator(interaction.memberPermissions);
-        const current = getMarriage(ctx.yoshiko.catalogDb, guildId, selected.characterId);
-        const canDivorce = stillAdmin && current?.id === selected.id && current.ownerId === targetId;
-        const divorced = canDivorce && divorceCharacter(ctx.yoshiko.catalogDb,
-          guildId, selected.characterId, targetId, selected.id, Date.now());
-        finished = true;
-        await reply.edit({ components: resultComponents(divorced
-          ? `Divorced **${escapeMarkdown(selected.name_full)}**.`
-          : 'Marriage or permission changed. Nothing was divorced.') });
-        collector.stop();
+        await reply.edit({ components: render() });
+        return;
       }
+      if (selection.status !== 'ready') return;
+      if (id === 'divorce:cancel') return await finish('Divorce cancelled.');
+      if (id !== 'divorce:confirm') return;
+      if (targetId !== actorId && !isAdministrator(interaction.memberPermissions)) {
+        return await finish('Administrator permission changed. Nothing was divorced.');
+      }
+      const selected = selection.rows;
+      const findName = (characterId) => {
+        const row = selected.find(row => row.characterId === characterId);
+        return row ? `**${displayCharacterQuery(characterName(row))}** — ` : '';
+      };
+      let result;
+      try {
+        result = divorceCharacters(db, { guildId, ownerId: targetId,
+          characters: selected.map(row => ({ characterId: row.characterId, marriageId: row.id })),
+        });
+      } catch (error) {
+        console.error('Divorce write failed:', error);
+        return await finish(`${findName(error?.characterId)}the ownership update failed. Nothing was divorced.`);
+      }
+      if (result.status !== 'divorced') {
+        const reason = result.status === 'stale' ? 'the marriage has changed' : 'the character is committed to another action';
+        return await finish(`${findName(result.characterId)}${reason}. Nothing was divorced.`);
+      }
+      await finish(selected.length === 1 ? `Divorced **${displayCharacterQuery(characterName(selected[0]))}**.`
+        : `Divorced ${selected.length} characters.\n${divorceList(selected)}`);
     } catch (error) {
       console.error('Divorce interaction failed:', error);
       if (interaction.replied || interaction.deferred) {
@@ -154,12 +176,11 @@ export async function run(ctx) {
           .catch(console.error);
       }
     } finally {
-      busy = false;
+      if (ownsLock) busy = false;
     }
   });
   collector.on('end', () => {
     expired = true;
-    if (!finished) reply.edit({ components: selected
-      ? confirmationComponents(selected, true) : pickerComponents(matches, page, true) }).catch(console.error);
+    if (!finished) reply.edit({ components: render(true) }).catch(console.error);
   });
 }
