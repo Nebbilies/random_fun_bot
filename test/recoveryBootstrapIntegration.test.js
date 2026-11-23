@@ -12,7 +12,7 @@ test('real ClientReady startup keeps ingress closed until recovery and search pr
     runSync: (name, work) => { order.push(name); return work(); }, finish: stats => order.push(stats) };
   let ready = false;
   const work = prepareGameRuntime({ startup, yoshiko: {}, recoveryOperations: {},
-    catalogCache: { get() { order.push('cache-built'); } },
+    catalogCache: { get() { order.push('cache-built'); }, warmRollPools() { order.push('roll-pools-built'); } },
     runRecovery: () => recovery.promise, finishDiscordLogin: () => order.push('discord-ready'),
     setReady: () => { ready = true; } });
   await new Promise(resolve => setImmediate(resolve));
@@ -21,7 +21,8 @@ test('real ClientReady startup keeps ingress closed until recovery and search pr
   recovery.resolve({ candidates: 10 });
   await work;
   assert.equal(ready, true);
-  assert.deepEqual(order, ['discord-ready', 'post-client-ready', 'search-cache', 'cache-built', { candidates: 10 }]);
+  assert.deepEqual(order, ['discord-ready', 'post-client-ready', 'search-cache', 'cache-built', 'roll-pools-built',
+    { candidates: 10 }]);
 });
 
 test('real periodic callback does not overlap and releases its guard after failure', async t => {
