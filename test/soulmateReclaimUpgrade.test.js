@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Worker } from 'node:worker_threads';
 import { createFinalCatalog, openFinalCatalog, openFinalCatalogReadOnly } from '../lib/catalogDb.js';
+import { isPreSoulmateReclaimCatalogSchema } from '../lib/catalogFinalSchema.js';
 import { upgradeFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
 
 const previousAwards = readFileSync(new URL('./fixtures/preSoulmateReclaimAwards.sql', import.meta.url), 'utf8');
@@ -14,8 +15,9 @@ function previousCatalog(t) {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, 'catalog.sqlite');
   const db = createFinalCatalog(path);
-  db.exec('DROP TABLE affection_awards');
+  db.exec('DROP INDEX characters_by_main_franchise; ALTER TABLE characters DROP COLUMN main_franchise_id; DROP TABLE affection_awards;');
   db.exec(previousAwards);
+  assert.equal(isPreSoulmateReclaimCatalogSchema(db), true);
   db.prepare('INSERT INTO character_identities(id) VALUES(?)').run(character);
   db.prepare("INSERT INTO character_affection VALUES('1','101',?,100,0)").run(character);
   db.prepare("INSERT INTO affection_awards(rowid,source_key,guild_id,user_id,character_id,base,amount,total,milestones_json,created_at) VALUES(17,'old','1','101',?,100,100,100,'[]',0)").run(character);
