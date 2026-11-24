@@ -3,6 +3,7 @@ import { onMysteryButton } from "../../lib/mysteryRuntime.js";
 import { onVaultInteraction } from "../../lib/vaultRuntime.js";
 import { onItemActionInteraction } from "../../lib/itemActionRuntime.js";
 import { onInventoryButton } from "../../commands/inv.js";
+import { claimedCollectorInteractions } from './collectorInteractions.js';
 /** @param {any} options */
 export function createInteractionHandler({ yoshiko, isReady, schedule = setTimeout }) {
     return async function onInteraction(interaction) {
@@ -17,7 +18,7 @@ export function createInteractionHandler({ yoshiko, isReady, schedule = setTimeo
         // after restart/cutover provide an explicit expired response, never replay.
         if (/^(?:char|wish|divorce|xfer|affection|soulmate|profile):/.test(interaction.customId ?? '')) {
             const timer = schedule(() => {
-                if (!interaction.replied && !interaction.deferred)
+                if (!claimedCollectorInteractions.has(interaction) && !interaction.replied && !interaction.deferred)
                     interaction.reply({ content: 'This character-game dialog expired. Run the command again.', ephemeral: true }).catch(console.error);
             }, 500);
             timer.unref();

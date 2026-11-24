@@ -8,7 +8,11 @@ import { captureAppearanceInTransaction, completeAppearanceInTransaction,
 import { getInventory } from '../lib/itemStorage.js';
 import { applySeasonRollover } from '../features/seasons/seasonRollover.js';
 import { pruneSeasonReceipts } from '../features/seasons/seasonPruning.js';
-import { getVaultReward } from '../lib/vaultRewards.js';
+import { getVaultReward, revealVaultReward } from '../lib/vaultRewards.js';
+import { drawVaultSessionOutcome, reservePaidVaultSession } from '../lib/vaultSessions.js';
+import { inspectCatalogRuntimeRestart } from '../lib/catalogRuntimeRecovery.js';
+import { addGlobalRolls, rollPeriod } from '../features/rolls/rollAllowanceService.js';
+import { cleanupExpiredItems } from '../lib/itemExpiryCleanup.js';
 
 const a = '12345678-1234-4123-8123-123456789abc';
 const b = '12345678-1234-4123-8123-123456789abd';
@@ -32,6 +36,7 @@ test('rollover archives the closing collection, keeps an eligible soulmate, and 
   db.prepare("INSERT INTO character_wishes VALUES ('10','101',?,?)").run(b,moment-1000);
   db.prepare(`INSERT INTO vault_rewards(vault_id,guild_id,user_id,channel_id,original_json,state,created_at)
     VALUES ('old-reward','10','101','90','{}','overflow',?)`).run(moment-1000);
+  const savedVault = reservePaidVaultSession(db,{guildId:'10',userId:'101',channelId:'90',vaultId:'old-session',now:moment-1000});
   const sourceKey = 'roll:10:123';
   db.exec('BEGIN IMMEDIATE');
   captureAppearanceInTransaction(db,{sourceKey,guildId:'10',channelId:'90',userId:'101',characterId:a,now:moment-1000,random:() => 0});
@@ -55,6 +60,8 @@ test('rollover archives the closing collection, keeps an eligible soulmate, and 
   assert.equal(getAffectionTotal(db,'10','101',a), 153);
   assert.equal(getInventory(db,'10','101',moment).length, 1);
   assert.equal(getVaultReward(db,'old-reward'),null);
+  assert.equal(revealVaultReward(db,{vaultId:'old-session',guildId:'10',userId:'101',channelId:'90',
+    now:moment+1,outcome:drawVaultSessionOutcome(savedVault,() => 0.5)}),null);
   assert.equal(db.prepare("SELECT count(*) AS n FROM marriages WHERE guild_id='10'").get().n, 1);
   assert.equal(db.prepare("SELECT count(*) AS n FROM character_ownership_losses WHERE guild_id='10'").get().n, 0);
   assert.equal(db.prepare("SELECT count(*) AS n FROM character_wishes WHERE guild_id='10'").get().n, 0);
@@ -63,10 +70,18 @@ test('rollover archives the closing collection, keeps an eligible soulmate, and 
     .map(({ user_id, summary_json }) => [user_id, JSON.parse(summary_json)]);
   assert.deepEqual(profiles.map(([player, card]) => [player, card.characterCount, card.serverRank, card.soulmate.affection]),
     [['101',1,1,1537],['102',1,null,1537]]);
+  const { vault_id: rewardId } = db.prepare("SELECT vault_id FROM vault_rewards WHERE guild_id='10' AND vault_id<>'old-reward'").get();
+  db.prepare('UPDATE vault_rewards SET rowid=rowid+100 WHERE vault_id=?').run(rewardId);
+  db.exec('VACUUM');
+  assert.equal(getVaultReward(db,rewardId)?.state,'delivered');
   assert.ok(pruneSeasonReceipts(db,{now:moment+1}) > 0);
   assert.equal(db.prepare("SELECT count(*) AS n FROM vault_rewards WHERE vault_id='old-reward'").get().n,0);
   assert.equal(db.prepare("SELECT count(*) AS n FROM vault_rewards WHERE guild_id='10'").get().n,1);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+  db.exec(`INSERT INTO season_rollovers
+    (guild_id,season,revision,phase,channel_id,reminder_at,cutoff_at,requester)
+    VALUES ('10',1,1,'announced','90',1,2,'admin')`);
+  assert.equal(inspectCatalogRuntimeRestart(db).ready,true);
 });
 
 test('the announced season permits one otherwise blocked soulmate switch', t => {
@@ -98,4 +113,29 @@ test('gameplay writes stop at the cutoff for only the closing guild', t => {
     VALUES ('10',1,1,'announced','90',1,2,'admin')`);
   assert.throws(() => db.exec("UPDATE roll_allowances SET used=2 WHERE guild_id='10'"), /next season is starting/i);
   assert.doesNotThrow(() => db.exec("UPDATE roll_allowances SET used=2 WHERE guild_id='20'"));
+});
+
+test('global rolls read time under the lock and expiry uses its supplied cutoff time', t => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  installEmptyFinalCatalog(db);
+  installSeasonSchema(db);
+  for (const guildId of ['10','20']) {
+    db.prepare("INSERT INTO roll_allowances VALUES (?,?,?,3)").run(guildId,'101',rollPeriod(db,guildId,moment));
+    db.prepare(`INSERT INTO user_inventory(guild_id,user_id,item_id,charges,acquired_at,expires_at)
+      VALUES (?,'101','double_date',1,'date',?)`).run(guildId,moment-1);
+  }
+  db.prepare(`INSERT INTO season_rollovers
+    (guild_id,season,revision,phase,channel_id,reminder_at,cutoff_at,requester)
+    VALUES ('10',1,1,'announced','90',?,?,'admin')`).run(moment-1000,moment);
+  let now = moment-1;
+  t.mock.method(Date,'now',() => now);
+  const connection = {
+    prepare:sql => db.prepare(sql),
+    exec(sql) { db.exec(sql); if (sql === 'BEGIN IMMEDIATE') now=moment; },
+  };
+  assert.deepEqual(addGlobalRolls(connection,1),{updated:1,skippedGuilds:['10']});
+  now = moment-1;
+  assert.equal(cleanupExpiredItems(db,{now:moment}),1);
+  assert.deepEqual(db.prepare('SELECT guild_id FROM user_inventory').all().map(row => row.guild_id),['10']);
 });

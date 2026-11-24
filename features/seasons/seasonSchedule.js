@@ -7,7 +7,7 @@ const day = 86_400_000;
 const defaults = { target_days: 30, revision: 0, channel_id: null, channel_checked_at: null, channel_error: null };
 const conflict = message => Object.assign(new Error(message), { code: 'SEASON_STALE' });
 
-export function getSeasonStatus(db, guildId) {
+export function getSeasonStatus(db, guildId, now = Date.now()) {
   const active = currentSeason(db,guildId);
   if (!active) throw new Error('Season controls require the final game catalog.');
   const settings = db.prepare('SELECT * FROM guild_season_settings WHERE guild_id=?').get(guildId) ?? defaults;
@@ -18,7 +18,8 @@ export function getSeasonStatus(db, guildId) {
     FROM season_messages WHERE guild_id=? AND season=? AND revision=(
       SELECT revision FROM season_rollovers WHERE guild_id=? AND season=?)
     GROUP BY kind,state ORDER BY kind,state`).all(guildId,deliverySeason,guildId,deliverySeason);
-  return { guildId, current: active, settings, rollover, lastRollover: lastRollover ?? null, deliveries,
+  const canAbandonReminder = rollover?.phase === 'posting' && rollover.cutoff_at <= now;
+  return { guildId, current: active, settings, rollover, lastRollover: lastRollover ?? null, deliveries, canAbandonReminder,
     targetAt: active.startedAt == null ? null : active.startedAt + Number(settings.target_days) * day };
 }
 
@@ -68,11 +69,18 @@ export function queueRollover(db, { guildId, requester, preview, now = Date.now(
   });
 }
 
-export function cancelRollover(db, {guildId, revision}) {
+export function cancelRollover(db, {guildId, revision, abandonUnconfirmed = false, requester = '', now = Date.now()}) {
   return transaction(db, () => {
-    const { current, rollover } = getSeasonStatus(db,guildId);
-    if (rollover?.revision !== revision || rollover.phase !== 'queued') throw conflict('Only a queued reminder can be canceled.');
-    db.prepare("UPDATE season_rollovers SET phase='canceled' WHERE guild_id=? AND season=?").run(guildId,current.season);
+    const { current, rollover, canAbandonReminder } = getSeasonStatus(db,guildId,now);
+    if (!rollover || rollover.revision !== revision || (abandonUnconfirmed ? !canAbandonReminder : rollover.phase !== 'queued')) {
+      throw conflict('Only a queued reminder or an overdue unconfirmed reminder can be canceled.');
+    }
+    if (abandonUnconfirmed) {
+      db.prepare("UPDATE season_rollovers SET phase='canceled',revision=revision+1,last_error=? WHERE guild_id=? AND season=?")
+        .run(`Unconfirmed reminder abandoned by ${requester}. Current season resumed.`,guildId,current.season);
+    } else {
+      db.prepare("UPDATE season_rollovers SET phase='canceled' WHERE guild_id=? AND season=?").run(guildId,current.season);
+    }
     return getSeasonStatus(db,guildId).rollover;
   });
 }

@@ -52,14 +52,18 @@ export function rollCapacity(db, guildId, userId, now) {
   return (buff ? Math.floor(base * (buffRules(buff).allowanceMultiplier ?? 2)) : base) + bonus;
 }
 
-export function addGlobalRolls(db, amount, now = Date.now()) {
-  if (!Number.isSafeInteger(amount) || amount < 1 || !validNow(now)) throw new Error('Invalid roll amount');
+/** @param {any} db @param {unknown} amount @param {number} [now] */
+export function addGlobalRolls(db, amount, now) {
+  if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount < 1 || (now !== undefined && !validNow(now))) {
+    throw new Error('Invalid roll amount');
+  }
   return transaction(db, () => {
-    const skippedGuilds = guildsAtCutoff(db,now);
+    const time = now ?? Date.now();
+    const skippedGuilds = guildsAtCutoff(db,time);
     const updated = updateUsedRollAllowances(db, row => {
       if (skippedGuilds.includes(row.guild_id)) return null;
-      if (row.period !== rollPeriod(db, row.guild_id, now)) return null;
-      return Math.max(0, Math.min(row.used, rollCapacity(db, row.guild_id, row.user_id, now)) - amount);
+      if (row.period !== rollPeriod(db, row.guild_id, time)) return null;
+      return Math.max(0, Math.min(row.used, rollCapacity(db, row.guild_id, row.user_id, time)) - amount);
     });
     return skippedGuilds.length ? { updated, skippedGuilds } : { updated };
   });

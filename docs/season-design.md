@@ -28,6 +28,8 @@ For storage, use the existing guild-scoped live tables, a persisted season numbe
 
 If the reminder cannot be posted at its scheduled window, move the unannounced rollover to a later claim window so players get the intended notice. Persist delivery and Discord message identifiers so retries and process restarts resume the same work. If a send has an uncertain result, resolve that attempt before posting a different cutoff. The SQLite rollover itself is idempotent. Discord retries use stable delivery identifiers and record confirmed messages to limit duplicate posts. [Claim boundary calculation](../features/rolls/rollAllowanceService.js#L25) · [Schedule activation](../lib/gameConfig.js#L185)
 
+When the cutoff passes with delivery still unconfirmed, a portal administrator can explicitly abandon that attempt to resume the current season. The portal explains that players may have seen the reminder. An administrator can then schedule a fresh reminder. A confirmed reminder keeps its announced cutoff.
+
 ### Work around the deadline
 
 | Time | Work |

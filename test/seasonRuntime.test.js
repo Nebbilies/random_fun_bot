@@ -5,6 +5,7 @@ import { installEmptyFinalCatalog } from '../lib/catalogFinalSchema.js';
 import { installSeasonSchema } from '../lib/seasonSchema.js';
 import { getSeasonStatus, previewRollover, queueRollover, saveSeasonSettings } from '../features/seasons/seasonSchedule.js';
 import { runSeasonWork } from '../features/seasons/seasonRuntime.js';
+import { addSeasonMessage } from '../features/seasons/seasonStore.js';
 
 function fixture(t) {
   const db = new DatabaseSync(':memory:');
@@ -84,4 +85,39 @@ test('a restart reconciles an ambiguous reminder send without changing its publi
   assert.equal(rollover.phase,'announced');
   assert.equal(rollover.cutoff_at,preview.cutoffAt);
   assert.equal(messages.filter(message => message.content.includes('Choose the soulmate')).length,1);
+});
+
+test('inaccessible ping batches yield to other guilds and expire at cutoff', async t => {
+  const db = fixture(t);
+  let now = Date.now();
+  const cutoff = now + 1000;
+  db.exec("UPDATE guild_season_settings SET channel_checked_at=1; INSERT INTO roll_allowances VALUES('20','201',123,1)");
+  const schedule = db.prepare(`INSERT INTO season_rollovers
+    (guild_id,season,revision,phase,channel_id,reminder_at,cutoff_at,requester,announced_at)
+    VALUES (?,1,1,'announced',?,?,?,?,?)`);
+  const rollover = db.prepare('SELECT * FROM season_rollovers WHERE guild_id=?');
+  schedule.run('10','90',now-2,cutoff,'admin',now-2);
+  schedule.run('20','91',now-1,cutoff+10_000,'admin',now-1);
+  for(let part=0;part<24;part++) addSeasonMessage(db,rollover.get('10'),'ping',{part,users:['101']});
+  addSeasonMessage(db,rollover.get('20'),'ping',{users:['201']});
+  const messages = [];
+  let unreachable = true;
+  const client = {guilds:{fetch:async guildId => ({
+    channels:{fetch:async () => {
+      if (guildId === '10' && unreachable) throw new Error('Unknown channel');
+      return {guildId,isTextBased:() => true,permissionsFor:() => ({has:() => true}),
+        async send(message) { messages.push({guildId,...message}); return {id:String(messages.length)}; }};
+    }},
+    members:{me:{id:'99'},fetch:async () => new Map()},
+  })}};
+  const run = () => runSeasonWork({db,client,now:() => now});
+  await run();
+  assert.deepEqual(messages,[]);
+  await run();
+  assert.deepEqual(messages[0].allowedMentions.users,['201']);
+  unreachable = false;
+  now = cutoff + 6000;
+  await run();
+  assert.equal(messages.length,2);
+  assert.match(messages[1].content,/Season 2 has started/);
 });

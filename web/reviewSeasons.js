@@ -32,7 +32,8 @@ export async function handleSeasonRequest({db,request,response,url,origin,json,r
     }
     if (action === 'settings') saveSeasonSettings(db,{guildId,channelId:body.channelId,targetDays:body.targetDays,revision:body.revision});
     if (action === 'confirm') queueRollover(db,{guildId,requester:request.portalAccount.username,preview:body.preview});
-    if (action === 'cancel') cancelRollover(db,{guildId,revision:body.revision});
+    if (action === 'cancel') cancelRollover(db,{guildId,revision:body.revision,
+      abandonUnconfirmed:body.abandonUnconfirmed === true,requester:request.portalAccount.username});
     json(response,200,getSeasonStatus(db,guildId));
   } catch (error) {
     json(response,error.code === 'SEASON_STALE' ? 409 : 400,{error:error.message});

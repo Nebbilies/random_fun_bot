@@ -118,7 +118,7 @@ async function getSeason(action, guildId) {
 function showSeason(result) {
   if (seasonGuild.value.trim() !== result.guildId) return;
   loadedSeason = result;
-  const {current,settings,rollover,lastRollover,targetAt,deliveries} = result;
+  const {current,settings,rollover,lastRollover,targetAt,deliveries,canAbandonReminder} = result;
   seasonSettings.hidden = false;
   seasonChannel.value = settings.channel_id ?? '';
   seasonDays.value = settings.target_days;
@@ -132,7 +132,8 @@ function showSeason(result) {
   if (lastRollover) details.push(`Last rollover ${date(lastRollover.completed_at)}`);
   for (const {kind,state,count,error} of deliveries) details.push(`${count} ${kind} ${state}${error ? `: ${error}` : ''}`);
   seasonDetails.textContent = details.join(' · ');
-  seasonCancel.hidden = rollover?.phase !== 'queued';
+  seasonCancel.hidden = rollover?.phase !== 'queued' && !canAbandonReminder;
+  seasonCancel.textContent = canAbandonReminder ? 'Abandon unconfirmed reminder' : 'Cancel reminder';
   seasonPreview.disabled = !settings.channel_checked_at || Boolean(settings.channel_error)
     || Boolean(rollover && ['queued','posting','announced'].includes(rollover.phase));
 }
@@ -166,8 +167,10 @@ seasonPreview.addEventListener('click', async () => {
 });
 seasonCancel.addEventListener('click', async () => {
   if (!loadedSeason?.rollover) return;
+  const abandonUnconfirmed = loadedSeason.canAbandonReminder;
+  if (abandonUnconfirmed && !window.confirm('Discord may have posted this reminder. Abandon the rollover and resume the current season? If players saw the reminder, let them know the cutoff was canceled.')) return;
   try {
-    showSeason(await apply('/api/game/seasons/cancel',{guildId:loadedSeason.guildId,revision:loadedSeason.rollover.revision},
-      'Queued reminder canceled.',seasonStatus));
+    showSeason(await apply('/api/game/seasons/cancel',{guildId:loadedSeason.guildId,revision:loadedSeason.rollover.revision,abandonUnconfirmed},
+      abandonUnconfirmed ? 'Unconfirmed reminder abandoned. The current season has resumed.' : 'Queued reminder canceled.',seasonStatus));
   } catch { /* apply displays the error. */ }
 });

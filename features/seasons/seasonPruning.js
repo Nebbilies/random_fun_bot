@@ -1,5 +1,5 @@
 import { transaction } from '../../lib/catalogDb.js';
-import { SEASON_RECEIPT_TABLES, hasSeasonSchema } from '../../lib/seasonSchema.js';
+import { SEASON_RECEIPT_TABLES, hasSeasonSchema, seasonReceiptKey } from '../../lib/seasonSchema.js';
 import { inspectLegacyVaultAbandonment } from '../../lib/legacyVaultAbandonment.js';
 import { seasonCutoffReached } from './seasonStore.js';
 
@@ -56,7 +56,7 @@ export function pruneSeasonReceipts(db, {limit=200,now=Date.now()} = {}) {
         const exclusions = table === 'character_rolls' && abandoned.length
           ? `AND p.id NOT IN (SELECT value FROM json_each('${JSON.stringify(abandoned)}'))` : '';
         const select = `SELECT p.rowid AS recordRowId FROM ${table} p
-          LEFT JOIN season_receipts r ON r.kind='${table}' AND r.record_rowid=p.rowid
+          LEFT JOIN season_receipts r ON r.kind='${table}' AND r.record_key=${seasonReceiptKey(table,'p')}
           WHERE p.guild_id=? AND COALESCE(r.season,0)=? ${exclusions}
           ORDER BY p.rowid LIMIT ?`;
         const ids = db.prepare(select).all(guildId,season,limit-changes).map(row => row.recordRowId);

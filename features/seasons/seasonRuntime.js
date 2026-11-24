@@ -82,13 +82,14 @@ async function findSentMessage(channel, client, message) {
 
 function finishMessage(db, rollover, message, id, now) {
   transaction(db, () => {
-    db.prepare(`UPDATE season_messages SET state='sent',message_id=?,search_before=NULL,last_error=NULL WHERE ${whereMessage}`).run(id,...key(message));
+    db.prepare(`UPDATE season_messages SET state='sent',message_id=?,search_before=NULL,retry_at=NULL,last_error=NULL WHERE ${whereMessage}`).run(id,...key(message));
     if (message.kind === 'reminder') db.prepare(`UPDATE season_rollovers SET phase='announced',announced_at=?,last_error=NULL
       WHERE guild_id=? AND season=? AND revision=? AND phase='posting'`).run(now,rollover.guild_id,rollover.season,rollover.revision);
   });
 }
 
 async function deliver(db, client, rollover, message, channel, now, prefix) {
+  if (message.kind === 'ping' && now() >= rollover.cutoff_at) return;
   if (message.state === 'sending') {
     if (now()-Number(message.attempted_at) < retryDelay) return;
     try {
@@ -105,14 +106,17 @@ async function deliver(db, client, rollover, message, channel, now, prefix) {
       }
       db.prepare(`UPDATE season_messages SET state='pending' WHERE ${whereMessage} AND state='sending'`).run(...key(message));
     } catch (error) {
-      db.prepare(`UPDATE season_messages SET last_error=? WHERE ${whereMessage}`).run(reason(error),...key(message));
+      db.prepare(`UPDATE season_messages SET last_error=?,retry_at=? WHERE ${whereMessage}`).run(reason(error),now()+retryDelay,...key(message));
       return;
     }
   }
 
   const content = message.content ?? announcement(db,rollover,message,prefix);
-  const claims = db.prepare(`UPDATE season_messages SET state='sending',content=?,attempted_at=?,search_before=NULL
-    WHERE ${whereMessage} AND state='pending'`).run(content,now(),...key(message));
+  if (message.kind === 'ping' && now() >= rollover.cutoff_at) return;
+  const claims = db.prepare(`UPDATE season_messages SET state='sending',content=?,attempted_at=?,search_before=NULL,retry_at=NULL
+    WHERE ${whereMessage} AND state='pending' AND EXISTS (
+      SELECT 1 FROM season_rollovers r WHERE r.guild_id=season_messages.guild_id AND r.season=season_messages.season
+      AND r.revision=season_messages.revision AND r.phase<>'canceled')`).run(content,now(),...key(message));
   if (!claims.changes) return;
   try {
     const posted = await channel.send({content,nonce:message.nonce,enforceNonce:true,
@@ -154,12 +158,15 @@ async function startReminder(db, client, rollover, now) {
 
 async function sendPending(db,client,now,prefix,reminders) {
   const eligible = reminders ? "m.kind='reminder' AND r.phase='posting'"
-    : "((m.kind='ping' AND r.phase IN ('announced','applied')) OR (m.kind='start' AND r.phase='applied'))";
+    : "((m.kind='ping' AND r.phase='announced' AND r.cutoff_at>?) OR (m.kind='start' AND r.phase='applied'))";
+  const time = now();
   const messages = db.prepare(`SELECT m.* FROM season_messages m JOIN season_rollovers r USING(guild_id,season,revision)
-    WHERE m.state<>'sent' AND ${eligible}
-    ORDER BY COALESCE(m.attempted_at,0),m.kind DESC,r.reminder_at,m.part LIMIT 24`).all();
+    WHERE m.state<>'sent' AND COALESCE(m.retry_at,0)<=? AND ${eligible}
+    ORDER BY COALESCE(m.retry_at,m.attempted_at,0),m.kind DESC,r.reminder_at,m.part LIMIT 24`)
+    .all(time,...(reminders ? [] : [time]));
   for (const message of messages) {
     const rollover = db.prepare('SELECT * FROM season_rollovers WHERE guild_id=? AND season=?').get(message.guild_id,message.season);
+    if (rollover?.revision !== message.revision) continue;
     if (message.kind === 'reminder' && message.state === 'pending'
       && (now()-Number(rollover.reminder_at)>lookback || now()>=rollover.cutoff_at)) {
       deferReminder(db,rollover,now(),'The scheduled reminder window was missed.');
@@ -169,7 +176,8 @@ async function sendPending(db,client,now,prefix,reminders) {
       const {channel} = await guildAndChannel(client,message.guild_id,message.channel_id);
       await deliver(db,client,rollover,message,channel,now,prefix);
     } catch (error) {
-      db.prepare(`UPDATE season_messages SET last_error=? WHERE ${whereMessage}`).run(reason(error),...key(message));
+      db.prepare(`UPDATE season_messages SET last_error=?,retry_at=? WHERE ${whereMessage}`)
+        .run(reason(error),now()+retryDelay,...key(message));
       if (message.kind === 'reminder' && message.state === 'pending') deferReminder(db,rollover,now(),reason(error));
     }
   }

@@ -62,6 +62,10 @@ The final local rehearsal used a 386 MiB synthetic WAL database with 1,328 marri
 
 Pruning used batches of 200 records and deferred 38 attempts while another writer held the database. It reclaimed about 385 MiB of reusable SQLite pages. These measurements reflect the synthetic data and local load. The Discord rollout tests used fake transport.
 
+### Rollback boundary
+
+The first writable startup installs the Season schema. Old binaries validate an exact schema and need a compatible database to restart, even before the first rollover. Coordinate bot and portal startup and keep a consistent pre-upgrade database backup for any binary rollback. A completed guild rollover archives the approved profiles and removes closed-season gameplay as cleanup runs.
+
 ## Plan review
 
 Self-approved for user review and then approved by the user. Checked the plan against the approved design, exact v12 schema validation and first-start upgrade, portal authentication, claim reset timing, transaction entry points, restrictive foreign keys, and the profile and recovery test fixtures.

@@ -3,6 +3,7 @@ import { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, EmbedB
 import { truncate } from '../lib/affectionPresentation.js';
 import { loadProfileCardData, profileSeasons } from '../lib/profileCardData.js';
 import { getGameConfig } from '../lib/gameConfig.js';
+import { claimedCollectorInteractions } from '../app/events/collectorInteractions.js';
 
 const mentions = { parse: [], repliedUser: false };
 const filename = 'profile-card.png';
@@ -62,15 +63,21 @@ export function createProfileCommand({
     try {
       await render(true);
     } catch (error) {
-      reportFailure(error);
-      await reply.edit(progress(failure)).catch(reportFailure);
-      return;
+      if (error.code === 'SEASON_CUTOFF') {
+        await reply.edit({content:error.message,components:seasonControls(seasons,selected,page),allowedMentions:mentions});
+        if (!seasons?.archived.length) return;
+      } else {
+        reportFailure(error);
+        await reply.edit(progress(failure)).catch(reportFailure);
+        return;
+      }
     }
     if (!seasons || !reply.createMessageComponentCollector) return;
     const collector = reply.createMessageComponentCollector({ time:getGameConfig(db,message.guildId).controls.lifetimeMs });
     let update = Promise.resolve();
     collector.on('collect', async interaction => {
       if (!interaction.customId?.startsWith('profile:')) return;
+      claimedCollectorInteractions.add(interaction);
       if (interaction.user.id !== message.author.id || interaction.guildId !== message.guildId) {
         await interaction.reply({content:'Only the person who opened this card can change its season.',flags:MessageFlags.Ephemeral}).catch(reportFailure);
         return;
@@ -93,8 +100,9 @@ export function createProfileCommand({
           try { await render(); }
           catch (error) {
             selected = previous;
-            reportFailure(error);
-            await interaction.followUp({content:failure,flags:MessageFlags.Ephemeral}).catch(reportFailure);
+            if (error.code !== 'SEASON_CUTOFF') reportFailure(error);
+            const content = error.code === 'SEASON_CUTOFF' ? error.message : failure;
+            await interaction.followUp({content,flags:MessageFlags.Ephemeral}).catch(reportFailure);
           }
           return;
         } else return;
