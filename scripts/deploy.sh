@@ -109,8 +109,8 @@ mv "$stage/node_modules" node_modules
 # Upgrade the exact predecessor and validate the target before either restart.
 if ! node --input-type=module -e '
   import { validateCatalogForDeployment } from "./lib/catalogDb.js";
-  validateCatalogForDeployment("data/bot.sqlite");
-'; then
+  await validateCatalogForDeployment("data/bot.sqlite", { backupDirectory: process.argv[1] });
+' "${app_dir%/*}/backups"; then
   echo 'Final catalog schema readiness failed. Both services remain stopped.' >&2
   echo 'Inspect the catalog error above before restarting either service. A pre-ranking catalog requires the manual ranking cutover with scripts/migrateCharacterRanking.js on a verified offline copy.' >&2
   exit 1

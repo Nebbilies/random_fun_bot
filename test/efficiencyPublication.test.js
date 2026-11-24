@@ -21,7 +21,7 @@ test('creation previews mint the final UUID and publish derived ranks without ma
     const result = confirmManualCharacterCreation(db, { ...auth, previewId: p.previewId, payloadHash: p.payloadHash, idempotencyKey: 'one', now: 1001 });
     assert.equal(result.characterId, p.characterId); assert.equal(result.rank, 1);
     assert.equal(db.prepare('SELECT legacy_rank FROM characters').get().legacy_rank, null);
-    assert.equal(db.prepare('SELECT main_franchise_id FROM characters').get().main_franchise_id, null);
+    assert.deepEqual(db.prepare('SELECT * FROM character_main_franchises').all(), []);
     assert.equal(validateFinalCatalogSchema(db, { readOnly: false }), true);
     assert.throws(() => previewCatalogMutation(db, { ...auth, operation: 'reposition', input: { characterId: result.characterId, rank: 2 } }), /derived/);
   } finally { db.close(); }
@@ -34,7 +34,7 @@ test('AniList publication preserves existing ranking inputs and publishes discov
     db.prepare("INSERT INTO character_identities(id,creation_method) VALUES(?,'imported')").run(id);
     db.prepare("INSERT INTO character_sources VALUES('anilist','1',?)").run(id);
     db.prepare('INSERT INTO characters(id,rank,tie_order,favourites,legacy_rank,danbooru_post_count,efficiency,name_full) VALUES(?,1,1,99,8,149200,0.5,?)').run(id, 'Original');
-    db.prepare('UPDATE characters SET main_franchise_id=1 WHERE id=?').run(id);
+    db.prepare('INSERT INTO character_main_franchises VALUES (?,1)').run(id);
     db.prepare("INSERT INTO tag_decisions VALUES(?,'approve','series','manual','test')").run(id);
     db.exec('BEGIN IMMEDIATE'); bindSourceCatalogStaging(db);
     db.exec("INSERT INTO stage_characters(id,favourites,name_full) VALUES(1,0,'Refreshed'),(2,99999,'Discovery'); COMMIT");
@@ -42,7 +42,8 @@ test('AniList publication preserves existing ranking inputs and publishes discov
     const rows = db.prepare('SELECT id,rank,legacy_rank,danbooru_post_count,mudae_claim_rank,efficiency FROM characters ORDER BY rank').all();
     assert.deepEqual({ ...rows[0] }, { id, rank: 1, legacy_rank: 8, danbooru_post_count: 149200, mudae_claim_rank: null, efficiency: 0.5 });
     assert.deepEqual({ ...rows[1], id: null }, { id: null, rank: 2, legacy_rank: null, danbooru_post_count: null, mudae_claim_rank: null, efficiency: 0 });
-    assert.deepEqual(db.prepare('SELECT main_franchise_id FROM characters ORDER BY rank').all().map(row => row.main_franchise_id), [1, null]);
+    assert.deepEqual(db.prepare('SELECT character_id, franchise_id FROM character_main_franchises').all()
+      .map(row => [row.character_id, row.franchise_id]), [[id, 1]]);
     assert.equal(validateFinalCatalogSchema(db), true);
   } finally { db.close(); }
 });

@@ -30,15 +30,19 @@ test('ranking cutover rehearses without changes then atomically archives old pos
       { id: ids[1], legacy_rank: 2, rank: 1, efficiency: 2 }, { id: ids[0], legacy_rank: 1, rank: 2, efficiency: 0 },
     ]);
     assert.equal(db.prepare('SELECT status FROM tag_decisions WHERE character_id=?').get(ids[0]).status, 'no_match');
-    assert.deepEqual(db.prepare('SELECT main_franchise_id FROM characters ORDER BY rank').all().map(row => row.main_franchise_id), [null, null]);
+    assert.deepEqual(db.prepare('SELECT * FROM character_main_franchises').all(), []);
     assert.equal(validateFinalCatalogSchema(db, { readOnly: false }), true);
     assert.throws(() => validatePredecessor(db), /schema/);
     assert.equal(migrateCharacterRanking(db, { inputs, actor: 'operator', now: 2000, dryRun: false }).noOp, true);
     assert.equal(db.prepare('SELECT count(*) n FROM catalog_mutations').get().n, 1);
     assert.throws(() => db.exec('UPDATE characters SET legacy_rank=3'), /immutable/);
-    db.exec('DROP INDEX characters_by_main_franchise; ALTER TABLE characters DROP COLUMN main_franchise_id;');
+    db.exec('DROP TABLE character_main_franchises');
     assert.equal(migrateCharacterRanking(db, { inputs, actor: 'operator', now: 3000, dryRun: false }).noOp, true);
     assert.equal(validateFinalCatalogSchema(db, { readOnly: false, mainFranchise: false }), true);
+    db.exec(`ALTER TABLE characters ADD COLUMN main_franchise_id INTEGER REFERENCES franchises(id) ON DELETE SET NULL;
+      CREATE INDEX characters_by_main_franchise ON characters(main_franchise_id);`);
+    assert.equal(migrateCharacterRanking(db, { inputs, actor: 'operator', now: 4000, dryRun: false }).noOp, true);
+    assert.equal(validateFinalCatalogSchema(db, { mainFranchiseColumn: true }), true);
   } finally { db.close(); }
 });
 test('cutover changes only eligibility fields and rolls back malformed targeted buffs', () => {

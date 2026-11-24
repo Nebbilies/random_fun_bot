@@ -22,8 +22,16 @@ if [[ "$*" == *'validateCatalogForDeployment'* ]]; then
   [[ -f "${FAKE_LOG}.stopped.random-fun-bot" && -f "${FAKE_LOG}.stopped.random-fun-bot-portal" ]]
   ! grep -q '^systemctl restart ' "$FAKE_LOG"
   [[ "$*" == *'./lib/catalogDb.js'* ]]
-  [[ "$*" == *'validateCatalogForDeployment("data/bot.sqlite")'* ]]
-  if [[ "$FAKE_CATALOG_LAYOUT" == pre-main-franchise ]]; then
+  [[ "$*" == *'await validateCatalogForDeployment("data/bot.sqlite", { backupDirectory: process.argv[1] })'* ]]
+  [[ "${!#}" == "${FAKE_APP%/*}/backups" ]]
+  if [[ "$FAKE_CATALOG_LAYOUT" == main-franchise-column ]]; then
+    echo 'main franchise backup' >> "$FAKE_LOG"
+    if [[ "${FAKE_SCHEMA_BACKUP_FAIL:-0}" == 1 ]]; then
+      echo 'Main franchise backup failed' >&2
+      exit 1
+    fi
+  fi
+  if [[ "$FAKE_CATALOG_LAYOUT" == pre-main-franchise || "$FAKE_CATALOG_LAYOUT" == main-franchise-column ]]; then
     echo 'main franchise schema upgrade' >> "$FAKE_LOG"
     if [[ "${FAKE_SCHEMA_UPGRADE_FAIL:-0}" == 1 ]]; then
       echo 'Main franchise schema upgrade failed' >&2
@@ -32,7 +40,7 @@ if [[ "$*" == *'validateCatalogForDeployment'* ]]; then
   fi
   echo 'final catalog schema readiness' >> "$FAKE_LOG"
   case "$FAKE_CATALOG_LAYOUT" in
-    final|pre-main-franchise) exit 0 ;;
+    final|pre-main-franchise|main-franchise-column) exit 0 ;;
     pre-ranking) echo 'Character ranking migration required' >&2 ;;
     partial|unknown) echo 'Invalid final catalog schema' >&2 ;;
     *) exit 2 ;;
@@ -214,7 +222,7 @@ setup_case() {
   git -C "$home/seed" commit -qm update
   git -C "$home/seed" push -q origin main
   target=$(git -C "$home/seed" rev-parse HEAD)
-  export FAKE_TARGET="$target" FAKE_CATALOG_LAYOUT=final FAKE_RUNTIME_BLOCKED=0 FAKE_SCHEMA_UPGRADE_FAIL=0
+  export FAKE_TARGET="$target" FAKE_CATALOG_LAYOUT=final FAKE_RUNTIME_BLOCKED=0 FAKE_SCHEMA_BACKUP_FAIL=0 FAKE_SCHEMA_UPGRADE_FAIL=0
   export FAKE_STOP_FAIL=none FAKE_RESTART_FAIL=none FAKE_MERGE_FAIL=0
   sed -e "s|/home/ubuntu|$home|g" \
       -e "s|systemctl=/usr/bin/systemctl|systemctl=$mocks/systemctl|" \
@@ -284,6 +292,26 @@ grep -q '^main franchise schema upgrade$' "$FAKE_LOG"
 grep -Fq 'Both services remain stopped.' "$home/output"
 assert_data
 echo 'PASS: main-franchise upgrade precedes validation and restart; upgrade failure blocks both'
+
+setup_case main-franchise-column
+export FAKE_CATALOG_LAYOUT=main-franchise-column
+bash "$home/deploy.sh" "$target" > "$home/output" 2>&1 || { cat "$home/output"; exit 1; }
+expected=$(printf '%s\n' 'main franchise backup' 'main franchise schema upgrade' 'final catalog schema readiness' \
+  'systemctl restart random-fun-bot' 'systemctl restart random-fun-bot-portal')
+[[ "$(grep -E '^(main franchise backup|main franchise schema upgrade|final catalog schema readiness|systemctl restart )' "$FAKE_LOG")" == "$expected" ]]
+assert_data
+
+setup_case main-franchise-backup-failure
+export FAKE_CATALOG_LAYOUT=main-franchise-column FAKE_SCHEMA_BACKUP_FAIL=1
+if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then
+  echo 'FAIL: unsuccessful main-franchise backup passed deployment' >&2
+  exit 1
+fi
+grep -q '^main franchise backup$' "$FAKE_LOG"
+! grep -Eq '^(main franchise schema upgrade|final catalog schema readiness|systemctl restart )' "$FAKE_LOG"
+grep -Fq 'Both services remain stopped.' "$home/output"
+assert_data
+echo 'PASS: column migration requires a successful backup before upgrade and restart'
 
 setup_case preserve-data
 bash "$home/deploy.sh" "$target" > "$home/output" 2>&1 || { cat "$home/output"; exit 1; }
