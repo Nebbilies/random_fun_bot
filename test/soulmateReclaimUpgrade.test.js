@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { Worker } from 'node:worker_threads';
 import { DatabaseSync } from 'node:sqlite';
 import { openFinalCatalog, openFinalCatalogReadOnly } from '../lib/catalogDb.js';
-import { installEmptyFinalCatalog } from '../lib/catalogFinalSchema.js';
+import { installEmptyFinalCatalog, isPreSoulmateReclaimCatalogSchema } from '../lib/catalogFinalSchema.js';
 import { upgradeFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
 
 const previousAwards = readFileSync(new URL('./fixtures/preSoulmateReclaimAwards.sql', import.meta.url), 'utf8');
@@ -19,8 +19,9 @@ function previousCatalog(t) {
   db.exec('PRAGMA foreign_keys=ON; BEGIN IMMEDIATE');
   installEmptyFinalCatalog(db);
   db.exec('COMMIT');
-  db.exec('DROP TABLE affection_awards');
+  db.exec('DROP INDEX characters_by_main_franchise; ALTER TABLE characters DROP COLUMN main_franchise_id; DROP TABLE affection_awards;');
   db.exec(previousAwards);
+  assert.equal(isPreSoulmateReclaimCatalogSchema(db), true);
   db.prepare('INSERT INTO character_identities(id) VALUES(?)').run(character);
   db.prepare("INSERT INTO character_affection VALUES('1','101',?,100,0)").run(character);
   db.prepare("INSERT INTO affection_awards(rowid,source_key,guild_id,user_id,character_id,base,amount,total,milestones_json,created_at) VALUES(17,'old','1','101',?,100,100,100,'[]',0)").run(character);

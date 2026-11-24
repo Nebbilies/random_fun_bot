@@ -106,19 +106,13 @@ if [[ -e node_modules || -L node_modules ]]; then
 fi
 mv "$stage/node_modules" node_modules
 
-# Validate with the installed target code before either service can restart.
-# Version 12 alone does not distinguish pre-ranking, partial, and final layouts.
+# Upgrade the exact predecessor and validate the target before either restart.
 if ! node --input-type=module -e '
-  import { DatabaseSync } from "node:sqlite";
-  import { validateFinalCatalogSchema } from "./lib/catalogFinalSchema.js";
-  const db = new DatabaseSync("data/bot.sqlite", { readOnly: true });
-  try {
-    db.exec("PRAGMA busy_timeout=5000");
-    validateFinalCatalogSchema(db, { readOnly: true });
-  } finally { db.close(); }
+  import { validateCatalogForDeployment } from "./lib/catalogDb.js";
+  validateCatalogForDeployment("data/bot.sqlite");
 '; then
   echo 'Final catalog schema readiness failed. Both services remain stopped.' >&2
-  echo 'Inspect the schema and complete the manual ranking cutover with scripts/migrateCharacterRanking.js on a verified offline copy before restarting either service.' >&2
+  echo 'Inspect the catalog error above before restarting either service. A pre-ranking catalog requires the manual ranking cutover with scripts/migrateCharacterRanking.js on a verified offline copy.' >&2
   exit 1
 fi
 
