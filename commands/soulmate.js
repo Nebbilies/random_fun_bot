@@ -1,5 +1,6 @@
 import { MessageFlags } from 'discord.js';
-import { hasAffection, getSoulmateState, getAffectionDetail, confirmSoulmate } from '../lib/characterAffection.js';
+import { hasAffection, getSoulmateState, getAffectionDetail, confirmSoulmate, seasonSoulmateWaiverAvailable } from '../lib/characterAffection.js';
+import { currentSeason } from '../features/seasons/seasonStore.js';
 import { getPerks } from '../lib/affectionRules.js';
 import { isCharacterBusy } from '../lib/characterAvailability.js';
 import { requireNewGameAction } from '../lib/catalogMaintenance.js';
@@ -23,6 +24,7 @@ export async function run(ctx) {
     return;
   }
   const guildId = ctx.message.guildId;
+  const season = currentSeason(db,guildId)?.season;
   const userId = ctx.message.author.id;
   const options = { ownerName: await resolveTargetUsername(ctx.message, userId), prefix: ctx.prefix, isSelf: true };
   const state = getSoulmateState(db, guildId, userId);
@@ -62,7 +64,8 @@ export async function run(ctx) {
     if (!detail) throw new Error('Character no longer available');
     const current = getSoulmateState(db, guildId, userId);
     const status = !detail.isOwned ? 'not_owned' : isCharacterBusy(db,guildId,selected,Date.now()) ? 'busy'
-      : current.characterId && current.characterId!==selected && Date.now()<current.switchAvailableAt ? 'cooldown' : null;
+      : current.characterId && current.characterId!==selected && Date.now()<current.switchAvailableAt
+        && !seasonSoulmateWaiverAvailable(db,guildId,userId) ? 'cooldown' : null;
     const currentName = current.characterId && current.characterId!==selected
       ? getAffectionDetail(db,{guildId,userId,characterId:current.characterId})?.name : '';
     return confirmationPayload({ ...detail, benefits: { ...detail.benefits, perks: getPerks(detail.total) } },
@@ -102,14 +105,14 @@ export async function run(ctx) {
       // Maintenance, ownership, busy state, cooldown and optimistic revision are rechecked at commit.
       requireNewGameAction(db);
       const result = confirmSoulmate(db, { guildId, userId, characterId: selected,
-        expectedRevision: state.revision, now: Date.now() });
+        expectedRevision: state.revision, season, now: Date.now() });
       finished = true;
       if (['selected', 'same', 'unchanged'].includes(result.status)) await reply.edit(profile());
       else await reply.edit({ content: refusal(result.status,result.state), embeds: [], components: [], allowedMentions: noMentions });
       collector.stop('confirmed');
     } catch (error) {
       console.error('Soulmate confirmation failed:', error);
-      await interaction.followUp({ content: 'Could not confirm this selection. Please try again after maintenance or check your current soulmate.',
+      await interaction.followUp({ content: error.code?.startsWith('SEASON_') ? error.message : 'Could not confirm this selection. Please try again after maintenance or check your current soulmate.',
         flags: MessageFlags.Ephemeral, allowedMentions: noMentions }).catch(() => {});
     } finally { busy = false; }
   });

@@ -52,6 +52,26 @@
         </form>
       </section>
 
+      <section class="panel game-card" style="margin-top: 32px;">
+        <h2>Seasons</h2>
+        <form id="seasonLoadForm">
+          <label class="field-label" for="seasonGuildId">Discord Server ID</label>
+          <input id="seasonGuildId" name="guildId" inputmode="numeric" pattern="[1-9][0-9]{0,19}" maxlength="20" required>
+          <button type="submit">Load season</button>
+        </form>
+        <form id="seasonSettingsForm" hidden>
+          <p id="seasonDetails" class="notice"></p>
+          <label class="field-label" for="seasonChannelId">Announcement channel ID</label>
+          <input id="seasonChannelId" name="channelId" inputmode="numeric" pattern="[1-9][0-9]{0,19}" maxlength="20" required>
+          <label class="field-label" for="seasonDays">Target season length in days</label>
+          <input id="seasonDays" name="targetDays" type="number" min="1" step="1" required>
+          <button type="submit">Save season settings</button>
+          <button id="seasonPreview" type="button">Preview rollover</button>
+          <button id="seasonCancel" type="button" hidden>Cancel reminder</button>
+        </form>
+        <p id="seasonStatus" class="feedback" role="status" aria-live="polite"></p>
+      </section>
+
       <p class="notice">Game rules and server rates have moved to <a href="/config">Configuration</a>.</p>
 
       <p id="status" class="feedback" role="status" aria-live="polite"></p>

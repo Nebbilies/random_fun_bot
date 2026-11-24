@@ -7,6 +7,7 @@ import { getGameConfig } from '../../lib/gameConfig.js';
  * @property {ReturnType<typeof getGameConfig>} rules
  * @property {'trade' | 'give'} kind
  * @property {string} guildId
+ * @property {number} [season]
  * @property {string} channelId
  * @property {string} initiatorId
  * @property {string} recipientId
@@ -58,6 +59,11 @@ export function findSessionByUser(db, guildId, userId) {
 }
 export function liveSession(db, session) {
     return sessionStore(db).get(session.id) === session;
+}
+export function expireGuildTransfers(db, guildId) {
+    for (const session of sessionStore(db).values()) {
+        if (session.guildId === guildId) endSession(db,session,'season-ended');
+    }
 }
 export function endSession(db, session, reason = 'ended') {
     if (!liveSession(db, session))

@@ -1,3 +1,4 @@
+import { currentSeasonRows } from '../../lib/seasonSchema.js';
 // Inspect each time: explicit schema upgrades may occur on the same connection.
 export function hasRollCharacterSnapshot(db) {
   return db.prepare('PRAGMA table_info(character_rolls)').all()
@@ -8,13 +9,13 @@ export function readRollSnapshot(db, rollId) {
   return db.prepare(`SELECT character_id AS characterId, character_name AS characterName,
     mystery_session_id AS mysterySessionId,
     ${hasRollCharacterSnapshot(db) ? 'character_snapshot_json' : 'NULL'} AS snapshotJson
-    FROM character_rolls WHERE id = ?`).get(rollId);
+    FROM ${currentSeasonRows(db,'character_rolls')} WHERE id = ?`).get(rollId);
 }
 
 export function readPendingPublication(db, rollId) {
   return db.prepare(`SELECT guild_id AS guildId, character_id AS characterId,
     escape_marriage_id AS escapeMarriageId, escape_owner_id AS escapeOwnerId, rules_json AS rulesJson
-    FROM character_rolls WHERE id = ? AND state = 'pending' AND mystery_session_id IS NULL`).get(rollId);
+    FROM ${currentSeasonRows(db,'character_rolls')} WHERE id = ? AND state = 'pending' AND mystery_session_id IS NULL`).get(rollId);
 }
 
 export function cancelRollPublication(db, rollId, messageId, now) {
@@ -29,7 +30,7 @@ export function publishPendingRoll(db, rollId, messageId, state, now, protectedU
 }
 
 export function readRollSession(db, rollId) {
-  return db.prepare('SELECT mystery_session_id AS sessionId FROM character_rolls WHERE id = ?').get(rollId);
+  return db.prepare(`SELECT mystery_session_id AS sessionId FROM ${currentSeasonRows(db,'character_rolls')} WHERE id = ?`).get(rollId);
 }
 
 export function failActiveRoll(db, rollId, now) {
@@ -48,7 +49,7 @@ export function readRoll(db, guildId, channelId, messageId) {
     escape_owner_id AS escapeOwnerId, protected_until AS protectedUntil,
     escape_outcome AS escapeOutcome, escape_winner_id AS escapeWinnerId,
     escape_resolved_at AS escapeResolvedAt, rules_json AS rulesJson,
-    ${hasRollCharacterSnapshot(db) ? 'character_snapshot_json' : 'NULL'} AS characterSnapshotJson FROM character_rolls
+    ${hasRollCharacterSnapshot(db) ? 'character_snapshot_json' : 'NULL'} AS characterSnapshotJson FROM ${currentSeasonRows(db,'character_rolls')}
     WHERE guild_id = ? AND channel_id = ? AND message_id = ?`)
     .get(guildId, channelId, messageId) ?? null;
 }
@@ -68,7 +69,7 @@ export function readRollSchemaVersion(db) {
 }
 
 export function readMysteryClaimState(db, sessionId, guildId) {
-  return db.prepare('SELECT state FROM mystery_sessions WHERE id = ? AND guild_id = ?').get(sessionId, guildId);
+  return db.prepare(`SELECT state FROM ${currentSeasonRows(db,'mystery_sessions')} WHERE id = ? AND guild_id = ?`).get(sessionId, guildId);
 }
 
 export function closeCharacterRolls(db, guildId, characterId) {

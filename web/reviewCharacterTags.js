@@ -20,6 +20,8 @@ import { handleConfigRequest } from './reviewConfig.js';
 import { handleCatalogRequest } from './reviewCatalog.js';
 import { getResolvedItemDefinitions, getResolvedItemDefinition } from '../lib/itemRoster.js';
 import { addItemToInventory } from '../lib/itemStorage.js';
+import { handleSeasonRequest } from './reviewSeasons.js';
+import { assertSeasonWritable } from '../features/seasons/seasonStore.js';
 
 const html = readFileSync(new URL('./reviewCharacterTags.html', import.meta.url));
 const gameHtml = readFileSync(new URL('./reviewGame.html', import.meta.url));
@@ -177,6 +179,7 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
       if (await handleGenderReviewRequest({ db, request, response, url, origin: requestOrigin })) return;
       if (serveAssets(request, response, url)) return;
       if (await handleConfigRequest({ db, request, response, url, origin: requestOrigin })) return;
+      if (await handleSeasonRequest({db,request,response,url,origin:requestOrigin,json,readJsonBody})) return;
       if (await handleFranchiseReviewRequest({ db, request, response, url, origin: requestOrigin })) return;
       if (request.method === 'GET' && url.pathname === '/') {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
@@ -218,7 +221,16 @@ export function createReviewServer({ db, api = new DanbooruApi({ db }), fetchImp
           return json(response, 400, { error: 'Valid numeric server and user IDs are required (up to 20 digits).' });
         const item = typeof itemId === 'string' ? getResolvedItemDefinition(db, guildId, itemId) : null;
         if (!item) return json(response, 400, { error: 'Select a valid item.' });
-        const result = transaction(db, () => addItemToInventory(db, guildId, userId, item.id));
+        let result;
+        try {
+          result = transaction(db, () => {
+            assertSeasonWritable(db,guildId);
+            return addItemToInventory(db,guildId,userId,item.id);
+          });
+        } catch (error) {
+          if (error.code === 'SEASON_CUTOFF') return json(response,409,{error:error.message});
+          throw error;
+        }
         if (result.status === 'full')
           return json(response, 409, { error: `Inventory is full (${result.currentCount}/${result.capacity}). No item was given.` });
         json(response, 200, { ...result, guildId, userId, itemName: item.name });

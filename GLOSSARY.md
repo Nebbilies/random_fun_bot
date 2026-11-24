@@ -247,3 +247,31 @@ _Avoid_: Extra affection event, recursive multiplier
 **Claim Conservation**:
 A soulmate perk that can preserve the claim resource a successful marriage would otherwise spend and, when needed to enable that normal claim, Engagement Ring's prepared early-claim use. It does not grant another claim, refund the Ring's activation charge, or refresh expiry.
 _Avoid_: Claim reset, free reclaim
+
+**Season**:
+A period of character gameplay in one Discord server. Player progress resets when the next season starts, with an exception for the soulmate.
+_Avoid_: Claim window
+
+**Season 0**:
+A server's existing character game progress before its first season rollover. Season 1 begins at that rollover.
+_Avoid_: First reset, Season 1
+
+**Season roster**:
+The set of players who have played in a season or carried a soulmate into it.
+_Avoid_: Current server members, current character owners
+
+**Season reminder**:
+An announcement to current season players that gives the next season's start time and prompts players to choose a soulmate to carry over.
+_Avoid_: Season start announcement
+
+**Season rollover**:
+The transition from one season to the next at the first claim reset after the season reminder.
+_Avoid_: Claim reset
+
+**Season profile summary**:
+A player's final collection stats for one completed season, fixed at its rollover and shown in their past season profile card.
+_Avoid_: Gameplay history, current profile
+
+**Soulmate carryover**:
+The continuation of a current server member's selected, still-owned soulmate marriage into the next season, with affection divided by ten and rounded down. The resulting affection qualifies for the new season's milestones and perks.
+_Avoid_: Soulbind, restored marriage

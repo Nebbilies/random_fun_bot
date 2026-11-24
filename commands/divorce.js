@@ -1,3 +1,4 @@
+import { currentSeason } from '../features/seasons/seasonStore.js';
 import { getGameConfig } from '../lib/gameConfig.js';
 import { ButtonBuilder, ButtonStyle, ContainerBuilder, MessageFlags, PermissionFlagsBits, TextDisplayBuilder } from 'discord.js';
 import { divorceCharacters, listMarriages } from '../lib/characterMarriage.js';
@@ -65,6 +66,7 @@ export async function run(ctx) {
   }
 
   const db = ctx.yoshiko.catalogDb;
+  const season = currentSeason(db,guildId)?.season;
   const marriages = listMarriages(db, guildId, targetId, 'rank');
   const plan = planCharacterSelection(marriages, query, { exactSingleCharacter: true });
   if (plan.status === 'limit') return ctx.message.reply(`Choose up to ${CHARACTER_BATCH_LIMIT} characters.`);
@@ -156,12 +158,13 @@ export async function run(ctx) {
       };
       let result;
       try {
-        result = divorceCharacters(db, { guildId, ownerId: targetId,
+        result = divorceCharacters(db, { guildId, ownerId: targetId, season,
           characters: selected.map(row => ({ characterId: row.characterId, marriageId: row.id })),
         });
       } catch (error) {
         console.error('Divorce write failed:', error);
-        return await finish(`${findName(error?.characterId)}the ownership update failed. Nothing was divorced.`);
+        return await finish(error.code?.startsWith('SEASON_') ? error.message
+          : `${findName(error?.characterId)}the ownership update failed. Nothing was divorced.`);
       }
       if (result.status !== 'divorced') {
         const reason = result.status === 'stale' ? 'the marriage has changed' : 'the character is committed to another action';

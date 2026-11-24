@@ -5,12 +5,41 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
-import { openCatalog, setMeta } from '../lib/catalogDb.js';
+import { createFinalCatalog, openCatalog, setMeta } from '../lib/catalogDb.js';
 import { getRollStatus, getClaimStatus, setMaxRolls } from '../lib/characterRolls.js';
 import { getGuildRates } from '../lib/guildRates.js';
 import { createReviewServer } from '../web/reviewCharacterTags.js';
 import { ITEM_ROSTER } from '../lib/itemRoster.js';
 import { getInventory } from '../lib/itemStorage.js';
+
+test('portal schedules only a verified guild channel and a confirmed, current preview', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'game-season-review-'));
+  const db = createFinalCatalog(join(directory,'catalog.sqlite'));
+  setMeta(db,'import_phase','complete');
+  db.exec("INSERT INTO roll_allowances VALUES ('10','101',123,1)");
+  const server = createReviewServer({db,port:0,authConfig});
+  t.after(async () => {
+    await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
+    db.close();
+    rmSync(directory,{recursive:true,force:true});
+  });
+  await once(server,'listening');
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const api = `${origin}/api/game/seasons`;
+  const post = (action,body) => fetch(`${api}/${action}`,{
+    method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(body),
+  });
+  assert.equal((await post('settings',{guildId:'10',channelId:'90',targetDays:30,revision:0})).status,200);
+  assert.equal((await fetch(`${api}/preview?guildId=10`)).status,400);
+  db.prepare("UPDATE guild_season_settings SET channel_checked_at=? WHERE guild_id='10'").run(Date.now());
+  const preview = await fetch(`${api}/preview?guildId=10`).then(response => response.json());
+  assert.equal((await post('confirm',{guildId:'10',preview:{...preview,cutoffAt:preview.cutoffAt+1}})).status,409);
+  const confirmed = await post('confirm',{guildId:'10',preview});
+  assert.equal(confirmed.status,200);
+  const {rollover} = await confirmed.json();
+  assert.equal(rollover.phase,'queued');
+  assert.equal((await post('cancel',{guildId:'10',revision:rollover.revision})).status,200);
+});
 
 test('review portal applies capped rolls and global claim resets with validated requests', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'game-review-'));

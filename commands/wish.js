@@ -1,3 +1,4 @@
+import { assertSeasonWritable, currentSeason } from '../features/seasons/seasonStore.js';
 import { characterListName, markCharacterOwnership } from '../lib/characterOwnershipDisplay.js';
 import { getGameConfig } from '../lib/gameConfig.js';
 import {
@@ -84,6 +85,9 @@ async function save(ctx, characterId, name, { target }) {
  * @param {'add' | 'remove'} mode
  */
 async function pick(ctx, wishes, mode) {
+  const db = ctx.yoshiko.catalogDb;
+  const guildId = ctx.message.guildId;
+  const season = currentSeason(db,guildId)?.season;
   const reply = await ctx.message.reply(pickerPayload(wishes, mode));
   if (!reply?.createMessageComponentCollector) return;
   const controlLifetime = getGameConfig(ctx.yoshiko.catalogDb, ctx.message.guildId).controls.lifetimeMs;
@@ -102,6 +106,7 @@ async function pick(ctx, wishes, mode) {
     if (!wish) { await interaction.deferUpdate().catch(() => {}); return; }
     const characterId = wish.characterId;
     try {
+      assertSeasonWritable(db,guildId,{season});
       if (mode === 'remove') {
         removeWish(ctx.yoshiko.catalogDb, { guildId: ctx.message.guildId,
           userId: ownerId, characterId });
@@ -111,7 +116,7 @@ async function pick(ctx, wishes, mode) {
       await save(ctx, characterId, wish.name, { target: interaction });
     } catch (error) {
       console.error('Wishlist picker failed:', error);
-      await interaction.reply({ content: 'Wishlist update failed. Please try again later.',
+      await interaction.reply({ content: error.code?.startsWith('SEASON_') ? error.message : 'Wishlist update failed. Please try again later.',
         flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   });

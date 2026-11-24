@@ -87,6 +87,34 @@ test('profile takes a read-only guild snapshot and replaces one reply with the c
   assert.equal(db.prepare('SELECT total_changes() AS n').get().n, before);
 });
 
+test('profile season selection edits the same card with frozen stats only for its requester', async t => {
+  const { createProfileCommand } = await import('../commands/profile.js');
+  const { ctx, replies, edits, db } = context(t);
+  db.prepare(`INSERT INTO season_profiles VALUES ('1',0,'101',1,?)`).run(JSON.stringify({
+    characterCount:9,serverRank:1,soulmate:null,topCharacters:[],topFranchises:[],
+  }));
+  const hooks = new Map();
+  const send = ctx.message.reply;
+  ctx.message.reply = async payload => ({ ...await send(payload),
+    createMessageComponentCollector:() => ({on:(event,callback) => hooks.set(event,callback)}),
+  });
+  const models = [];
+  await createProfileCommand({preparePortraits:async () => new Map(),
+    renderProfileCard:async model => { models.push(model); return Buffer.from('png'); }})(ctx);
+  assert.deepEqual(edits.at(-1).components[0].toJSON().components[0].options.map(option => option.value),['current','0']);
+  const select = hooks.get('collect');
+  const base = {customId:'profile:season',guildId:'1',values:['0'],deferUpdate:async () => {}};
+  let denied;
+  await select({...base,user:{id:'102'},reply:async payload => { denied=payload.content; }});
+  assert.match(denied,/Only the person/);
+  assert.equal(models.length,1);
+  await select({...base,user:{id:'101'}});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(models.map(model => model.characterCount),[6,9]);
+  assert.equal(replies.length,1);
+  assert.equal(edits.at(-1).embeds[0].toJSON().description,'Season 0');
+});
+
 test('profile edits the same reply if rendering fails', async t => {
   const { createProfileCommand } = await import('../commands/profile.js');
   const { ctx, replies, edits } = context(t);

@@ -15,7 +15,7 @@ export function createInteractionHandler({ yoshiko, isReady, schedule = setTimeo
         }
         // Collector-only dialogs are process-local. The collector handles live ones;
         // after restart/cutover provide an explicit expired response, never replay.
-        if (/^(?:char|wish|divorce|xfer|affection|soulmate):/.test(interaction.customId ?? '')) {
+        if (/^(?:char|wish|divorce|xfer|affection|soulmate|profile):/.test(interaction.customId ?? '')) {
             const timer = schedule(() => {
                 if (!interaction.replied && !interaction.deferred)
                     interaction.reply({ content: 'This character-game dialog expired. Run the command again.', ephemeral: true }).catch(console.error);

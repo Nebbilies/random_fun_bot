@@ -18,7 +18,7 @@ test('runtime catalog waits for a brief writer and fails after five seconds of s
     const { parentPort, workerData } = require('node:worker_threads');
     const { DatabaseSync } = require('node:sqlite');
     const db = new DatabaseSync(workerData);
-    db.exec('BEGIN IMMEDIATE');
+    db.exec('PRAGMA busy_timeout=5000; BEGIN IMMEDIATE');
     parentPort.postMessage('locked');
     setTimeout(() => { db.exec('COMMIT'); db.close(); }, 200);
   `, { eval: true, workerData: path });

@@ -3,6 +3,7 @@ import { withOwnershipOperationClock } from '../../lib/characterOwnershipHistory
 import { DatabaseSync } from 'node:sqlite';
 import { isValidCharacterId } from '../../lib/gameCharacterLookup.js';
 import { isCharacterBusy, invalidateCharacterCrown } from '../../lib/characterAvailability.js';
+import { assertSeasonWritable } from '../seasons/seasonStore.js';
 /**
  * Ownership transfers for character trades and gifts.
  *
@@ -84,8 +85,10 @@ function checkTransferable(db, guildId, characterId, ownerId, now, marriageId) {
 }
 
 /** @param {DatabaseSync} db @param {string} guildId @param {OwnershipMove[]} moves @param {number} now */
-function moveCharacters(db, guildId, moves, now) {
+/** @param {number} [season] */
+function moveCharacters(db, guildId, moves, now, season) {
     return atomic(db, now, () => {
+        assertSeasonWritable(db,guildId,{season,now});
         const names = [];
         for (const { characterId, fromOwnerId, marriageId } of moves) {
             const { status, name } = checkTransferable(db, guildId, characterId, fromOwnerId, now, marriageId);
@@ -121,24 +124,24 @@ function validateBatch(db, guildId, moves) {
 
 /**
  * @param {DatabaseSync} db
- * @param {{guildId: string, fromOwnerId: string, toOwnerId: string, characters: MarriageSnapshot[], now?: number}} request
+ * @param {{guildId: string, fromOwnerId: string, toOwnerId: string, characters: MarriageSnapshot[], now?: number, season?: number}} request
  * @returns {TransferResult}
  */
-export function transferCharacters(db, { guildId, fromOwnerId, toOwnerId, characters, now = Date.now() }) {
+export function transferCharacters(db, { guildId, fromOwnerId, toOwnerId, characters, season, now = Date.now() }) {
     const moves = characters.map(character => ({ ...character, fromOwnerId, toOwnerId }));
     validateBatch(db, guildId, moves);
     if (fromOwnerId === toOwnerId) return { status: 'same_owner' };
-    const result = moveCharacters(db, guildId, moves, now);
+    const result = moveCharacters(db, guildId, moves, now, season);
     return result.status === 'ok' ? { status: 'transferred' } : result;
 }
 
 /**
  * @param {DatabaseSync} db
  * @param {{guildId: string, first: {ownerId: string, characters: MarriageSnapshot[]},
- *   second: {ownerId: string, characters: MarriageSnapshot[]}, now?: number}} request
+ *   second: {ownerId: string, characters: MarriageSnapshot[]}, now?: number, season?: number}} request
  * @returns {TransferResult}
  */
-export function swapCharacterBatches(db, { guildId, first, second, now = Date.now() }) {
+export function swapCharacterBatches(db, { guildId, first, second, season, now = Date.now() }) {
     if (!first.characters.length || !second.characters.length) throw new Error('A trade requires characters on both sides');
     const moves = [
         ...first.characters.map(character => ({ ...character, fromOwnerId: first.ownerId, toOwnerId: second.ownerId })),
@@ -146,7 +149,7 @@ export function swapCharacterBatches(db, { guildId, first, second, now = Date.no
     ];
     validateBatch(db, guildId, moves);
     if (first.ownerId === second.ownerId) return { status: 'same_owner' };
-    const result = moveCharacters(db, guildId, moves, now);
+    const result = moveCharacters(db, guildId, moves, now, season);
     return result.status === 'ok' ? { status: 'traded' } : result;
 }
 /**

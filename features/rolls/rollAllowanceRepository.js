@@ -33,9 +33,10 @@ export function writeMaxRolls(db, guildId, amount) {
     ON CONFLICT(guild_id) DO UPDATE SET max_rolls = excluded.max_rolls`).run(guildId, amount);
 }
 
-export function clearClaimUsage(db) {
-  const updated = Number(db.prepare('DELETE FROM claim_allowances').run().changes);
-  db.prepare('DELETE FROM claim_events').run();
+export function clearClaimUsage(db, skippedGuilds = []) {
+  const guilds = JSON.stringify(skippedGuilds);
+  const updated = Number(db.prepare('DELETE FROM claim_allowances WHERE guild_id NOT IN (SELECT value FROM json_each(?))').run(guilds).changes);
+  db.prepare('DELETE FROM claim_events WHERE guild_id NOT IN (SELECT value FROM json_each(?))').run(guilds);
   return updated;
 }
 

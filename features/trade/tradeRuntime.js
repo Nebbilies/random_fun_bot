@@ -1,3 +1,4 @@
+import { currentSeason } from '../seasons/seasonStore.js';
 import { mentions, confirmationUser, confirmationComponents, resultPayload, transferSummary } from './tradePresentation.js';
 import { createSession, findSessionByChannel, findSessionByUser, liveSession, endSession, setPicker, getPicker, clearPicker } from './tradeSessions.js';
 export { prepareTransferCancellation } from './tradeSessions.js';
@@ -383,13 +384,14 @@ async function completeTransfer(db, session, sent) {
     let result;
     try {
         result = kind === 'trade'
-            ? swapCharacterBatches(db, { guildId,
+            ? swapCharacterBatches(db, { guildId, season:session.season,
                 first: { ownerId: initiatorId, characters: offer }, second: { ownerId: recipientId, characters: target },
             })
-            : transferCharacters(db, { guildId, fromOwnerId: initiatorId, toOwnerId: recipientId, characters: offer });
+            : transferCharacters(db, { guildId, season:session.season, fromOwnerId: initiatorId, toOwnerId: recipientId, characters: offer });
     } catch (error) {
         console.error('Transfer write failed:', error);
-        return editResult(sent, failureMessage('the ownership update failed', findName(error?.characterId)));
+        return editResult(sent, error.code?.startsWith('SEASON_') ? error.message
+            : failureMessage('the ownership update failed', findName(error?.characterId)));
     }
     if (result.status !== 'traded' && result.status !== 'transferred') return editResult(sent,
         failureMessage(describeStatus(result.status), result.name || findName(result.characterId)));
@@ -498,6 +500,7 @@ async function beginTransfer(ctx, kind) {
         rules: getGameConfig(db, guildId),
         kind,
         guildId,
+        season:currentSeason(db,guildId)?.season,
         channelId: message.channelId,
         initiatorId,
         recipientId: targetId,
@@ -513,6 +516,8 @@ async function beginTransfer(ctx, kind) {
         }
         if (reason === 'kaimetsu')
             void editResult(handles.confirmMessage, `🚫 The ${session.kind} was canceled by Kaimetsu.`);
+        if (reason === 'season-ended' && handles.confirmMessage)
+            void editResult(handles.confirmMessage, 'This offer expired at season rollover.');
     });
     handlesBySession.set(session, { channel: message.channel, confirmMessage: null, timer: null });
     const notice = kind === 'trade'
