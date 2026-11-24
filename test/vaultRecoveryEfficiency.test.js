@@ -11,6 +11,7 @@ import { revealVaultReward, getVaultReward, reconcileVaultRewards, bindVaultRewa
 import { recoverVaultRewards, recoverVaultSessions, onVaultInteraction, publishVaultRewards, startVaultRoll } from '../lib/vaultRuntime.js';
 import { reservePaidVaultSession } from '../lib/vaultSessions.js';
 import { resolveMysteryConsolation } from '../lib/mysteryConsolation.js';
+import { applySeasonRollover } from '../features/seasons/seasonRollover.js';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'vault-efficiency-')), path = join(dir, 'test.sqlite');
@@ -233,6 +234,63 @@ test('transient verification and edit failures defer without replacement or ackn
   message.edit = edit;
   await recoverVaultRewards(f.db, d.client, { now: () => 500 });
   assert.equal(getVaultReward(f.db, 'reward-0').deliveredAt, 500);
+});
+
+function rollOverRewardGuild(db) {
+  const { season } = db.prepare("SELECT season FROM guild_seasons WHERE guild_id='guild'").get();
+  db.prepare(`INSERT INTO season_rollovers(guild_id,season,revision,phase,channel_id,reminder_at,cutoff_at,requester)
+    VALUES ('guild',?,1,'announced','channel',1,2,'admin')`).run(season);
+  assert.equal(applySeasonRollover(db, { guildId: 'guild', season, members: new Set(['owner']), now: 2 }).status, 'applied');
+}
+
+for (const operation of ['fetch', 'send', 'edit']) test(`reward recovery stops when a rollover completes during ${operation}`, async t => {
+  const f = fixture(t), d = discord(); overflow(f, 1);
+  if (operation !== 'send') await recoverVaultRewards(f.db, d.client, { now: () => 200 });
+  f.db.prepare("UPDATE vault_rewards SET delivered_at=NULL WHERE vault_id='reward-0'").run();
+  const binding = f.db.prepare("SELECT message_id,delivered_at FROM vault_rewards WHERE vault_id='reward-0'");
+  const before = binding.get();
+  if (operation === 'fetch') {
+    d.channel.messages.fetch = async () => {
+      rollOverRewardGuild(f.db);
+      throw Object.assign(new Error('deleted'), { code: 10008 });
+    };
+  } else if (operation === 'send') {
+    const send = d.channel.send;
+    d.channel.send = async payload => {
+      const message = await send(payload);
+      rollOverRewardGuild(f.db);
+      return message;
+    };
+  } else {
+    const message = d.messages.get('1'), edit = message.edit;
+    message.components = [];
+    message.edit = async payload => {
+      const updated = await edit(payload);
+      rollOverRewardGuild(f.db);
+      return updated;
+    };
+  }
+  const stats = {};
+  await recoverVaultRewards(f.db, d.client, { now: () => 300, stats });
+  assert.equal(stats.deferred, undefined);
+  assert.equal(d.counts.sends, 1);
+  assert.equal(getVaultReward(f.db, 'reward-0'), null);
+  assert.deepEqual(binding.get(), before);
+});
+
+test('a reward interaction remains handled when its edit completes after rollover', async t => {
+  const f = fixture(t), d = discord(); overflow(f, 1);
+  await recoverVaultRewards(f.db, d.client, { now: () => 200 });
+  const message = d.messages.get('1');
+  const interaction = select(message, 'reward-0', '-1');
+  interaction.update = async payload => {
+    const edited = await message.edit(payload);
+    rollOverRewardGuild(f.db);
+    return edited;
+  };
+  assert.equal(await onVaultInteraction(f.db, interaction, { now: () => 300 }), true);
+  assert.equal(d.counts.edits, 1);
+  assert.equal(getVaultReward(f.db, 'reward-0'), null);
 });
 
 test('reconciliation during authoritative fetch publishes the latest overdue Keep state', async t => {
