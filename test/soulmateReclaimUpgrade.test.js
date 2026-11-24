@@ -4,8 +4,9 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Worker } from 'node:worker_threads';
-import { createFinalCatalog, openFinalCatalog, openFinalCatalogReadOnly } from '../lib/catalogDb.js';
-import { isPreSoulmateReclaimCatalogSchema } from '../lib/catalogFinalSchema.js';
+import { DatabaseSync } from 'node:sqlite';
+import { openFinalCatalog, openFinalCatalogReadOnly } from '../lib/catalogDb.js';
+import { installEmptyFinalCatalog, isPreSoulmateReclaimCatalogSchema } from '../lib/catalogFinalSchema.js';
 import { upgradeFortuneCatalog } from '../lib/vaultFortuneUpgrade.js';
 
 const previousAwards = readFileSync(new URL('./fixtures/preSoulmateReclaimAwards.sql', import.meta.url), 'utf8');
@@ -14,7 +15,10 @@ function previousCatalog(t) {
   const dir = mkdtempSync(join(tmpdir(), 'soulmate-reclaim-upgrade-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, 'catalog.sqlite');
-  const db = createFinalCatalog(path);
+  const db = new DatabaseSync(path);
+  db.exec('PRAGMA foreign_keys=ON; BEGIN IMMEDIATE');
+  installEmptyFinalCatalog(db);
+  db.exec('COMMIT');
   db.exec('DROP INDEX characters_by_main_franchise; ALTER TABLE characters DROP COLUMN main_franchise_id; DROP TABLE affection_awards;');
   db.exec(previousAwards);
   assert.equal(isPreSoulmateReclaimCatalogSchema(db), true);
@@ -23,8 +27,9 @@ function previousCatalog(t) {
   db.prepare("INSERT INTO affection_awards(rowid,source_key,guild_id,user_id,character_id,base,amount,total,milestones_json,created_at) VALUES(17,'old','1','101',?,100,100,100,'[]',0)").run(character);
   return { db, path };
 }
-function contents(db) {
+function contents(db, tables = null) {
   return Object.fromEntries(db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all()
+    .filter(({name}) => !tables || tables.includes(name))
     .map(({name}) => [name, db.prepare(`SELECT rowid AS _rowid_, * FROM "${name}" ORDER BY rowid`).all()]));
 }
 
@@ -34,7 +39,7 @@ test('previous award schema upgrades on writable open without changing any exist
   fixture.db.close();
   const db = openFinalCatalog(fixture.path);
   try {
-    assert.deepEqual(contents(db), before);
+    assert.deepEqual(contents(db,Object.keys(before)), before);
     // Historical base 8 and the nerfed base 5 must both remain valid receipts.
     assert.doesNotThrow(() => db.prepare("INSERT INTO affection_awards VALUES('new','1','101',?,8,8,108,'[]',1)").run(character));
     assert.doesNotThrow(() => db.prepare("INSERT INTO affection_awards VALUES('nerfed','1','101',?,5,5,113,'[]',2)").run(character));
@@ -118,7 +123,7 @@ test('concurrent writable opens serialize the award migration and preserve recei
     await Promise.all(starts.map(s=>s.ready));
     db.exec('ROLLBACK');
     await done;
-    assert.deepEqual(contents(db), before);
+    assert.deepEqual(contents(db,Object.keys(before)), before);
     openFinalCatalogReadOnly(path).close();
   } finally {
     await Promise.all(workers.map(w=>w.terminate()));

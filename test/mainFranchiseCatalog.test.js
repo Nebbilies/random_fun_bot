@@ -74,6 +74,7 @@ for (const open of [openCatalog, openFinalCatalog]) {
       assert.deepEqual(db.prepare('SELECT id FROM characters ORDER BY rank').all().map(row => row.id), [first, second]);
       assert.deepEqual(db.prepare('SELECT id FROM franchises ORDER BY id').all().map(row => row.id), [1, 2]);
       assert.equal(db.prepare('PRAGMA user_version').get().user_version, 12);
+      assert.equal(db.prepare('SELECT version FROM season_schema').get().version, 1);
       db.exec('UPDATE characters SET main_franchise_id = 2');
     } finally { db.close(); }
 

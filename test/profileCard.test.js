@@ -87,6 +87,34 @@ test('profile takes a read-only guild snapshot and replaces one reply with the c
   assert.equal(db.prepare('SELECT total_changes() AS n').get().n, before);
 });
 
+test('profile season selection edits the same card with frozen stats only for its requester', async t => {
+  const { createProfileCommand } = await import('../commands/profile.js');
+  const { ctx, replies, edits, db } = context(t);
+  db.prepare(`INSERT INTO season_profiles VALUES ('1',0,'101',1,?)`).run(JSON.stringify({
+    characterCount:9,serverRank:1,soulmate:null,topCharacters:[],topFranchises:[],
+  }));
+  const hooks = new Map();
+  const send = ctx.message.reply;
+  ctx.message.reply = async payload => ({ ...await send(payload),
+    createMessageComponentCollector:() => ({on:(event,callback) => hooks.set(event,callback)}),
+  });
+  const models = [];
+  await createProfileCommand({preparePortraits:async () => new Map(),
+    renderProfileCard:async model => { models.push(model); return Buffer.from('png'); }})(ctx);
+  assert.deepEqual(edits.at(-1).components[0].toJSON().components[0].options.map(option => option.value),['current','0']);
+  const select = hooks.get('collect');
+  const base = {customId:'profile:season',guildId:'1',values:['0'],deferUpdate:async () => {}};
+  let denied;
+  await select({...base,user:{id:'102'},reply:async payload => { denied=payload.content; }});
+  assert.match(denied,/Only the person/);
+  assert.equal(models.length,1);
+  await select({...base,user:{id:'101'}});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(models.map(model => model.characterCount),[6,9]);
+  assert.equal(replies.length,1);
+  assert.equal(edits.at(-1).embeds[0].toJSON().description,'Season 0');
+});
+
 test('profile edits the same reply if rendering fails', async t => {
   const { createProfileCommand } = await import('../commands/profile.js');
   const { ctx, replies, edits } = context(t);
@@ -99,6 +127,40 @@ test('profile edits the same reply if rendering fails', async t => {
   assert.equal(edits.length, 3);
   assert.match(edits[2].content, /-# Couldn’t render your profile card/);
   assert.equal(edits[2].files, undefined);
+});
+
+test('archive selection works during cutoff even when the component acknowledgement is slow', async t => {
+  const { createProfileCommand } = await import('../commands/profile.js');
+  const { createInteractionHandler } = await import('../app/events/interactionCreate.js');
+  const { ctx, edits, db } = context(t);
+  db.prepare("INSERT INTO season_profiles VALUES ('1',0,'101',1,?)").run(JSON.stringify({
+    characterCount:9,serverRank:1,soulmate:null,topCharacters:[],topFranchises:[],
+  }));
+  db.exec(`INSERT INTO season_rollovers
+    (guild_id,season,revision,phase,channel_id,reminder_at,cutoff_at,requester)
+    VALUES ('1',1,1,'announced','90',1,2,'admin')`);
+  const hooks = new Map();
+  const send = ctx.message.reply;
+  ctx.message.reply = async payload => ({ ...await send(payload),
+    createMessageComponentCollector:() => ({on:(event,callback) => hooks.set(event,callback)}),
+  });
+  await createProfileCommand({preparePortraits:async () => new Map(),
+    renderProfileCard:async model => Buffer.from(String(model.characterCount))})(ctx);
+  assert.match(edits.at(-1).content,/next season is starting/i);
+  assert.ok(edits.at(-1).components.length);
+  let fallback, acknowledge;
+  const route = createInteractionHandler({yoshiko:ctx.yoshiko,isReady:() => true,
+    schedule(callback) { fallback=callback; return {unref() {}}; }});
+  const interaction = {customId:'profile:season',guildId:'1',values:['0'],user:{id:'101'},
+    deferUpdate:() => new Promise(resolve => { acknowledge=resolve; }),
+    reply:async () => assert.fail('Live selection received an expiration reply')};
+  await route(interaction);
+  await hooks.get('collect')(interaction);
+  fallback();
+  acknowledge();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(edits.at(-1).embeds[0].toJSON().description,'Season 0');
+  assert.equal(edits.at(-1).files[0].attachment.toString(),'9');
 });
 
 test('profile reports an unavailable server leaderboard on the original reply', async t => {

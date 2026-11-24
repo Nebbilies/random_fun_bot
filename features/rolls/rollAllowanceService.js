@@ -2,6 +2,7 @@ import { getGameConfig } from '../../lib/gameConfig.js';
 import { hasAffection, getAffectionBenefits } from '../../lib/characterAffection.js';
 import { getActiveBuffs } from '../../lib/itemStorage.js';
 import { transaction } from '../../lib/catalogDb.js';
+import { claimResetBoundary, guildsAtCutoff } from '../seasons/seasonStore.js';
 import { readRollAllowance, writeRollAllowance, updateUsedRollAllowances, writeMaxRolls,
   clearClaimUsage, readDailyClaim, writeDailyClaim, readClaimAllowance, readClaimEvent, readClaimBuffs } from './rollAllowanceRepository.js';
 
@@ -23,8 +24,7 @@ export function nextRollReset(now, db = null, guildId = null) {
 }
 /** @param {any} [db] @param {string | null} [guildId] */
 export function nextClaimReset(now, db = null, guildId = null) {
-  const s = schedule(db, guildId);
-  return resetAt(now, s.claimIntervalMs, s.timezoneOffsetMinutes);
+  return claimResetBoundary(now,schedule(db,guildId));
 }
 export function getMaxRolls(db, guildId) { return getGameConfig(db, guildId).rolls.maxRolls; }
 
@@ -52,21 +52,28 @@ export function rollCapacity(db, guildId, userId, now) {
   return (buff ? Math.floor(base * (buffRules(buff).allowanceMultiplier ?? 2)) : base) + bonus;
 }
 
-export function addGlobalRolls(db, amount, now = Date.now()) {
-  if (!Number.isSafeInteger(amount) || amount < 1 || !validNow(now)) throw new Error('Invalid roll amount');
+/** @param {any} db @param {unknown} amount @param {number} [now] */
+export function addGlobalRolls(db, amount, now) {
+  if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount < 1 || (now !== undefined && !validNow(now))) {
+    throw new Error('Invalid roll amount');
+  }
   return transaction(db, () => {
+    const time = now ?? Date.now();
+    const skippedGuilds = guildsAtCutoff(db,time);
     const updated = updateUsedRollAllowances(db, row => {
-      if (row.period !== rollPeriod(db, row.guild_id, now)) return null;
-      return Math.max(0, Math.min(row.used, rollCapacity(db, row.guild_id, row.user_id, now)) - amount);
+      if (skippedGuilds.includes(row.guild_id)) return null;
+      if (row.period !== rollPeriod(db, row.guild_id, time)) return null;
+      return Math.max(0, Math.min(row.used, rollCapacity(db, row.guild_id, row.user_id, time)) - amount);
     });
-    return { updated };
+    return skippedGuilds.length ? { updated, skippedGuilds } : { updated };
   });
 }
 
 export function resetGlobalClaims(db) {
   return transaction(db, () => {
-    const updated = clearClaimUsage(db);
-    return { updated };
+    const skippedGuilds = guildsAtCutoff(db);
+    const updated = clearClaimUsage(db,skippedGuilds);
+    return skippedGuilds.length ? { updated, skippedGuilds } : { updated };
   });
 }
 

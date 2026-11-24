@@ -22,6 +22,7 @@ import { createLandmineHandler } from '../features/landmine/landmineMessageHandl
 import { startVoicePing } from '../features/voicePing/voicePingRuntime.js';
 import { startRecoveryWorker } from './recoveryWorker.js';
 import { loadUtilityCommands, registerUtilityCommands } from './utilityCommands.js';
+import { runSeasonWork } from '../features/seasons/seasonRuntime.js';
 /** @param {any} config @param {any} [options] */
 export async function startBot(config, options = {}) {
     const startup = createRecoveryObserver();
@@ -84,6 +85,8 @@ export async function startBot(config, options = {}) {
 /** @param {any} context */
 export async function prepareGameRuntime({ yoshiko, startup, catalogCache, recoveryOperations, finishDiscordLogin, setReady, runRecovery = runGameRecovery }) {
     finishDiscordLogin?.();
+    await runSeasonWork({db:yoshiko.catalogDb,client:yoshiko.client,prefix:yoshiko.config?.prefix})
+        .catch(error => console.error('Season startup recovery failed:', recoveryError(error)));
     const stats = await startup.run('post-client-ready', () => runRecovery({
         db: yoshiko.catalogDb, client: yoshiko.client, imagePicker: yoshiko.imagePicker,
         startup: true, observer: startup, operations: recoveryOperations,
