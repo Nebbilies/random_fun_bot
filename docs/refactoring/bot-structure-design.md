@@ -14,11 +14,11 @@ Use ordinary ES modules and functions. Each file should own a cohesive responsib
 
 ## Options considered
 
-| Option | Benefit | Cost | Decision |
-| --- | --- | --- | --- |
-| Global commands/services/repositories folders | Familiar layered structure | One trade change spans distant folders; runtime and presentation still need explicit homes | Do not choose |
-| Feature folders with internal responsibilities | Related behavior stays together; dependency direction remains clear | Requires naming and import discipline | Recommended |
-| Adopt a bot framework and reorganize everything | Standardized command/listener infrastructure | Dependency migration and broader behavior risk exceed this slice | Defer |
+| Option                                          | Benefit                                                             | Cost                                                                                       | Decision      |
+| ----------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------- |
+| Global commands/services/repositories folders   | Familiar layered structure                                          | One trade change spans distant folders; runtime and presentation still need explicit homes | Do not choose |
+| Feature folders with internal responsibilities  | Related behavior stays together; dependency direction remains clear | Requires naming and import discipline                                                      | Recommended   |
+| Adopt a bot framework and reorganize everything | Standardized command/listener infrastructure                        | Dependency migration and broader behavior risk exceed this slice                           | Defer         |
 
 ## Application modules
 
@@ -70,14 +70,14 @@ The recovery worker reuses `runGameRecovery` and the existing observer. Its inte
 
 ## Trading modules
 
-| Module | Responsibility | Exclusions |
-| --- | --- | --- |
-| Existing command files | Entry points for trade, me, give, cancel | SQL and payload construction |
-| `tradeRuntime.js` | Adapt Discord messages/interactions, drive the conversation, schedule timeouts, connect workflow results to responses | SQL and component construction |
-| `tradeService.js` | Validate and settle transfers atomically; evaluate game conditions using existing availability helpers | Discord objects and presentation |
-| `tradeRepository.js` | Feature-specific ownership/protection/escape queries and ownership writes | Transaction ownership and game decisions |
-| `tradeSessions.js` | Authoritative live-session identity, lookup, picker generations, ending sessions, exact-identity cancellation preparation | Discord imports, payload construction, SQL |
-| `tradePresentation.js` | Construct Components V2 payloads and response text from supplied data | Database access, collectors, timers, sending messages |
+| Module                 | Responsibility                                                                                                            | Exclusions                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Existing command files | Entry points for trade, me, give, cancel                                                                                  | SQL and payload construction                          |
+| `tradeRuntime.js`      | Adapt Discord messages/interactions, drive the conversation, schedule timeouts, connect workflow results to responses     | SQL and component construction                        |
+| `tradeService.js`      | Validate and settle transfers atomically; evaluate game conditions using existing availability helpers                    | Discord objects and presentation                      |
+| `tradeRepository.js`   | Feature-specific ownership/protection/escape queries and ownership writes                                                 | Transaction ownership and game decisions              |
+| `tradeSessions.js`     | Authoritative live-session identity, lookup, picker generations, ending sessions, exact-identity cancellation preparation | Discord imports, payload construction, SQL            |
+| `tradePresentation.js` | Construct Components V2 payloads and response text from supplied data                                                     | Database access, collectors, timers, sending messages |
 
 The existing `characterMarriage`, name search, ownership display, availability, configuration, and harem presentation modules remain shared dependencies. Their implementations are reused rather than duplicated into trading. Presentation receives already-projected character rows; it does not run ownership-display queries itself.
 

@@ -44,13 +44,13 @@ Switching or ownership loss changes current benefits immediately without resetti
 
 ### Award rules
 
-| Qualifying event | Recipient relationship | Base affection |
-| --- | --- | ---: |
-| Player rolls a character they own | Roller and that character | 100 |
-| Successful owner reclaim on another player's roll | Owner and reclaimed character | 20 |
-| Successful reclaim of a Siren's Call escape, including Whistle | Owner and reclaimed character | 20 |
-| Successful manual or Whistle reclaim on a newly marked ordinary roll | Original roller and their current, owned soulmate at reclaim | 5 |
-| Roller and selected soulmate share a qualifying franchise with the rolled character | Roller and selected soulmate | 12 / 10 / 5 below |
+| Qualifying event                                                                    | Recipient relationship                                       |    Base affection |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------ | ----------------: |
+| Player rolls a character they own                                                   | Roller and that character                                    |               100 |
+| Successful owner reclaim on another player's roll                                   | Owner and reclaimed character                                |                20 |
+| Successful reclaim of a Siren's Call escape, including Whistle                      | Owner and reclaimed character                                |                20 |
+| Successful manual or Whistle reclaim on a newly marked ordinary roll                | Original roller and their current, owned soulmate at reclaim |                 5 |
+| Roller and selected soulmate share a qualifying franchise with the rolled character | Roller and selected soulmate                                 | 12 / 10 / 5 below |
 
 Only the roller's own requests grant indirect soulmate affection. Someone else's related roll does not. Siren activation is an item action, not a character roll for its instigator; it grants neither indirect affection nor a Windfall opportunity. Acquiring, trading, gifting, or directly marrying a character is not an additional affection source.
 
@@ -65,10 +65,10 @@ There is no daily affection cap or repeat-character penalty. Separate legitimate
 Retain all canonical memberships from `characterFranchiseRelation()` / `effective_character_franchises`, including direct curated and anime-derived membership. Within each franchise, count distinct **published** `characters.id`; a character can count once in each of several franchises. Do not count aliases, anime rows, staging candidates, or retained identities without publication.
 
 | Published franchise size | Award |
-| --- | ---: |
-| 1–5 | 12 |
-| 6–10 | 10 |
-| 11+ | 5 |
+| ------------------------ | ----: |
+| 1–5                      |    12 |
+| 6–10                     |    10 |
+| 11+                      |     5 |
 
 Intersect the selected soulmate's and rolled character's franchise IDs. Evaluate the award for every shared franchise, and take the **minimum**. Sharing a 12-point and a 5-point franchise gives 5, never 12 or 17. Non-shared memberships do not affect that award. Do not sum franchise sizes or divide a character's membership weight. Use whole-catalog sizes, never the gender-filtered, temporarily available, or Passport-concentrated pool.
 
@@ -99,31 +99,31 @@ A transport failure does not earn affection until presentation is acknowledged. 
 
 All characters, soulmate or otherwise, use the same cumulative affection total and normal milestones. Normal non-soulmates generally progress through their own appearances and reclaims, not the soulmate's indirect matches; do not promise soulmate-paced progression for every character in a harem.
 
-| Total affection | Normal reward |
-| ---: | --- |
-| 25 | One Four-Leaf Clover copy |
-| 50 | One Hourglass of Haste copy |
-| 100 | One random Common copy |
-| 200 | +1 hourly roll-capacity contribution while owned |
-| 300 | One Love Letter copy |
-| 400 | One random Rare copy |
-| 500 | One Golden Whistle copy |
-| 600 | One random Rare copy |
-| 700 | Six-minute normal claim-wait reduction contribution while owned |
-| 800 | One random Rare copy |
-| 900 | One Franchise Passport copy |
-| 1,000 | One random Epic copy |
-| 1,100 | One random Epic copy |
-| 1,200 | One random Legendary copy |
-| 1,300 | One random Epic copy |
-| 1,400 | One random Epic copy |
-| 1,500 | One random Legendary copy |
-| 1,600 | One random Epic copy |
-| 1,700 | One random Epic copy |
-| 1,800 | One random Legendary copy |
-| 1,900 | One random Epic copy |
-| 2,000 | One random Epic copy |
-| 2,100 | One random Legendary copy |
+| Total affection | Normal reward                                                   |
+| --------------: | --------------------------------------------------------------- |
+|              25 | One Four-Leaf Clover copy                                       |
+|              50 | One Hourglass of Haste copy                                     |
+|             100 | One random Common copy                                          |
+|             200 | +1 hourly roll-capacity contribution while owned                |
+|             300 | One Love Letter copy                                            |
+|             400 | One random Rare copy                                            |
+|             500 | One Golden Whistle copy                                         |
+|             600 | One random Rare copy                                            |
+|             700 | Six-minute normal claim-wait reduction contribution while owned |
+|             800 | One random Rare copy                                            |
+|             900 | One Franchise Passport copy                                     |
+|           1,000 | One random Epic copy                                            |
+|           1,100 | One random Epic copy                                            |
+|           1,200 | One random Legendary copy                                       |
+|           1,300 | One random Epic copy                                            |
+|           1,400 | One random Epic copy                                            |
+|           1,500 | One random Legendary copy                                       |
+|           1,600 | One random Epic copy                                            |
+|           1,700 | One random Epic copy                                            |
+|           1,800 | One random Legendary copy                                       |
+|           1,900 | One random Epic copy                                            |
+|           2,000 | One random Epic copy                                            |
+|           2,100 | One random Legendary copy                                       |
 
 One item copy has its normal configured starting charges; Golden Whistle defaults to three. Each item milestone pays once per relationship. The first own-character appearance from zero crosses 25/50/100 and earns three separate copies. A doubled 100-point award can cross two later hundred-point milestones; grant each once.
 
@@ -152,28 +152,28 @@ Use the same read-only eligibility calculation for mystery-win Chit availability
 Only the active, currently owned soulmate supplies every checkpoint its saved affection has reached. Same-effect rates replace, rather than add to, earlier rates. Different effects remain cumulative and use independent checks.
 
 | Total affection | Unlock or upgraded chance |
-| ---: | --- |
-| 100 | Windfall 8% |
-| 150 | Item Conservation 8% |
-| 200 | Unbroken Bond 8% |
-| 250 | Windfall 10% |
-| 300 | Claim Conservation 8% |
-| 400 | Item Conservation 16% |
-| 500 | Fortune's Favor 8% |
-| 600 | Unbroken Bond 16% |
-| 700 | Negation 8% |
-| 800 | Claim Conservation 16% |
-| 900 | Echo 8% |
-| 1,000 | Fortune's Favor 16% |
-| 1,100 | Negation 12% |
-| 1,200 | Echo 16% |
-| 1,300 | Windfall 15% |
-| 1,400 | Item Conservation 20% |
-| 1,500 | Unbroken Bond 20% |
-| 1,650 | Claim Conservation 20% |
-| 1,800 | Fortune's Favor 20% |
-| 1,950 | Negation 16% |
-| 2,100 | Echo 20% |
+| --------------: | ------------------------- |
+|             100 | Windfall 8%               |
+|             150 | Item Conservation 8%      |
+|             200 | Unbroken Bond 8%          |
+|             250 | Windfall 10%              |
+|             300 | Claim Conservation 8%     |
+|             400 | Item Conservation 16%     |
+|             500 | Fortune's Favor 8%        |
+|             600 | Unbroken Bond 16%         |
+|             700 | Negation 8%               |
+|             800 | Claim Conservation 16%    |
+|             900 | Echo 8%                   |
+|           1,000 | Fortune's Favor 16%       |
+|           1,100 | Negation 12%              |
+|           1,200 | Echo 16%                  |
+|           1,300 | Windfall 15%              |
+|           1,400 | Item Conservation 20%     |
+|           1,500 | Unbroken Bond 20%         |
+|           1,650 | Claim Conservation 20%    |
+|           1,800 | Fortune's Favor 20%       |
+|           1,950 | Negation 16%              |
+|           2,100 | Echo 20%                  |
 
 ### Windfall
 
@@ -197,14 +197,14 @@ Preserve exactly the resource that existing precedence would spend; do not choos
 
 Validate the eligible hostile action and original target before any new check or existing defensive expenditure. Snapshot the defending owner's active protection at that action's resolution, before it can remove its own funding soulmate. Resolve once. A successful check blocks the action, preserves Mirror Shield and armed Crown, and normally spends the attack source subject to the attacker's Item Conservation. A failed check proceeds through that item's existing defenses without broadening their scope.
 
-| Action | Negation resolution and blocked result |
-| --- | --- |
-| Master Key / Pickpocket's Hook | After selecting and validating the hostile target, before Shield/Crown; no transfer on success |
-| Opposing Cupid's Misfire | At the married selection, before Shield; exhaust Misfire but prevent divorce, then retain ordinary escape behavior |
-| Severed Fate | At validated confirmation, before defenses; no divorce |
-| Heart for a Heart | At validated confirmation, before defenses; neither the hostile divorce nor actor sacrifice occurs |
-| Hostage Note | At validated challenge opening, before Shield/Crown; stop the whole challenge and normally charge Note; no new check at its later exchange/gamble |
-| Siren's Call | At validated activation, before Crown; normally charge Siren but create no escape; later escape marriage never gets another check |
+| Action                         | Negation resolution and blocked result                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Master Key / Pickpocket's Hook | After selecting and validating the hostile target, before Shield/Crown; no transfer on success                                                    |
+| Opposing Cupid's Misfire       | At the married selection, before Shield; exhaust Misfire but prevent divorce, then retain ordinary escape behavior                                |
+| Severed Fate                   | At validated confirmation, before defenses; no divorce                                                                                            |
+| Heart for a Heart              | At validated confirmation, before defenses; neither the hostile divorce nor actor sacrifice occurs                                                |
+| Hostage Note                   | At validated challenge opening, before Shield/Crown; stop the whole challenge and normally charge Note; no new check at its later exchange/gamble |
+| Siren's Call                   | At validated activation, before Crown; normally charge Siren but create no escape; later escape marriage never gets another check                 |
 
 Exclude ordinary escape marriages, Kaimetsu, Grand Masquerade/mass effects, soulbind removal, voluntary sacrifices as such, and consensual transfers. Redirecting to a Crown decoy is not a second attack or second Negation check. A stale target fails validation rather than following a changed owner.
 
@@ -251,11 +251,11 @@ Decline is terminal for that entitlement. Ownership loss, switching, reacquisiti
 
 ### Options
 
-| Option | Advantage | Why not selected |
-| --- | --- | --- |
-| Add affection counters/randomness independently in each command/item | Small first patch | Duplicates ownership, snapshots, replay protection and cost policy; misses automatic/administrative writers |
-| Build a generic event-sourcing/reward engine | Broad abstraction | Unnecessary rewrite; introduces another scheduler/delivery system and makes existing item/mystery behavior harder to preserve |
-| Add a focused affection module and shared semantic perk decisions; extend current reward/runtime seams | Reuses current durable state and UI, keeps rules local | Requires deliberate integration at several real event seams and exact-schema upgrade work |
+| Option                                                                                                 | Advantage                                              | Why not selected                                                                                                              |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Add affection counters/randomness independently in each command/item                                   | Small first patch                                      | Duplicates ownership, snapshots, replay protection and cost policy; misses automatic/administrative writers                   |
+| Build a generic event-sourcing/reward engine                                                           | Broad abstraction                                      | Unnecessary rewrite; introduces another scheduler/delivery system and makes existing item/mystery behavior harder to preserve |
+| Add a focused affection module and shared semantic perk decisions; extend current reward/runtime seams | Reuses current durable state and UI, keeps rules local | Requires deliberate integration at several real event seams and exact-schema upgrade work                                     |
 
 **Recommendation: option 3.** Use deep modules with a small transactional interface; callers provide event identity and validated context, not individual threshold math or SQL updates. Pure calculations accept snapshots and injected random draws; existing adapters provide SQLite/catalog/Discord behavior. No new provider, queue, or framework.
 
@@ -275,16 +275,16 @@ Conceptually, the affection interface exposes current benefit reads, capture of 
 
 Exact column names belong to the implementation plan, but these state distinctions and uniqueness constraints are required:
 
-| Record | Required identity and contents |
-| --- | --- |
-| Affection schema marker | Feature version plus activation/capture version; separate from catalog character IDs |
-| Relationship progress | Primary key guild/player/character; integer total 0–2,100; no ownership cascade |
-| Player soulmate state | Primary key guild/player; nullable selected character; selected-at/switch deadline and confirmation version sufficient for stale-menu rejection |
-| Accepted roll context | Stable guild/command source key; roller, original roll reference, outcome kind, saved ownership/matching/perk eligibility, rule version and presentation/cancellation state |
-| Award receipt | Unique logical roll source/player/target-character; qualifying base and credited result, Bond decision/context and resulting progress; survives roll cleanup |
-| Semantic perk/use receipt | Unique logical source/effect/subject/cost ordinal; captured chance, outcome including negative/no-perk, and committed cost/result linkage |
-| Milestone entitlement | Unique guild/player/character/milestone key; earned rarity or fixed item, owed/selected/settled state, frozen outcome, and durable existing reward-row linkage |
-| Reward copy linkage | Parent reward, copy ordinal, final frozen item, direct provenance, independent acquisition/overflow/decline settlement |
+| Record                    | Required identity and contents                                                                                                                                              |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Affection schema marker   | Feature version plus activation/capture version; separate from catalog character IDs                                                                                        |
+| Relationship progress     | Primary key guild/player/character; integer total 0–2,100; no ownership cascade                                                                                             |
+| Player soulmate state     | Primary key guild/player; nullable selected character; selected-at/switch deadline and confirmation version sufficient for stale-menu rejection                             |
+| Accepted roll context     | Stable guild/command source key; roller, original roll reference, outcome kind, saved ownership/matching/perk eligibility, rule version and presentation/cancellation state |
+| Award receipt             | Unique logical roll source/player/target-character; qualifying base and credited result, Bond decision/context and resulting progress; survives roll cleanup                |
+| Semantic perk/use receipt | Unique logical source/effect/subject/cost ordinal; captured chance, outcome including negative/no-perk, and committed cost/result linkage                                   |
+| Milestone entitlement     | Unique guild/player/character/milestone key; earned rarity or fixed item, owed/selected/settled state, frozen outcome, and durable existing reward-row linkage              |
+| Reward copy linkage       | Parent reward, copy ordinal, final frozen item, direct provenance, independent acquisition/overflow/decline settlement                                                      |
 
 Keep these as a small feature schema and extensions to existing reward accounting, not a generic append-only history of all gameplay. Logical records can combine where their lifecycle/uniqueness matches. Do not duplicate current inventory or vault sessions. Index relationship owner reads, selected-character invalidation, pending owner entitlements, and source/pair/copy lookups.
 
@@ -353,13 +353,13 @@ No production migration, SSH session, database copy, service restart, or rollout
 
 Use the dynamic guild prefix; `!` below is only an example.
 
-| Command | Behavior |
-| --- | --- |
-| `!affection` / `!aff` | Own affection overview, current soulmate, effective capped bonuses, and owed/pending items |
-| `!affection @player` | That player's server-scoped overview, read-only |
-| `!affection <name or #rank> [@player]` | Detailed saved relationship progress; defaults to caller |
-| `!soulmate` / `!sm` | Current soulmate/status or clear guidance if none |
-| `!soulmate <name or #rank>` | Caller-only lookup, ambiguity chooser, then explicit confirm/cancel |
+| Command                                | Behavior                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `!affection` / `!aff`                  | Own affection overview, current soulmate, effective capped bonuses, and owed/pending items |
+| `!affection @player`                   | That player's server-scoped overview, read-only                                            |
+| `!affection <name or #rank> [@player]` | Detailed saved relationship progress; defaults to caller                                   |
+| `!soulmate` / `!sm`                    | Current soulmate/status or clear guidance if none                                          |
+| `!soulmate <name or #rank>`            | Caller-only lookup, ambiguity chooser, then explicit confirm/cancel                        |
 
 Reuse `findCharacters`/the existing character index, including curated aliases, and existing player-target parsing. A rank is resolved at command time to a canonical ID; later rank changes never move a confirmation to another character. Support the exact accepted name/#rank grammar without inventing new aliases, slash commands, or a second selection resource.
 

@@ -1,39 +1,130 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>Gender review · Yoshiko</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%237c3aed'/%3E%3Ctext x='20' y='28' text-anchor='middle' fill='white' font-family='sans-serif' font-size='28'%3Ey%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/assets/portal.css">
-  <script src="/assets/portal.js" type="module"></script>
-  <script src="/assets/reviewCharacterGenders.js" type="module"></script>
-</head>
-<body data-page="character" data-standalone="false">
-  <a class="skip-link" href="#main">Skip to content</a>
-  <aside class="sidebar">
-    <a class="brand" href="/" aria-label="Yoshiko portal home"><span class="brand-mark">y<span>.</span></span><span>yoshiko<span class="brand-caption">MANAGEMENT PORTAL</span></span></a>
-    <p class="nav-label">WORKSPACE</p>
-    <nav aria-label="Management portal">
-        <a href="/" data-combined-only><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><circle cx="12" cy="9" r="2.5"/><path d="M7 17c0-4 10-4 10 0"/></svg><span>Character review</span><span class="nav-dot"></span></a>
-        <a href="/franchise"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Franchises</span></a>
-        <a href="/game" data-combined-only><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7h8c3 0 4 3 5 9 .5 4-3 4-5 0H8c-2 4-5.5 4-5 0 1-6 2-9 5-9Z"/><path d="M7 10v5m-2.5-2.5h5M16 11h.01M18 14h.01"/></svg><span>Game controls</span></a>
-        <a href="/config" data-combined-only><span aria-hidden="true">⚙</span><span>Configuration</span></a>
-        <a href="/catalog"><span aria-hidden="true">▤</span><span>Catalog</span></a>
-    </nav>
-    <div class="sidebar-footer"><span class="workspace-icon">Y</span><div>Yoshiko workspace<span>Catalog & game management</span></div></div>
-  </aside>
-  <div class="workspace">
-    <header class="topbar"><div><span class="muted">Workspace</span><span class="breadcrumb-divider">/</span><span>Gender review</span></div><span class="workspace-badge">Management</span></header>
-    <main id="main" tabindex="-1">
-      <header class="page-heading"><div><p class="eyebrow">CATALOG MANAGEMENT</p><h1>Gender review</h1><p class="page-description">Review player flags, correct gender, or restore the latest source value.</p></div><span class="page-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><circle cx="12" cy="9" r="2.5"/><path d="M7 17c0-4 10-4 10 0"/></svg></span></header>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Gender review · Yoshiko</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%237c3aed'/%3E%3Ctext x='20' y='28' text-anchor='middle' fill='white' font-family='sans-serif' font-size='28'%3Ey%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/assets/portal.css" />
+    <script src="/assets/portal.js" type="module"></script>
+    <script src="/assets/reviewCharacterGenders.js" type="module"></script>
+  </head>
+  <body data-page="character" data-standalone="false">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="Yoshiko portal home"
+        ><span class="brand-mark">y<span>.</span></span
+        ><span
+          >yoshiko<span class="brand-caption">MANAGEMENT PORTAL</span></span
+        ></a
+      >
+      <p class="nav-label">WORKSPACE</p>
+      <nav aria-label="Management portal">
+        <a href="/" data-combined-only
+          ><svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="4" y="3" width="16" height="18" rx="3" />
+            <circle cx="12" cy="9" r="2.5" />
+            <path d="M7 17c0-4 10-4 10 0" /></svg
+          ><span>Character review</span><span class="nav-dot"></span
+        ></a>
+        <a href="/franchise"
+          ><svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="3" y="3" width="7" height="7" rx="2" />
+            <rect x="14" y="3" width="7" height="7" rx="2" />
+            <rect x="3" y="14" width="7" height="7" rx="2" />
+            <rect x="14" y="14" width="7" height="7" rx="2" /></svg
+          ><span>Franchises</span></a
+        >
+        <a href="/game" data-combined-only
+          ><svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d="M8 7h8c3 0 4 3 5 9 .5 4-3 4-5 0H8c-2 4-5.5 4-5 0 1-6 2-9 5-9Z"
+            />
+            <path d="M7 10v5m-2.5-2.5h5M16 11h.01M18 14h.01" /></svg
+          ><span>Game controls</span></a
+        >
+        <a href="/config" data-combined-only
+          ><span aria-hidden="true">⚙</span><span>Configuration</span></a
+        >
+        <a href="/catalog"
+          ><span aria-hidden="true">▤</span><span>Catalog</span></a
+        >
+      </nav>
+      <div class="sidebar-footer">
+        <span class="workspace-icon">Y</span>
+        <div>Yoshiko workspace<span>Catalog & game management</span></div>
+      </div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div>
+          <span class="muted">Workspace</span
+          ><span class="breadcrumb-divider">/</span><span>Gender review</span>
+        </div>
+        <span class="workspace-badge">Management</span>
+      </header>
+      <main id="main" tabindex="-1">
+        <header class="page-heading">
+          <div>
+            <p class="eyebrow">CATALOG MANAGEMENT</p>
+            <h1>Gender review</h1>
+            <p class="page-description">
+              Review player flags, correct gender, or restore the latest source
+              value.
+            </p>
+          </div>
+          <span class="page-icon"
+            ><svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="4" y="3" width="16" height="18" rx="3" />
+              <circle cx="12" cy="9" r="2.5" />
+              <path d="M7 17c0-4 10-4 10 0" /></svg
+          ></span>
+        </header>
 
-      <p id="feedback" role="status"></p>
-      <section id="case" aria-label="Oldest reported character"></section>
-      <h2>Gender overrides</h2><div id="overrides"></div>
-      <h2>Resolution history</h2><div id="history"></div><button id="more">Load more history</button>
-    </main>
-  </div>
-</body>
+        <p id="feedback" role="status"></p>
+        <section id="case" aria-label="Oldest reported character"></section>
+        <h2>Gender overrides</h2>
+        <div id="overrides"></div>
+        <h2>Resolution history</h2>
+        <div id="history"></div>
+        <button id="more">Load more history</button>
+      </main>
+    </div>
+  </body>
 </html>

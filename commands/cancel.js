@@ -1,4 +1,4 @@
-import { cancelTransfer } from '../lib/tradeRuntime.js';
+import { cancelTransfer } from "../lib/tradeRuntime.js";
 
 /**
  * !cancel — decline the trade or gift you are part of.

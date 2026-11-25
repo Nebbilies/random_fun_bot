@@ -15,13 +15,13 @@ Status: Design approved by the user and implemented. The rules below are the agr
 
 Default distribution per opened vault:
 
-| Tier | Probability |
-| --- | ---: |
-| Common | 59.9% |
-| Rare | 20% |
-| Epic | 15% |
-| Legendary | 5% |
-| ??? | 0.1% |
+| Tier      | Probability |
+| --------- | ----------: |
+| Common    |       59.9% |
+| Rare      |         20% |
+| Epic      |         15% |
+| Legendary |          5% |
+| ???       |        0.1% |
 
 Kaimetsu's probability is funded by reducing Common by 0.1 percentage points, not by proportionally reducing all existing tiers. These are vault-opening odds, not the probability that a normal roll produces a vault. Preserve the existing runtime configuration system; defaults must total 100, rather than adding 0.1 to a total of 100.
 

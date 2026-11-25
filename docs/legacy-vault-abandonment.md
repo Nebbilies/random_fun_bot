@@ -34,6 +34,7 @@ under the unchanged authoritative final schema.
    transaction, then exclusively published to a previously absent output. Output
    and report may not alias source/sidecars or existing files. Default
    `bot.sqlite`, hardlinks and production-name symlink aliases are refused.
+
 4. Preserve the external JSONL evidence with the backup and conversion artifacts.
    Start and precommit records are fsynced before writes/commit. `published` means
    a standalone clone was published, **not** that migration/runtime is ready.

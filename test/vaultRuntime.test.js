@@ -1,29 +1,33 @@
-import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { openCatalog } from '../lib/catalogDb.js';
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { openCatalog } from "../lib/catalogDb.js";
 import {
   vaultCard,
   vaultRewardCard,
   vaultRewardEmbed,
   startVaultRoll,
   onVaultInteraction,
-} from '../lib/vaultRuntime.js';
-import { getInventory, addItemToInventory } from '../lib/itemStorage.js';
-import { initVaultRewards, getVaultReward } from '../lib/vaultRewards.js';
-import { getItemsInTier, ITEM_TIERS } from '../lib/itemRoster.js';
-import { ITEM_ACTION_CONFIG } from '../lib/itemActionConfig.js';
+} from "../lib/vaultRuntime.js";
+import { getInventory, addItemToInventory } from "../lib/itemStorage.js";
+import { initVaultRewards, getVaultReward } from "../lib/vaultRewards.js";
+import { getItemsInTier, ITEM_TIERS } from "../lib/itemRoster.js";
+import { ITEM_ACTION_CONFIG } from "../lib/itemActionConfig.js";
 
-function mockChannel(id = '2001') {
+function mockChannel(id = "2001") {
   const sent = [];
   return {
     id,
     sent,
-    messages: { async fetch(request) {
-      const messageId = typeof request === 'string' ? request : request.message;
-      const message = sent.find(item => item.id === messageId);
-      if (!message) throw Object.assign(new Error('deleted'), { code: 10008 });
-      return message;
-    } },
+    messages: {
+      async fetch(request) {
+        const messageId =
+          typeof request === "string" ? request : request.message;
+        const message = sent.find((item) => item.id === messageId);
+        if (!message)
+          throw Object.assign(new Error("deleted"), { code: 10008 });
+        return message;
+      },
+    },
     async send(payload) {
       const messageId = String(1000 + sent.length);
       const item = {
@@ -46,44 +50,64 @@ function mockChannel(id = '2001') {
   };
 }
 
-test('vaultCard creates container with 3 buttons A, B, C and mystery vault asset on send, but omits files on disable', () => {
-  const card = vaultCard(5, 'vault_test_1');
+test("vaultCard creates container with 3 buttons A, B, C and mystery vault asset on send, but omits files on disable", () => {
+  const card = vaultCard(5, "vault_test_1");
   assert.ok(card.components);
-  assert.ok(card.files.some((f) => f.name === 'mystery_vault.png'));
+  assert.ok(card.files.some((f) => f.name === "mystery_vault.png"));
 
-  const disabledCard = vaultCard(5, 'vault_test_1', true);
+  const disabledCard = vaultCard(5, "vault_test_1", true);
   assert.ok(disabledCard.components);
   assert.equal(disabledCard.files, undefined);
 });
 
-test('vault appearance replies to the triggering command without pinging its author', async t => {
-  const db = openCatalog(':memory:'); t.after(() => db.close());
+test("vault appearance replies to the triggering command without pinging its author", async (t) => {
+  const db = openCatalog(":memory:");
+  t.after(() => db.close());
   const channel = mockChannel();
-  await startVaultRoll({ db, channel, guildId: '1001', rollerId: '3001', remaining: 4, commandMessageId: '777' });
-  assert.deepEqual(channel.sent[0].payload.reply, { messageReference: '777', failIfNotExists: false });
-  assert.deepEqual(channel.sent[0].payload.allowedMentions, { parse: [], repliedUser: false });
+  await startVaultRoll({
+    db,
+    channel,
+    guildId: "1001",
+    rollerId: "3001",
+    remaining: 4,
+    commandMessageId: "777",
+  });
+  assert.deepEqual(channel.sent[0].payload.reply, {
+    messageReference: "777",
+    failIfNotExists: false,
+  });
+  assert.deepEqual(channel.sent[0].payload.allowedMentions, {
+    parse: [],
+    repliedUser: false,
+  });
 });
 
-test('vaultRewardCard builds container with tier color, large markdown title, and description like roll card', () => {
+test("vaultRewardCard builds container with tier color, large markdown title, and description like roll card", () => {
   const outcome = {
-    tier: 'epic',
-    tierData: { name: 'Epic', color: 0x9b59b6, emoji: '🟣' },
-    item: { name: "Pickpocket's Hook", description: 'Steals a randomly chosen character.' },
+    tier: "epic",
+    tierData: { name: "Epic", color: 0x9b59b6, emoji: "🟣" },
+    item: {
+      name: "Pickpocket's Hook",
+      description: "Steals a randomly chosen character.",
+    },
   };
   const card = vaultRewardCard(outcome);
   const json = card.toJSON();
   assert.equal(json.type, 17); // ContainerBuilder (Components V2)
   assert.equal(json.accent_color, 0x9b59b6);
-  assert.equal(json.components[0].content, '# 🟣 Epic');
-  assert.equal(json.components[1].content, "**Pickpocket's Hook** — Steals a randomly chosen character.");
+  assert.equal(json.components[0].content, "# 🟣 Epic");
+  assert.equal(
+    json.components[1].content,
+    "**Pickpocket's Hook** — Steals a randomly chosen character.",
+  );
 });
 
-test('onVaultInteraction rolls outcome, replies with Components V2 container before editing original message', async () => {
-  const db = openCatalog(':memory:');
+test("onVaultInteraction rolls outcome, replies with Components V2 container before editing original message", async () => {
+  const db = openCatalog(":memory:");
   initVaultRewards(db);
   const channel = mockChannel();
-  const guildId = '1001';
-  const rollerId = '3001';
+  const guildId = "1001";
+  const rollerId = "3001";
 
   const vaultMsg = await startVaultRoll({
     db,
@@ -93,16 +117,21 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
     remaining: 4,
     // Provide deterministic outcome
     rollOutcome: () => ({
-      tier: 'legendary',
-      tierData: { name: 'Legendary', color: 0xf1c40f, emoji: '🟡' },
-      item: { id: 'master_key', name: 'Master Key', description: 'Steals a chosen character.', maxCharges: 1 },
+      tier: "legendary",
+      tierData: { name: "Legendary", color: 0xf1c40f, emoji: "🟡" },
+      item: {
+        id: "master_key",
+        name: "Master Key",
+        description: "Steals a chosen character.",
+        maxCharges: 1,
+      },
     }),
   });
 
   // Track sequence of execution
   const callSequence = [];
   vaultMsg.message.edit = async (change) => {
-    callSequence.push('message:edit');
+    callSequence.push("message:edit");
     vaultMsg.message.edits.push(change);
     return vaultMsg.message;
   };
@@ -113,8 +142,10 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
     isButton: () => true,
     isStringSelectMenu: () => false,
     customId: `vault:${vaultMsg.vaultId}:A`,
-    user: { id: 'intruder_99' },
-    reply: async (opts) => { rejected = true; },
+    user: { id: "intruder_99" },
+    reply: async (opts) => {
+      rejected = true;
+    },
   };
   await onVaultInteraction(db, intruderInteraction);
   assert.equal(rejected, true);
@@ -130,7 +161,7 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
     message: vaultMsg.message,
     channel,
     reply: async (opts) => {
-      callSequence.push('interaction:reply');
+      callSequence.push("interaction:reply");
       repliedOpts = opts;
     },
   };
@@ -142,74 +173,143 @@ test('onVaultInteraction rolls outcome, replies with Components V2 container bef
   const cardJson = repliedOpts.components[0].toJSON();
   assert.equal(cardJson.type, 17); // Container
   assert.equal(cardJson.accent_color, 0xf1c40f);
-  assert.match(cardJson.components[0].content, /<@3001> received \*\*Master Key\*\*/);
-  assert.equal(cardJson.components[1].content, '# 🟡 Legendary');
+  assert.match(
+    cardJson.components[0].content,
+    /<@3001> received \*\*Master Key\*\*/,
+  );
+  assert.equal(cardJson.components[1].content, "# 🟡 Legendary");
   assert.match(cardJson.components[2].content, /\*\*Master Key\*\*/);
 
   // Ensure reply happened BEFORE message:edit
-  assert.deepEqual(callSequence, ['interaction:reply', 'message:edit']);
+  assert.deepEqual(callSequence, ["interaction:reply", "message:edit"]);
 
   // Verify item was stored in inventory
   const inv = getInventory(db, guildId, rollerId);
   assert.equal(inv.length, 1);
-  assert.equal(inv[0].item_id, 'master_key');
+  assert.equal(inv[0].item_id, "master_key");
 
   // Vault buttons on the original card should be disabled
   assert.ok(vaultMsg.message.edits.length > 0);
 });
 
-
-test('revealed Keep/Gamble prompt is owner/message scoped and timeout keeps through recovery', async () => {
-  const db = openCatalog(':memory:');
+test("revealed Keep/Gamble prompt is owner/message scoped and timeout keeps through recovery", async () => {
+  const db = openCatalog(":memory:");
   initVaultRewards(db);
   let clock = 100;
-  addItemToInventory(db, '10001', 'roller', 'double_or_nothing', undefined, { now: clock });
-  const channel = mockChannel('channel');
-  const vault = await startVaultRoll({ db, channel, guildId: '10001', rollerId: 'roller', remaining: 1,
-    now: () => clock, rollOutcome: () => ({ tier: 'common', tierData: ITEM_TIERS.common, item: getItemsInTier('common')[0] }) });
-  const prompt = { id: 'reward-prompt', channelId: 'channel', edit: async () => prompt };
+  addItemToInventory(db, "10001", "roller", "double_or_nothing", undefined, {
+    now: clock,
+  });
+  const channel = mockChannel("channel");
+  const vault = await startVaultRoll({
+    db,
+    channel,
+    guildId: "10001",
+    rollerId: "roller",
+    remaining: 1,
+    now: () => clock,
+    rollOutcome: () => ({
+      tier: "common",
+      tierData: ITEM_TIERS.common,
+      item: getItemsInTier("common")[0],
+    }),
+  });
+  const prompt = {
+    id: "reward-prompt",
+    channelId: "channel",
+    edit: async () => prompt,
+  };
   const replies = [];
-  const interaction = { isButton: () => true, isStringSelectMenu: () => false,
-    customId: `vault:${vault.vaultId}:A`, guildId: '10001', channelId: 'channel', channel,
-    user: { id: 'roller' }, message: vault.message,
-    reply: async p => { replies.push(p); return prompt; }, fetchReply: async () => prompt };
+  const interaction = {
+    isButton: () => true,
+    isStringSelectMenu: () => false,
+    customId: `vault:${vault.vaultId}:A`,
+    guildId: "10001",
+    channelId: "channel",
+    channel,
+    user: { id: "roller" },
+    message: vault.message,
+    reply: async (p) => {
+      replies.push(p);
+      return prompt;
+    },
+    fetchReply: async () => prompt,
+  };
   await onVaultInteraction(db, interaction, { now: () => clock });
-  assert.equal(getVaultReward(db, vault.vaultId).state, 'decision');
+  assert.equal(getVaultReward(db, vault.vaultId).state, "decision");
   const json = replies[0].components[0].toJSON();
-  assert.ok(JSON.stringify(json).includes(':gamble'));
-  const intruder = { ...interaction, user: { id: 'intruder' }, message: prompt,
-    customId: `vault:${vault.vaultId}:keep` };
+  assert.ok(JSON.stringify(json).includes(":gamble"));
+  const intruder = {
+    ...interaction,
+    user: { id: "intruder" },
+    message: prompt,
+    customId: `vault:${vault.vaultId}:keep`,
+  };
   await onVaultInteraction(db, intruder, { now: () => clock });
-  assert.equal(getVaultReward(db, vault.vaultId).state, 'decision');
+  assert.equal(getVaultReward(db, vault.vaultId).state, "decision");
   clock += ITEM_ACTION_CONFIG.doubleDecisionMs;
-  const { recoverVaultRewards } = await import('../lib/vaultRuntime.js');
-  await recoverVaultRewards(db, { channels: { fetch: async () => ({ messages: { fetch: async request => {
-    const messageId = typeof request === 'string' ? request : request.message;
-    if (messageId !== prompt.id) throw Object.assign(new Error('deleted'), { code: 10008 });
-    return prompt;
-  } } }) } }, { now: () => clock });
-  assert.equal(getVaultReward(db, vault.vaultId).state, 'delivered');
-  const inventory = getInventory(db, '10001', 'roller', clock);
+  const { recoverVaultRewards } = await import("../lib/vaultRuntime.js");
+  await recoverVaultRewards(
+    db,
+    {
+      channels: {
+        fetch: async () => ({
+          messages: {
+            fetch: async (request) => {
+              const messageId =
+                typeof request === "string" ? request : request.message;
+              if (messageId !== prompt.id)
+                throw Object.assign(new Error("deleted"), { code: 10008 });
+              return prompt;
+            },
+          },
+        }),
+      },
+    },
+    { now: () => clock },
+  );
+  assert.equal(getVaultReward(db, vault.vaultId).state, "delivered");
+  const inventory = getInventory(db, "10001", "roller", clock);
   assert.equal(inventory.length, 2);
-  const granted = inventory.find(item => item.item_id === getItemsInTier('common')[0].id);
+  const granted = inventory.find(
+    (item) => item.item_id === getItemsInTier("common")[0].id,
+  );
   assert.equal(granted.acquired_at, new Date(clock).toISOString());
-  assert.ok(getInventory(db, '10001', 'roller', granted.expires_at - 1).some(item => item.id === granted.id));
-  assert.ok(!getInventory(db, '10001', 'roller', granted.expires_at).some(item => item.id === granted.id));
+  assert.ok(
+    getInventory(db, "10001", "roller", granted.expires_at - 1).some(
+      (item) => item.id === granted.id,
+    ),
+  );
+  assert.ok(
+    !getInventory(db, "10001", "roller", granted.expires_at).some(
+      (item) => item.id === granted.id,
+    ),
+  );
   db.close();
 });
 
-
-test('forged legacy replacement controls cannot grant rewards or delete inventory', async () => {
-  const db = openCatalog(':memory:');
+test("forged legacy replacement controls cannot grant rewards or delete inventory", async () => {
+  const db = openCatalog(":memory:");
   initVaultRewards(db);
-  const held = addItemToInventory(db, '10001', 'victim', getItemsInTier('common')[0].id).item;
+  const held = addItemToInventory(
+    db,
+    "10001",
+    "victim",
+    getItemsInTier("common")[0].id,
+  ).item;
   const replies = [];
-  await onVaultInteraction(db, { isButton: () => false, isStringSelectMenu: () => true,
-    customId: 'vault:invented:replace:master_key', values: [String(held.id)],
-    user: { id: 'attacker' }, guildId: '10001', channelId: 'channel', message: { id: 'forged' },
-    reply: async payload => replies.push(payload) });
-  assert.equal(getInventory(db, '10001', 'victim')[0].id, held.id);
-  assert.equal(getInventory(db, '10001', 'attacker').length, 0);
+  await onVaultInteraction(db, {
+    isButton: () => false,
+    isStringSelectMenu: () => true,
+    customId: "vault:invented:replace:master_key",
+    values: [String(held.id)],
+    user: { id: "attacker" },
+    guildId: "10001",
+    channelId: "channel",
+    message: { id: "forged" },
+    reply: async (payload) => replies.push(payload),
+  });
+  assert.equal(getInventory(db, "10001", "victim")[0].id, held.id);
+  assert.equal(getInventory(db, "10001", "attacker").length, 0);
   assert.equal(replies.length, 1);
   db.close();
 });

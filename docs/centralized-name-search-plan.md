@@ -10,16 +10,16 @@ Make typed character and franchise lookups more forgiving and relevant, using on
 
 ### Menus: what is actually paginated
 
-| Current UI | Verified implementation | Change needed for fuzzy search? |
-| --- | --- | --- |
-| Character chooser | `commands/char.js:37`: 25 options per page, Previous/Next and page jump | No; preserve it. |
-| Franchise chooser and franchise character list | `commands/utils/franchiseCommand.js:62`: separate 25-option / 15-character pages | No; preserve both. |
-| Affection / soulmate chooser | `lib/affectionPresentation.js:188`: 25 options per page | No; preserve it. |
-| Divorce chooser | `commands/divorce.js:22`: 25 options per page | No; preserve it. |
-| Trade/give harem display | `lib/tradeRuntime.js:187`, `sendHarem`: paginated character list | No; preserve it. |
-| Trade/give ambiguous-name dropdown | `lib/tradeRuntime.js:239`, `sendCharacterPicker`: renders and accepts only `matches.slice(0, 25)` | Existing limitation; separate small follow-up, not a matcher prerequisite. |
-| Wishlist name-match dropdown | `commands/wish.js:37,101`: renders and accepts only `wishes.slice(0, 25)` | Existing limitation; separate small follow-up. Wish addition searches the catalog, even though the user's wishlist is small. |
-| Identity-based item action selectors | `lib/itemActionRuntime.js`: Blood Pact, other target/cost selectors already paginate | No; these are not typed-name lookups. |
+| Current UI                                     | Verified implementation                                                                           | Change needed for fuzzy search?                                                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Character chooser                              | `commands/char.js:37`: 25 options per page, Previous/Next and page jump                           | No; preserve it.                                                                                                             |
+| Franchise chooser and franchise character list | `commands/utils/franchiseCommand.js:62`: separate 25-option / 15-character pages                  | No; preserve both.                                                                                                           |
+| Affection / soulmate chooser                   | `lib/affectionPresentation.js:188`: 25 options per page                                           | No; preserve it.                                                                                                             |
+| Divorce chooser                                | `commands/divorce.js:22`: 25 options per page                                                     | No; preserve it.                                                                                                             |
+| Trade/give harem display                       | `lib/tradeRuntime.js:187`, `sendHarem`: paginated character list                                  | No; preserve it.                                                                                                             |
+| Trade/give ambiguous-name dropdown             | `lib/tradeRuntime.js:239`, `sendCharacterPicker`: renders and accepts only `matches.slice(0, 25)` | Existing limitation; separate small follow-up, not a matcher prerequisite.                                                   |
+| Wishlist name-match dropdown                   | `commands/wish.js:37,101`: renders and accepts only `wishes.slice(0, 25)`                         | Existing limitation; separate small follow-up. Wish addition searches the catalog, even though the user's wishlist is small. |
+| Identity-based item action selectors           | `lib/itemActionRuntime.js`: Blood Pact, other target/cost selectors already paginate              | No; these are not typed-name lookups.                                                                                        |
 
 The earlier pagination statement concerned the last two name-match dropdowns, not all menus. It was factually specific but unnecessarily promoted those existing limitations into a main phase of the fuzzy-search project. Do not rebuild already-paginated menus or treat pagination as part of the matching algorithm.
 
@@ -43,11 +43,11 @@ Keep the useful core: shared matching, exact precedence, useful partial-name res
 
 Replace matching internals in these three functions:
 
-| Function | Callers improved automatically | Preserve |
-| --- | --- | --- |
-| `findCharacters` in `lib/gameCharacterLookup.js` | `char` / `im`, wish add, affection, soulmate, divorce, typed trade/give selection | Original rows, rank lookup, catalog versus owner scope. |
-| `matchWishes` in `lib/characterWishlist.js` | `wish remove` | Only the caller's existing wishes, including missing-catalog entries. |
-| `findFranchises` in `lib/franchiseLookup.js` | `ima`, `imar`, supported franchise modifiers | Exact alias collisions and full/direct-only freshness modes. |
+| Function                                         | Callers improved automatically                                                    | Preserve                                                              |
+| ------------------------------------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `findCharacters` in `lib/gameCharacterLookup.js` | `char` / `im`, wish add, affection, soulmate, divorce, typed trade/give selection | Original rows, rank lookup, catalog versus owner scope.               |
+| `matchWishes` in `lib/characterWishlist.js`      | `wish remove`                                                                     | Only the caller's existing wishes, including missing-catalog entries. |
+| `findFranchises` in `lib/franchiseLookup.js`     | `ima`, `imar`, supported franchise modifiers                                      | Exact alias collisions and full/direct-only freshness modes.          |
 
 Most commands should not need a structural change: they already handle no matches, one match, and multiple matches.
 
@@ -55,14 +55,14 @@ Most commands should not need a structural change: they already handle no matche
 
 ### Other real lookup opportunities, not prerequisites
 
-| Area verified in code | Practical follow-up |
-| --- | --- |
+| Area verified in code                                        | Practical follow-up                                                                                                                                                                                                                        |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `lib/itemActivation.js`: item-name exact/substring selection | Explicit shorthand and fuzzy suggestions could improve `use`, but do not silently spend an item on the nearest name. Duplicate copies of one type are not multiple name candidates. Keep this separate from core character/franchise work. |
-| Aegis and Master Key | They currently select the first SQL substring match among scoped marriages. Reuse shared target search only with explicit ambiguity handling; do not replace SQL `.get()` with fuzzy `[0]`. |
-| Franchise Passport and Wish Upon a Star | Shared franchise aliases/typo matching would help, but target acceptance must fit the current effect/cost flow first. |
-| Blood Pact argument fallback | It contains first-substring matching, but normal command activation uses paginated identity-based sacrifices. Do not redesign that normal menu for fuzzy search. |
-| Admin catalog/franchise search | Useful later consumers of the same helper. Preserve empty-query browsing, exact ID access, server pagination, option caps, and existing UI. No forced local-to-server search conversion. |
-| Clue Reveal | Already has conservative typo acceptance. Leave its normalization, configured limits, ambiguity checks, timing, and private helper unchanged in this feature. |
+| Aegis and Master Key                                         | They currently select the first SQL substring match among scoped marriages. Reuse shared target search only with explicit ambiguity handling; do not replace SQL `.get()` with fuzzy `[0]`.                                                |
+| Franchise Passport and Wish Upon a Star                      | Shared franchise aliases/typo matching would help, but target acceptance must fit the current effect/cost flow first.                                                                                                                      |
+| Blood Pact argument fallback                                 | It contains first-substring matching, but normal command activation uses paginated identity-based sacrifices. Do not redesign that normal menu for fuzzy search.                                                                           |
+| Admin catalog/franchise search                               | Useful later consumers of the same helper. Preserve empty-query browsing, exact ID access, server pagination, option caps, and existing UI. No forced local-to-server search conversion.                                                   |
+| Clue Reveal                                                  | Already has conservative typo acceptance. Leave its normalization, configured limits, ambiguity checks, timing, and private helper unchanged in this feature.                                                                              |
 
 “Apply where useful” does not mean all lookup-related files must migrate in one release. Complete the main gameplay lookup improvement first, then select these follow-ups by concrete UX value and integration cost.
 
@@ -105,10 +105,10 @@ Keep multiword matching simple: compare the query with consecutive words in one 
 Starting policy, covered by explicit examples before integration:
 
 | Shorter compared label/word-sequence length | Maximum edits |
-| --- | --- |
-| 1–3 code points | 0 |
-| 4–7 | 1 |
-| 8+ | 2 |
+| ------------------------------------------- | ------------- |
+| 1–3 code points                             | 0             |
+| 4–7                                         | 1             |
+| 8+                                          | 2             |
 
 Count insertion, deletion, substitution, and adjacent transposition. Require edit distance to be no more than 25% of the longer compared text as well. Use Unicode code points for the new distance calculation. Do not perform typo expansion on numeric-only query tokens.
 
@@ -133,7 +133,7 @@ The existing lookup modules adapt their row labels to the matcher and continue r
 
 ```js
 findCharacters(characters, query); // original character/marriage rows
-matchWishes(wishes, query);        // original wish rows
+matchWishes(wishes, query); // original wish rows
 findFranchises(franchises, query); // original franchise rows
 ```
 

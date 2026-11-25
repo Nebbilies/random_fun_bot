@@ -1,14 +1,19 @@
-import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { openCatalog } from '../lib/catalogDb.js';
-import { reserveRoll, claimRoll, getRollStatus, getClaimStatus } from '../lib/characterRolls.js';
-import { addActiveBuff, getActiveBuffs } from '../lib/itemStorage.js';
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { openCatalog } from "../lib/catalogDb.js";
+import {
+  reserveRoll,
+  claimRoll,
+  getRollStatus,
+  getClaimStatus,
+} from "../lib/characterRolls.js";
+import { addActiveBuff, getActiveBuffs } from "../lib/itemStorage.js";
 
-test('Franchise Passport guarantees rolls from the specified franchise and consumes a buff roll', () => {
-  const db = openCatalog(':memory:');
-  const guildId = '1001';
-  const channelId = '2001';
-  const userId = '3001';
+test("Franchise Passport guarantees rolls from the specified franchise and consumes a buff roll", () => {
+  const db = openCatalog(":memory:");
+  const guildId = "1001";
+  const channelId = "2001";
+  const userId = "3001";
 
   db.exec(`
     INSERT INTO franchises (id, display_name, created_at) VALUES (1, 'Frieren', '2026');
@@ -26,31 +31,39 @@ test('Franchise Passport guarantees rolls from the specified franchise and consu
   `);
 
   // Activate Franchise Passport for Frieren (franchise_id = 1)
-  addActiveBuff(db, guildId, userId, 'franchise_passport', JSON.stringify({ franchiseId: 1 }), null, 5);
+  addActiveBuff(
+    db,
+    guildId,
+    userId,
+    "franchise_passport",
+    JSON.stringify({ franchiseId: 1 }),
+    null,
+    5,
+  );
 
   const res = reserveRoll(db, {
     guildId,
     channelId,
-    commandMessageId: '1001001',
+    commandMessageId: "1001001",
     userId,
-    pool: 'w',
+    pool: "w",
     random: () => 0.0,
   });
 
-  assert.equal(res.status, 'reserved');
+  assert.equal(res.status, "reserved");
   // Character must be Frieren or Fern (from franchise 1)
-  assert.ok(['Frieren', 'Fern'].includes(res.character.name_full));
+  assert.ok(["Frieren", "Fern"].includes(res.character.name_full));
 
   // Buff roll should have decremented from 5 to 4
   const buffs = getActiveBuffs(db, guildId, userId);
   assert.equal(buffs[0].remaining_rolls, 4);
 });
 
-test('Rolling Fever refunds +2 rolls when rolling a character with >1000 favorites', () => {
-  const db = openCatalog(':memory:');
-  const guildId = '1001';
-  const channelId = '2001';
-  const userId = '3001';
+test("Rolling Fever refunds +2 rolls when rolling a character with >1000 favorites", () => {
+  const db = openCatalog(":memory:");
+  const guildId = "1001";
+  const channelId = "2001";
+  const userId = "3001";
 
   db.exec(`
     INSERT INTO characters (id, rank, favourites, name_full, gender) VALUES
@@ -58,32 +71,36 @@ test('Rolling Fever refunds +2 rolls when rolling a character with >1000 favorit
   `);
 
   // Set 3 rolls already used
-  db.prepare('INSERT INTO roll_allowances (guild_id, user_id, period, used) VALUES (?, ?, 10, 3)')
-    .run(guildId, userId);
+  db.prepare(
+    "INSERT INTO roll_allowances (guild_id, user_id, period, used) VALUES (?, ?, 10, 3)",
+  ).run(guildId, userId);
 
   // Activate Rolling Fever
-  addActiveBuff(db, guildId, userId, 'rolling_fever', null, null, 10);
+  addActiveBuff(db, guildId, userId, "rolling_fever", null, null, 10);
 
   const res = reserveRoll(db, {
     guildId,
     channelId,
-    commandMessageId: '1001002',
+    commandMessageId: "1001002",
     userId,
-    pool: 'w',
+    pool: "w",
     now: 10 * 3600 * 1000,
   });
 
-  assert.equal(res.status, 'reserved');
+  assert.equal(res.status, "reserved");
   // Used was 3, +1 roll consumed = 4, then fever refunds -2 = 2 used!
   // Remaining from 7 max: 7 - 2 = 5!
-  assert.equal(getRollStatus(db, guildId, userId, 10 * 3600 * 1000).remaining, 5);
+  assert.equal(
+    getRollStatus(db, guildId, userId, 10 * 3600 * 1000).remaining,
+    5,
+  );
 });
 
-test('Crown of the Sovereign bypasses claim cooldown and consumes 1 charge', () => {
-  const db = openCatalog(':memory:');
-  const guildId = '1001';
-  const channelId = '2001';
-  const userId = '3001';
+test("Crown of the Sovereign bypasses claim cooldown and consumes 1 charge", () => {
+  const db = openCatalog(":memory:");
+  const guildId = "1001";
+  const channelId = "2001";
+  const userId = "3001";
   const now = 1000000;
 
   db.exec(`
@@ -95,18 +112,25 @@ test('Crown of the Sovereign bypasses claim cooldown and consumes 1 charge', () 
 
   // Put user on claim cooldown
   const period = Math.floor((now + 7 * 3600 * 1000) / (3 * 3600 * 1000));
-  db.prepare('INSERT INTO claim_allowances (guild_id, user_id, period) VALUES (?, ?, ?)')
-    .run(guildId, userId, period);
+  db.prepare(
+    "INSERT INTO claim_allowances (guild_id, user_id, period) VALUES (?, ?, ?)",
+  ).run(guildId, userId, period);
 
   // Normally cannot claim
   assert.equal(getClaimStatus(db, guildId, userId, now).canClaim, false);
 
   // Add Crown of the Sovereign buff (3 charges)
-  addActiveBuff(db, guildId, userId, 'crown_of_the_sovereign', null, null, 3);
+  addActiveBuff(db, guildId, userId, "crown_of_the_sovereign", null, null, 3);
 
   // Claim should now succeed!
-  const claimRes = claimRoll(db, { guildId, channelId, messageId: '200001', userId, now });
-  assert.equal(claimRes.status, 'married');
+  const claimRes = claimRoll(db, {
+    guildId,
+    channelId,
+    messageId: "200001",
+    userId,
+    now,
+  });
+  assert.equal(claimRes.status, "married");
 
   // Buff should have 2 charges left
   const buffs = getActiveBuffs(db, guildId, userId, now);

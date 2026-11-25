@@ -7,7 +7,6 @@ Status: Historical review log. All listed runtime and provenance findings were f
 P1 chosen Recast while reward remains recast passes validator, strands reward; chosen terminal reward must match persisted selection, unresolved reward must match decision original.
 P2 bidirectional hold provenance: armed Recast must match hold kind/owner/source; Lens hold/source owner must match vault session, not just each other. Assigned sa-10 fixes/tests.
 
-
 ## Independent runtime review (sa-6)
 
 P1: canonical Lens refund inspection must force REST: channel.messages.fetch({ message: session.messageId, force: true }); default fetch can return stale discord.js cache and falsely refund shown Lens.
@@ -19,7 +18,6 @@ P1: Lens renders candidate item name/description directly, bypasses getVaultItem
 P2: automatic followUp Recast adapter disables editReply, leaving charged prompt without actual deadline. Retain returned followUp Message and edit that private message after presentRecast; never edit original public reply.
 
 Review ran 24 focused tests passing but reproduced race independently. Fix each with regression test before PR.
-
 
 Read-only audit while implementation was in progress. These are not final review results.
 

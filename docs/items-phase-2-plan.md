@@ -67,6 +67,7 @@ Files: `lib/characterRolls.js`, `test/mysteryRolls.test.js`, relevant allowance/
 New focused modules: `lib/ownershipHistorySchema.js`, `lib/itemRewardSourceSchema.js` (names may align with existing naming, responsibilities fixed).
 
 Existing files:
+
 - `lib/catalogFinalSchema.js`: authoritative DDL, exact predecessor models/detectors, final validation and rebuild support.
 - `lib/vaultFortuneUpgrade.js`, `lib/catalogDb.js`: ordered bounded additive upgrade on writable open, rollback-only diagnostic support, repeated/concurrent open safety.
 - `lib/catalogRuntimeSchema.js` / `lib/catalogReleaseSchema.js`: update only where their actual creation/conversion responsibilities require the new fragments.
@@ -82,6 +83,7 @@ Critical tests: fresh schema; current pre-Phase-2 final schema; supported pre-Fo
 New: `lib/characterOwnershipHistory.js` for scoped operation clock, latest-loss lookup and eligible-history query.
 
 Clock integration audit:
+
 - `lib/characterMarriage.js`: optional operation time for divorce and fresh marriage creation without breaking existing callers.
 - `commands/divorce.js`: pass confirmed operation time.
 - `lib/characterTrade.js`: transfer/swap mutation callbacks.
@@ -155,6 +157,7 @@ Tests: same guild and former owner only; initial no-history case; deployment-exi
 Use vertical red-green development: first a failing test at each existing public service boundary, implement the smallest supported slice, rerun, then expand. Avoid bulk tests against imagined private APIs.
 
 Primary existing suites to extend/protect:
+
 - Claim/mystery: `mysteryRolls`, `mysteryCoordinator`, `mysteryRuntime`, `mysteryRuntimeRecovery`, `mysteryPublishedTerms`, `mysterySnapshotIntegrity`, competitive/Doors/Treasure Hunt tests.
 - Ownership/actions: `characterMarriage`, `characterTrade`, `characterEscapes`, `itemActions`, `kaimetsuAtomic`, `itemActionRuntime`, `itemActivation`, `itemExpiryConsumers`.
 - Rewards: `itemStorage`, `vaultRewards`, `vaultRuntime`, `vaultSessionRecovery`, `migrationOverflowRetention`, Fortune and legacy-abandonment tests.

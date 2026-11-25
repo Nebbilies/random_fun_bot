@@ -126,30 +126,14 @@ All settings use the existing global/guild inheritance, revision checks and rese
       "enabled": false,
       "weight": 1,
       "durationMs": 120000,
-      "clueTimesMs": [
-        0,
-        40000,
-        80000
-      ]
+      "clueTimesMs": [0, 40000, 80000]
     },
     "greed_chamber": {
       "enabled": true,
       "weight": 1,
       "rounds": 5,
-      "totals": [
-        1,
-        3,
-        6,
-        10,
-        15
-      ],
-      "collapseChances": [
-        0.1,
-        0.2,
-        0.3,
-        0.45,
-        0.67
-      ]
+      "totals": [1, 3, 6, 10, 15],
+      "collapseChances": [0.1, 0.2, 0.3, 0.45, 0.67]
     },
     "deadlock": {
       "enabled": true,
@@ -334,7 +318,15 @@ All settings use the existing global/guild inheritance, revision checks and rese
     }
   },
   "itemEffects": {
-    "consolation_chit": { "tierWeights": { "common": 69.9, "rare": 17.5, "epic": 10, "legendary": 2.5, "???": 0.1 } },
+    "consolation_chit": {
+      "tierWeights": {
+        "common": 69.9,
+        "rare": 17.5,
+        "epic": 10,
+        "legendary": 2.5,
+        "???": 0.1
+      }
+    },
     "chronicle_of_return": { "historyWindowMs": 604800000 },
     "bag_of_holding": {
       "capacityIncrease": 1

@@ -18,13 +18,13 @@ being different, so they are not hard to reverse.
 
 ## Commands
 
-| Command | Effect |
-| --- | --- |
-| `!wish <name or #rank>` | Resolve against the character catalog and add the wish. |
-| `!wish remove <name or #rank>` | Remove one wish. Matches only the caller's own entries. |
-| `!wish clear` | Remove every wish the caller holds in this server. |
-| `!wish` | Show the wishlist. |
-| `!wl`, `!wishlist` | Show the wishlist. Argument-free aliases of bare `!wish`. |
+| Command                        | Effect                                                    |
+| ------------------------------ | --------------------------------------------------------- |
+| `!wish <name or #rank>`        | Resolve against the character catalog and add the wish.   |
+| `!wish remove <name or #rank>` | Remove one wish. Matches only the caller's own entries.   |
+| `!wish clear`                  | Remove every wish the caller holds in this server.        |
+| `!wish`                        | Show the wishlist.                                        |
+| `!wl`, `!wishlist`             | Show the wishlist. Argument-free aliases of bare `!wish`. |
 
 `remove` and `clear` are keywords only as the first argument. A character literally named
 `Remove` or `Clear` is still reachable with `#rank`.

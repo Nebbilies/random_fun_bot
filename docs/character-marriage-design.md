@@ -26,13 +26,13 @@ At design time, the existing local database is version 1 and contains 15,000 pub
 
 ## Design options
 
-| Decision | Chosen | Other option and reason |
-| --- | --- | --- |
-| Player acquisition before roll | Internal marriage operation only | A temporary `!marry` command would create an extra public acquisition path. |
-| Exclusivity | Database key on server and AniList character ID | A check in command code alone could lose a race. |
-| Catalog size | Grow the published set and recompute ranks | Keeping only the top 15,000 would leave some married characters without a current rank. |
-| Divorce lookup | Search the owner's marriages by name, then pick if ambiguous | Rank alone changes after imports; ID alone is hard to remember. |
-| Marriage history | Current association plus post-Phase-2 latest-loss records | Chronicle eligibility needs a former owner's latest loss, not a complete event log or restored marriage metadata. |
+| Decision                       | Chosen                                                       | Other option and reason                                                                                           |
+| ------------------------------ | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Player acquisition before roll | Internal marriage operation only                             | A temporary `!marry` command would create an extra public acquisition path.                                       |
+| Exclusivity                    | Database key on server and AniList character ID              | A check in command code alone could lose a race.                                                                  |
+| Catalog size                   | Grow the published set and recompute ranks                   | Keeping only the top 15,000 would leave some married characters without a current rank.                           |
+| Divorce lookup                 | Search the owner's marriages by name, then pick if ambiguous | Rank alone changes after imports; ID alone is hard to remember.                                                   |
+| Marriage history               | Current association plus post-Phase-2 latest-loss records    | Chronicle eligibility needs a former owner's latest loss, not a complete event log or restored marriage metadata. |
 
 ## Data and command boundaries
 

@@ -10,10 +10,10 @@ Baseline: `668708db96cbb19c4f5e9fa0a3e958405a44c52a`.
 
 The deployment installs the tested commit and restarts both services before checking application readiness. The latest two inspected deployments installed successfully, but their readiness checks expired before the bot completed startup. Failure intentionally does not roll back code or the database.
 
-| Release | Services restarted (UTC) | Discord ClientReady | Game ready | Total startup |
-| --- | --- | --- | --- | --- |
-| Inbox removal `747b010` | 2026-11-07 15:54:21 | 15:55:17 | 15:56:11 | 110 s |
-| Glass Bridge fix `668708d` | 2026-11-07 17:51:42 | 17:52:35 | 17:54:14 | 152 s |
+| Release                    | Services restarted (UTC) | Discord ClientReady | Game ready | Total startup |
+| -------------------------- | ------------------------ | ------------------- | ---------- | ------------- |
+| Inbox removal `747b010`    | 2026-11-07 15:54:21      | 15:55:17            | 15:56:11   | 110 s         |
+| Glass Bridge fix `668708d` | 2026-11-07 17:51:42      | 17:52:35            | 17:54:14   | 152 s         |
 
 For GitHub run [42398044590](https://github.com/Nebbilies/random_fun_bot/actions/runs/42398044590), deployment exited at 17:52:56 UTC, 78 seconds before game readiness. The `check` job passed. Subsequent read-only inspection found both services active, zero restarts, the expected commit installed, and portal responses `/login` 200, `/catalog` 303 to login, `/api/status` 401. The exact deployment readiness probe passed after startup completed.
 
@@ -104,25 +104,25 @@ This addresses false deployment failures, not recovery performance itself.
 
 ## 5. Regression matrix
 
-| Case | Required result |
-| --- | --- |
-| Zero pending work | One scheduled sweep; no unnecessary transport |
-| Ten unchanged overflow cards, repeated scan and DB reopen | Verify all; no duplicate grants/sends; second scan has zero reward-card edits |
-| Same reward, changed inventory/replacement availability | Card updates correctly |
-| Same reward, changed discovered-item presentation | Card updates correctly |
-| Overdue Keep or presented Recast | Original outcome/deadline semantics; correct latest card and timers |
-| Unacknowledged but already-correct card | Complete publication/Lens bookkeeping without unnecessary edit |
-| Live interaction with identical payload | Interaction still acknowledged exactly once |
-| Recovery queued behind user settlement | Latest settled state wins; no stale overwrite |
-| DB reconciliation changes state during fetch/edit | Catch up before publication acknowledgement |
-| Definitively deleted reward card | One replacement with canonical rebind; old card rejected; replacement settles once |
-| Transient fetch/edit failure or inaccessible channel | No false deletion/rebinding or replay; later cycle repairs |
-| Send succeeded but response lost | Stable nonce deduplicates; no second acquisition |
-| Affection milestone, Echo, mystery consolation | Receipts and independent copies preserved; reveal-before-reward ordering retained |
-| Historical same-message binding | Remains usable and safe |
-| Standalone session recovery | Existing combined session/reward behavior preserved |
-| Slow startup readiness at 152 s | Deployment passes only after real readiness and stability |
-| Readiness never arrives / unstable PID / portal unhealthy | Deployment fails with accurate post-install diagnostics |
+| Case                                                      | Required result                                                                    |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Zero pending work                                         | One scheduled sweep; no unnecessary transport                                      |
+| Ten unchanged overflow cards, repeated scan and DB reopen | Verify all; no duplicate grants/sends; second scan has zero reward-card edits      |
+| Same reward, changed inventory/replacement availability   | Card updates correctly                                                             |
+| Same reward, changed discovered-item presentation         | Card updates correctly                                                             |
+| Overdue Keep or presented Recast                          | Original outcome/deadline semantics; correct latest card and timers                |
+| Unacknowledged but already-correct card                   | Complete publication/Lens bookkeeping without unnecessary edit                     |
+| Live interaction with identical payload                   | Interaction still acknowledged exactly once                                        |
+| Recovery queued behind user settlement                    | Latest settled state wins; no stale overwrite                                      |
+| DB reconciliation changes state during fetch/edit         | Catch up before publication acknowledgement                                        |
+| Definitively deleted reward card                          | One replacement with canonical rebind; old card rejected; replacement settles once |
+| Transient fetch/edit failure or inaccessible channel      | No false deletion/rebinding or replay; later cycle repairs                         |
+| Send succeeded but response lost                          | Stable nonce deduplicates; no second acquisition                                   |
+| Affection milestone, Echo, mystery consolation            | Receipts and independent copies preserved; reveal-before-reward ordering retained  |
+| Historical same-message binding                           | Remains usable and safe                                                            |
+| Standalone session recovery                               | Existing combined session/reward behavior preserved                                |
+| Slow startup readiness at 152 s                           | Deployment passes only after real readiness and stability                          |
+| Readiness never arrives / unstable PID / portal unhealthy | Deployment fails with accurate post-install diagnostics                            |
 
 Primary suites: `test/vaultSessionRecovery.test.js`, `test/vaultRewards.test.js`, `test/paidVaultRecovery.test.js`, `test/fortuneRuntime.test.js`, `test/affectionRewards.test.js`, `test/affectionRuntimeIntegration.test.js`, `test/mysteryRuntimeRecovery.test.js`, `test/catalogRuntimeRestart.test.js`, `test/botBootstrap.test.js`, and `test/deploy.sh`.
 

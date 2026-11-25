@@ -19,12 +19,12 @@ The subtitle is **Waifu Roller**. Put `// TODO: add profile titles feature later
 
 ## Data and edge cases
 
-| Field | Rule |
-| --- | --- |
-| Characters | Count all of the caller’s current marriages in this guild. Archived characters still owned by the player count. |
-| Server Rank | Use the caller’s position on the existing total-married server leaderboard, including its guild membership filter and tie order. A player with zero characters is `Unranked`. |
-| Soulmate | Show the selected, currently owned character with their affection. Show `No soulmate selected` for an empty selection. |
-| Top characters | Show up to five currently owned characters by affection descending, with the existing name and ID tie-break. Keep zero-affection characters eligible and show each score with a trailing heart. |
+| Field          | Rule                                                                                                                                                                                                                                                  |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Characters     | Count all of the caller’s current marriages in this guild. Archived characters still owned by the player count.                                                                                                                                       |
+| Server Rank    | Use the caller’s position on the existing total-married server leaderboard, including its guild membership filter and tie order. A player with zero characters is `Unranked`.                                                                         |
+| Soulmate       | Show the selected, currently owned character with their affection. Show `No soulmate selected` for an empty selection.                                                                                                                                |
+| Top characters | Show up to five currently owned characters by affection descending, with the existing name and ID tie-break. Keep zero-affection characters eligible and show each score with a trailing heart.                                                       |
 | Top franchises | Show up to five effective catalog franchises by distinct owned character count descending. Count each owned character once per franchise it belongs to and break ties by franchise name, then ID. Show rank, franchise name, and right-aligned count. |
 
 The current [affection overview](../lib/characterAffection.js#L85), [total-married leaderboard](../lib/serverLeaderboard.js#L28), and [effective franchise mapping](../lib/catalogFinalSchema.js#L349) provide the game rules. Use the read paths so opening a profile has no effect on rewards. The character table shows `No characters collected yet` when empty and the franchise table shows `No franchises yet` when empty. A shorter collection shows its available rows.
@@ -33,11 +33,11 @@ A missing or undecodable portrait keeps its slot, with a dimmed background and a
 
 ## Rendering design
 
-| Option | Consequence |
-| --- | --- |
-| Build and draw inside the command handler | Straightforward entry point, with data and layout tightly coupled to Discord edits. |
+| Option                                                                                              | Consequence                                                                                                                              |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Build and draw inside the command handler                                                           | Straightforward entry point, with data and layout tightly coupled to Discord edits.                                                      |
 | Read the current collection, prepare portraits, and draw through a renderer that accepts plain data | Keeps the handler focused on progress and the final embed. Allows deterministic layout tests without a live Discord message or database. |
-| Put rendering in a separate service or queue | Gives rendering a separate runtime at the cost of another service and a message delivery protocol. |
+| Put rendering in a separate service or queue                                                        | Gives rendering a separate runtime at the cost of another service and a message delivery protocol.                                       |
 
 Use the second option inside the existing bot process. The command owns the three progress stages. Scope collection reads to the invoking guild and player. The renderer receives the resolved stats and portraits, draws with `skia-canvas`, and returns an in-memory PNG buffer. Send it with the existing Discord.js [buffer attachment pattern](../commands/utility/astra-upload-test.js#L15) and an `attachment://profile-card.png` image URL on the embed.
 
