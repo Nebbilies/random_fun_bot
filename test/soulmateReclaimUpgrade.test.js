@@ -28,9 +28,7 @@ function previousCatalog(t) {
   db.exec("PRAGMA foreign_keys=ON; BEGIN IMMEDIATE");
   installEmptyFinalCatalog(db);
   db.exec("COMMIT");
-  db.exec(
-    "DROP INDEX characters_by_main_franchise; ALTER TABLE characters DROP COLUMN main_franchise_id; DROP TABLE affection_awards;",
-  );
+  db.exec("DROP TABLE character_main_franchises; DROP TABLE affection_awards;");
   db.exec(previousAwards);
   assert.equal(isPreSoulmateReclaimCatalogSchema(db), true);
   db.prepare("INSERT INTO character_identities(id) VALUES(?)").run(character);

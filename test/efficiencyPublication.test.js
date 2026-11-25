@@ -54,10 +54,9 @@ test("creation previews mint the final UUID and publish derived ranks without ma
       db.prepare("SELECT legacy_rank FROM characters").get().legacy_rank,
       null,
     );
-    assert.equal(
-      db.prepare("SELECT main_franchise_id FROM characters").get()
-        .main_franchise_id,
-      null,
+    assert.deepEqual(
+      db.prepare("SELECT * FROM character_main_franchises").all(),
+      [],
     );
     assert.equal(validateFinalCatalogSchema(db, { readOnly: false }), true);
     assert.throws(
@@ -85,7 +84,7 @@ test("AniList publication preserves existing ranking inputs and publishes discov
     db.prepare(
       "INSERT INTO characters(id,rank,tie_order,favourites,legacy_rank,danbooru_post_count,efficiency,name_full) VALUES(?,1,1,99,8,149200,0.5,?)",
     ).run(id, "Original");
-    db.prepare("UPDATE characters SET main_franchise_id=1 WHERE id=?").run(id);
+    db.prepare("INSERT INTO character_main_franchises VALUES (?,1)").run(id);
     db.prepare(
       "INSERT INTO tag_decisions VALUES(?,'approve','series','manual','test')",
     ).run(id);
@@ -124,10 +123,12 @@ test("AniList publication preserves existing ranking inputs and publishes discov
     );
     assert.deepEqual(
       db
-        .prepare("SELECT main_franchise_id FROM characters ORDER BY rank")
+        .prepare(
+          "SELECT character_id, franchise_id FROM character_main_franchises",
+        )
         .all()
-        .map((row) => row.main_franchise_id),
-      [1, null],
+        .map((row) => [row.character_id, row.franchise_id]),
+      [[id, 1]],
     );
     assert.equal(validateFinalCatalogSchema(db), true);
   } finally {

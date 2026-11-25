@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { Worker } from "node:worker_threads";
@@ -25,6 +25,7 @@ import {
   mergeFranchises,
   publishFranchiseCatalog,
 } from "../lib/franchiseCatalog.js";
+import { installSeasonSchema } from "../lib/seasonSchema.js";
 import { upgradeMainFranchiseCatalog } from "../lib/vaultFortuneUpgrade.js";
 
 const first = "00000000-0000-4000-8000-000000000001";
@@ -44,17 +45,19 @@ function seed(db) {
   }
 }
 
-function designations(db) {
+const legacyColumnDDL = `ALTER TABLE characters ADD COLUMN main_franchise_id INTEGER REFERENCES franchises(id) ON DELETE SET NULL;
+  CREATE INDEX characters_by_main_franchise ON characters(main_franchise_id);`;
+
+function assignments(db) {
   return db
-    .prepare("SELECT main_franchise_id FROM characters ORDER BY rank")
+    .prepare(
+      "SELECT character_id, franchise_id FROM character_main_franchises ORDER BY character_id, franchise_id",
+    )
     .all()
-    .map((row) => row.main_franchise_id);
+    .map((row) => [row.character_id, row.franchise_id]);
 }
 
-const dropMainFranchise =
-  "DROP INDEX characters_by_main_franchise; ALTER TABLE characters DROP COLUMN main_franchise_id;";
-
-function predecessorFile(t) {
+function predecessorFile(t, { column = false, season = false } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "main-franchise-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const path = join(directory, "catalog.sqlite");
@@ -64,39 +67,88 @@ function predecessorFile(t) {
     installEmptyFinalCatalog(db);
     seed(db);
     db.exec("BEGIN IMMEDIATE");
-    db.exec(dropMainFranchise);
+    db.exec("DROP TABLE character_main_franchises");
+    if (column) {
+      db.exec(legacyColumnDDL);
+      db.prepare("UPDATE characters SET main_franchise_id=1 WHERE id=?").run(
+        first,
+      );
+    }
+    if (season) installSeasonSchema(db);
     db.exec("COMMIT");
-    assert.equal(isPreMainFranchiseCatalogSchema(db), true);
+    if (!column) assert.equal(isPreMainFranchiseCatalogSchema(db), true);
   } finally {
     db.close();
   }
   return path;
 }
 
-test("a fresh catalog defaults main franchise to NULL and enforces the indexed relationship", (t) => {
+for (const season of [false, true]) {
+  test(`writable startup preserves populated column assignments with season tables ${season ? "present" : "absent"}`, (t) => {
+    const path = predecessorFile(t, { column: true, season });
+    assert.throws(
+      () => openFinalCatalogReadOnly(path),
+      /main franchise schema update needed/i,
+    );
+    const db = openFinalCatalog(path);
+    try {
+      assert.deepEqual(assignments(db), [[first, 1]]);
+      assert.equal(
+        db
+          .prepare(
+            "SELECT name FROM pragma_table_info('characters') WHERE name='main_franchise_id'",
+          )
+          .get(),
+        undefined,
+      );
+      db.prepare("INSERT INTO character_main_franchises VALUES (?,2)").run(
+        first,
+      );
+    } finally {
+      db.close();
+    }
+
+    const reopened = openFinalCatalogReadOnly(path);
+    try {
+      assert.deepEqual(assignments(reopened), [
+        [first, 1],
+        [first, 2],
+      ]);
+    } finally {
+      reopened.close();
+    }
+  });
+}
+
+test("a fresh catalog enforces distinct main franchise pairs and clears them when either parent is deleted", (t) => {
   const db = new DatabaseSync(":memory:");
   t.after(() => db.close());
   db.exec("PRAGMA foreign_keys=ON");
   installEmptyFinalCatalog(db);
   seed(db);
 
-  assert.deepEqual(designations(db), [null, null]);
-  assert.equal(
-    db
-      .prepare(
-        "SELECT name FROM pragma_index_info('characters_by_main_franchise')",
-      )
-      .get()?.name,
-    "main_franchise_id",
+  assert.deepEqual(assignments(db), []);
+  const insert = db.prepare(
+    "INSERT INTO character_main_franchises VALUES (?,?)",
   );
-  db.exec("UPDATE characters SET main_franchise_id=1");
-  assert.deepEqual(designations(db), [1, 1]);
-  assert.throws(
-    () => db.exec("UPDATE characters SET main_franchise_id=99"),
-    /FOREIGN KEY/,
-  );
+  insert.run(first, 1);
+  insert.run(first, 2);
+  insert.run(second, 2);
+  assert.deepEqual(assignments(db), [
+    [first, 1],
+    [first, 2],
+    [second, 2],
+  ]);
+  assert.throws(() => insert.run(first, 2), /UNIQUE/);
+  assert.throws(() => insert.run(first, 99), /FOREIGN KEY/);
+  assert.throws(() => insert.run("missing", 2), /FOREIGN KEY/);
   db.exec("DELETE FROM franchises WHERE id=1");
-  assert.deepEqual(designations(db), [null, null]);
+  assert.deepEqual(assignments(db), [
+    [first, 2],
+    [second, 2],
+  ]);
+  db.prepare("DELETE FROM characters WHERE id=?").run(second);
+  assert.deepEqual(assignments(db), [[first, 2]]);
   assert.equal(validateFinalCatalogSchema(db), true);
 });
 
@@ -109,7 +161,7 @@ for (const open of [openCatalog, openFinalCatalog]) {
     );
     const db = open(path);
     try {
-      assert.deepEqual(designations(db), [null, null]);
+      assert.deepEqual(assignments(db), []);
       assert.deepEqual(
         db
           .prepare("SELECT id FROM characters ORDER BY rank")
@@ -129,40 +181,53 @@ for (const open of [openCatalog, openFinalCatalog]) {
         db.prepare("SELECT version FROM season_schema").get().version,
         1,
       );
-      db.exec("UPDATE characters SET main_franchise_id = 2");
+      db.exec(
+        "INSERT INTO character_main_franchises SELECT id, 2 FROM characters",
+      );
     } finally {
       db.close();
     }
 
     const reopened = open(path);
     try {
-      assert.deepEqual(designations(reopened), [2, 2]);
+      assert.deepEqual(assignments(reopened), [
+        [first, 2],
+        [second, 2],
+      ]);
     } finally {
       reopened.close();
     }
     const readOnly = openFinalCatalogReadOnly(path);
     try {
-      assert.deepEqual(designations(readOnly), [2, 2]);
+      assert.deepEqual(assignments(readOnly), [
+        [first, 2],
+        [second, 2],
+      ]);
     } finally {
       readOnly.close();
     }
   });
 }
 
-test("merging a franchise moves main references in the existing merge transaction", (t) => {
+test("merging a franchise moves and deduplicates main assignments on the surviving ID", (t) => {
   const db = new DatabaseSync(":memory:");
   t.after(() => db.close());
   db.exec("PRAGMA foreign_keys=ON");
   installEmptyFinalCatalog(db);
   seed(db);
-  db.prepare("UPDATE characters SET main_franchise_id=1 WHERE id=?").run(first);
+  db.prepare(
+    "INSERT INTO character_main_franchises VALUES (?,1), (?,2), (?,1)",
+  ).run(first, first, second);
   db.prepare("INSERT INTO character_franchise_memberships VALUES(?,1)").run(
     first,
   );
 
   mergeFranchises(db, 1, 2);
 
-  assert.deepEqual(designations(db), [2, null]);
+  assert.deepEqual(assignments(db), [
+    [first, 2],
+    [second, 2],
+  ]);
   assert.equal(
     db
       .prepare(
@@ -185,7 +250,7 @@ test("franchise publication clears a designation when it prunes the unused franc
   installEmptyFinalCatalog(db);
   seed(db);
   db.exec(
-    "UPDATE franchises SET name_source='manual' WHERE id=2; UPDATE characters SET main_franchise_id=rank",
+    "UPDATE franchises SET name_source='manual' WHERE id=2; INSERT INTO character_main_franchises SELECT id, rank FROM characters",
   );
   setMeta(db, "franchise_import_source_published_at", "fixture");
   setMeta(
@@ -196,7 +261,7 @@ test("franchise publication clears a designation when it prunes the unused franc
 
   publishFranchiseCatalog(db);
 
-  assert.deepEqual(designations(db), [null, 2]);
+  assert.deepEqual(assignments(db), [[second, 2]]);
   assert.deepEqual(
     db
       .prepare("SELECT id FROM franchises")
@@ -206,8 +271,9 @@ test("franchise publication clears a designation when it prunes the unused franc
   );
 });
 
-test("the deployment gate upgrades only the main-franchise schema before validating it read-only", (t) => {
-  const path = predecessorFile(t);
+test("the deployment gate backs up legacy assignments before upgrading the column layout", async (t) => {
+  const path = predecessorFile(t, { column: true, season: true });
+  const backupDirectory = join(dirname(path), "backups");
   const writer = new DatabaseSync(path);
   try {
     writer
@@ -215,16 +281,43 @@ test("the deployment gate upgrades only the main-franchise schema before validat
         "INSERT INTO character_protection_locks VALUES('1',?,'soulbind',NULL)",
       )
       .run(first);
+    writer
+      .prepare("UPDATE characters SET main_franchise_id=2 WHERE id=?")
+      .run(second);
   } finally {
     writer.close();
   }
 
-  validateCatalogForDeployment(path);
-  validateCatalogForDeployment(path);
+  const { backupPath } = await validateCatalogForDeployment(path, {
+    backupDirectory,
+  });
+  const backup = new DatabaseSync(backupPath, { readOnly: true });
+  try {
+    assert.equal(
+      validateFinalCatalogSchema(backup, { mainFranchiseColumn: true }),
+      true,
+    );
+    assert.deepEqual(
+      backup
+        .prepare("SELECT main_franchise_id FROM characters ORDER BY id")
+        .all()
+        .map((row) => row.main_franchise_id),
+      [1, 2],
+    );
+  } finally {
+    backup.close();
+  }
+  assert.equal(
+    (await validateCatalogForDeployment(path, { backupDirectory })).backupPath,
+    null,
+  );
 
   const db = openFinalCatalogReadOnly(path);
   try {
-    assert.deepEqual(designations(db), [null, null]);
+    assert.deepEqual(assignments(db), [
+      [first, 1],
+      [second, 2],
+    ]);
     assert.equal(
       db.prepare("SELECT protected_until FROM character_protection_locks").get()
         .protected_until,
@@ -235,7 +328,33 @@ test("the deployment gate upgrades only the main-franchise schema before validat
   }
 });
 
-test("the deployment gate rejects a partial schema without repairing it", (t) => {
+test("the deployment gate preserves the column layout if its backup fails", async (t) => {
+  const path = predecessorFile(t, { column: true });
+  const backupDirectory = join(dirname(path), "blocked");
+  writeFileSync(backupDirectory, "fixture");
+
+  await assert.rejects(
+    validateCatalogForDeployment(path, { backupDirectory }),
+    /EEXIST|ENOTDIR/,
+  );
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    assert.equal(
+      validateFinalCatalogSchema(db, { mainFranchiseColumn: true }),
+      true,
+    );
+    assert.equal(
+      db
+        .prepare("SELECT main_franchise_id FROM characters WHERE id=?")
+        .get(first).main_franchise_id,
+      1,
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("the deployment gate rejects a partial schema without repairing it", async (t) => {
   const path = predecessorFile(t);
   const db = new DatabaseSync(path);
   try {
@@ -243,8 +362,8 @@ test("the deployment gate rejects a partial schema without repairing it", (t) =>
     const schema = db
       .prepare("SELECT type,name,sql FROM sqlite_schema ORDER BY name")
       .all();
-    assert.throws(
-      () => validateCatalogForDeployment(path),
+    await assert.rejects(
+      validateCatalogForDeployment(path),
       /invalid final catalog schema/,
     );
     assert.deepEqual(
@@ -256,7 +375,7 @@ test("the deployment gate rejects a partial schema without repairing it", (t) =>
   }
 });
 
-test("an older ranked catalog runs its existing writable upgrades while the deploy gate stays narrow", (t) => {
+test("an older ranked catalog runs its existing writable upgrades while the deploy gate stays narrow", async (t) => {
   const path = predecessorFile(t);
   const writer = new DatabaseSync(path);
   try {
@@ -266,8 +385,8 @@ test("an older ranked catalog runs its existing writable upgrades while the depl
     );
     writer.exec(`DROP TABLE affection_awards; ${previousAwards}`);
     assert.equal(isPreSoulmateReclaimCatalogSchema(writer), true);
-    assert.throws(
-      () => validateCatalogForDeployment(path),
+    await assert.rejects(
+      validateCatalogForDeployment(path),
       /soulmate reclaim schema update needed/i,
     );
     assert.equal(isPreSoulmateReclaimCatalogSchema(writer), true);
@@ -277,19 +396,22 @@ test("an older ranked catalog runs its existing writable upgrades while the depl
 
   const db = openFinalCatalog(path);
   try {
-    assert.deepEqual(designations(db), [null, null]);
+    assert.deepEqual(assignments(db), []);
   } finally {
     db.close();
   }
 });
 
 test("a late upgrade failure and a dry run preserve the exact predecessor", (t) => {
-  const path = predecessorFile(t);
+  const path = predecessorFile(t, { column: true });
   const db = new DatabaseSync(path);
   try {
     const rows = db.prepare("SELECT * FROM characters ORDER BY rank").all();
     assert.equal(upgradeMainFranchiseCatalog(db).committed, false);
-    assert.equal(isPreMainFranchiseCatalogSchema(db), true);
+    assert.equal(
+      validateFinalCatalogSchema(db, { mainFranchiseColumn: true }),
+      true,
+    );
     const connection = {
       get isTransaction() {
         return db.isTransaction;
@@ -297,7 +419,7 @@ test("a late upgrade failure and a dry run preserve the exact predecessor", (t) 
       prepare: (sql) => db.prepare(sql),
       exec(sql) {
         db.exec(sql);
-        if (sql.includes("CREATE INDEX characters_by_main_franchise"))
+        if (sql.includes("DROP COLUMN main_franchise_id"))
           throw new Error("injected after main-franchise DDL");
       },
     };
@@ -306,7 +428,10 @@ test("a late upgrade failure and a dry run preserve the exact predecessor", (t) 
       /injected after/,
     );
     assert.equal(db.isTransaction, false);
-    assert.equal(isPreMainFranchiseCatalogSchema(db), true);
+    assert.equal(
+      validateFinalCatalogSchema(db, { mainFranchiseColumn: true }),
+      true,
+    );
     assert.deepEqual(
       db.prepare("SELECT * FROM characters ORDER BY rank").all(),
       rows,
@@ -316,25 +441,22 @@ test("a late upgrade failure and a dry run preserve the exact predecessor", (t) 
       upgradeMainFranchiseCatalog(db, { dryRun: false }).committed,
       true,
     );
-    db.exec("BEGIN IMMEDIATE");
-    assert.deepEqual(designations(db), [null, null]);
-    db.exec(dropMainFranchise);
-    assert.equal(
-      validateFinalCatalogSchema(db, { readOnly: false, mainFranchise: false }),
-      true,
-    );
+    assert.deepEqual(assignments(db), [[first, 1]]);
     assert.deepEqual(
-      db.prepare("SELECT * FROM characters ORDER BY rank").all(),
-      rows,
+      db
+        .prepare("SELECT * FROM characters ORDER BY rank")
+        .all()
+        .map((row) => ({ ...row })),
+      rows.map(({ main_franchise_id, ...character }) => character),
     );
-    db.exec("COMMIT");
+    assert.equal(validateFinalCatalogSchema(db), true);
   } finally {
     db.close();
   }
 });
 
-test("concurrent upgrades serialize and only one installs the schema", async (t) => {
-  const path = predecessorFile(t);
+test("concurrent upgrades serialize and both see the complete assignments", async (t) => {
+  const path = predecessorFile(t, { column: true });
   const gate = new SharedArrayBuffer(4);
   const module = new URL("../lib/vaultFortuneUpgrade.js", import.meta.url).href;
   const workers = Array.from(
@@ -348,13 +470,14 @@ test("concurrent upgrades serialize and only one installs the schema", async (t)
       const { upgradeMainFranchiseCatalog } = await import(workerData.module);
       const gate = new Int32Array(workerData.gate);
       const db = new DatabaseSync(workerData.path);
-      let committed;
+      let result;
       try {
         if (Atomics.add(gate, 0, 1) === 0) Atomics.wait(gate, 0, 1, 10000);
         else Atomics.notify(gate, 0);
-        committed = upgradeMainFranchiseCatalog(db, { dryRun: false }).committed;
+        const { committed } = upgradeMainFranchiseCatalog(db, { dryRun: false });
+        result = { committed, franchises: db.prepare('SELECT franchise_id FROM character_main_franchises').all().map(row => row.franchise_id) };
       } finally { db.close(); }
-      parentPort.postMessage(committed);
+      parentPort.postMessage(result);
     })().catch(error => { throw error; });
   `,
         { eval: true, workerData: { path, gate, module } },
@@ -364,13 +487,11 @@ test("concurrent upgrades serialize and only one installs the schema", async (t)
     const results = await Promise.all(
       workers.map(async (worker) => (await once(worker, "message"))[0]),
     );
-    assert.equal(results.filter(Boolean).length, 1);
-    const db = openFinalCatalogReadOnly(path);
-    try {
-      assert.deepEqual(designations(db), [null, null]);
-    } finally {
-      db.close();
-    }
+    assert.equal(results.filter((result) => result.committed).length, 1);
+    assert.deepEqual(
+      results.map((result) => result.franchises),
+      [[1], [1]],
+    );
   } finally {
     await Promise.all(workers.map((worker) => worker.terminate()));
   }

@@ -187,6 +187,41 @@ test("franchise lookup is current only when it matches the published character c
   assert.equal(isFranchiseCatalogCurrent(db), false);
 });
 
+test("alias exclusions apply to linked anime titles and synonyms for just the old franchise", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "franchise-alias-exclusions-"));
+  const db = openCatalog(join(directory, "catalog.sqlite"));
+  t.after(() => {
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  db.exec(`INSERT INTO characters (id, rank, favourites, name_full) VALUES (1, 1, 900, 'Chitoge');
+    INSERT INTO franchises (id, display_name, created_at) VALUES (22, 'Bakemonogatari', 'now'), (3055, 'Nisekoi', 'now');
+    INSERT INTO anime (id, title_english, synonyms, fetched_at) VALUES (18897, 'Nisekoi', '["False Love"]', 'now');
+    INSERT INTO franchise_anime (franchise_id, anime_id) VALUES (22, 18897);
+    INSERT INTO character_anime (character_id, anime_id) VALUES (1, 18897);`);
+  addFranchiseAlias(db, 3055, "False Love");
+  const matches = (query) =>
+    findFranchises(loadFranchiseIndex(db), query).map(
+      (franchise) => franchise.id,
+    );
+  assert.deepEqual(matches("Nisekoi"), [22, 3055]);
+  assert.deepEqual(matches("False Love"), [22, 3055]);
+
+  removeFranchiseAlias(db, 22, "ＮＩＳＥＫＯＩ");
+  removeFranchiseAlias(db, 22, "FALSE  LOVE");
+  removeFranchiseAlias(db, 22, "Bakemonogatari");
+  assert.deepEqual(matches("Nisekoi"), [3055]);
+  assert.deepEqual(matches("False Love"), [3055]);
+  assert.deepEqual(matches("Bakemonogatari"), [22]);
+  assert.deepEqual(
+    loadFranchiseCharacters(db, 22).map((row) => row.id),
+    [1],
+  );
+
+  addFranchiseAlias(db, 22, "Nisekoi");
+  assert.deepEqual(matches("Nisekoi"), [22, 3055]);
+});
+
 test("manual franchise names, aliases, moves, and merges are stored as durable decisions", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "franchise-corrections-"));
   const db = openCatalog(join(directory, "catalog.sqlite"));
