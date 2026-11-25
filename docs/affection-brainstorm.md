@@ -157,38 +157,38 @@ Q60's core is accepted with random Legendary payouts replacing fixed Wish Upon A
 
 Early/core normal milestones, retaining the supplemental Common/Rare payouts accepted with the user's later-track modifications:
 
-| Affection | Normal reward |
-| ---: | --- |
-| 25 | One Four-Leaf Clover copy |
-| 50 | One Hourglass of Haste copy |
-| 100 | One random Common item copy |
-| 200 | +1 hourly roll-capacity contribution while owned |
-| 300 | One Love Letter copy |
-| 400 | One random Rare item copy |
-| 500 | One Golden Whistle copy |
-| 600 | One random Rare item copy |
-| 700 | Six-minute normal claim-wait reduction contribution while owned |
-| 800 | One random Rare item copy |
-| 900 | One Franchise Passport copy |
+| Affection | Normal reward                                                   |
+| --------: | --------------------------------------------------------------- |
+|        25 | One Four-Leaf Clover copy                                       |
+|        50 | One Hourglass of Haste copy                                     |
+|       100 | One random Common item copy                                     |
+|       200 | +1 hourly roll-capacity contribution while owned                |
+|       300 | One Love Letter copy                                            |
+|       400 | One random Rare item copy                                       |
+|       500 | One Golden Whistle copy                                         |
+|       600 | One random Rare item copy                                       |
+|       700 | Six-minute normal claim-wait reduction contribution while owned |
+|       800 | One random Rare item copy                                       |
+|       900 | One Franchise Passport copy                                     |
 
 ### Q64 — accepted later pattern
 
 The random Epic/Epic/Legendary cycle starts at 1,000 and ends at the final affection cap of 2,100. Do not extend the cap or create repeating post-cap rewards:
 
-| Affection | Accepted one-time random reward |
-| ---: | --- |
-| 1,000 | Epic |
-| 1,100 | Epic |
-| 1,200 | Legendary |
-| 1,300 | Epic |
-| 1,400 | Epic |
-| 1,500 | Legendary |
-| 1,600 | Epic |
-| 1,700 | Epic |
-| 1,800 | Legendary — already accepted at this threshold |
-| 1,900 | Epic |
-| 2,000 | Epic |
-| 2,100 | Legendary |
+| Affection | Accepted one-time random reward                |
+| --------: | ---------------------------------------------- |
+|     1,000 | Epic                                           |
+|     1,100 | Epic                                           |
+|     1,200 | Legendary                                      |
+|     1,300 | Epic                                           |
+|     1,400 | Epic                                           |
+|     1,500 | Legendary                                      |
+|     1,600 | Epic                                           |
+|     1,700 | Epic                                           |
+|     1,800 | Legendary — already accepted at this threshold |
+|     1,900 | Epic                                           |
+|     2,000 | Epic                                           |
+|     2,100 | Legendary                                      |
 
 This accepted mapping gives four Legendary payouts (1,200/1,500/1,800/2,100) and eight late Epic payouts while preserving the 1,800 Legendary decision. Each is one normal-charge inventory copy, once per player–character pair, and uses the accepted existing pending-item dialog and source/modifier rules. This adds no extra passive power and does not change soulmate checkpoints. Normal non-soulmate characters still progress through own-character appearances/reclaims rather than indirect matches; soulmate rate estimates are not normal-character pacing.
 
@@ -198,29 +198,29 @@ All crossed milestones unlock. An initial 100-point own-character appearance pay
 
 The user approved the complete reduced schedule (Q58), superseding the previous expensive proposal. These are cumulative affection totals, not expenditure costs. The subsequent franchise-score change is a separate decision and does not reopen these thresholds. Perk order, effects, and chances are unchanged.
 
-| Checkpoint | Total affection | Unlock or upgrade |
-| ---: | ---: | --- |
-| 1 | 100 | Windfall 8% — accepted |
-| 2 | 150 | Item Conservation 8% |
-| 3 | 200 | Unbroken Bond 8% |
-| 4 | 250 | Windfall 10% |
-| 5 | 300 | Claim Conservation 8% |
-| 6 | 400 | Item Conservation 16% |
-| 7 | 500 | Fortune's Favor 8% |
-| 8 | 600 | Unbroken Bond 16% |
-| 9 | 700 | Negation 8% |
-| 10 | 800 | Claim Conservation 16% |
-| 11 | 900 | Echo 8% — all base perks unlocked |
-| 12 | 1,000 | Fortune's Favor 16% |
-| 13 | 1,100 | Negation 12% |
-| 14 | 1,200 | Echo 16% |
-| 15 | 1,300 | Windfall 15% |
-| 16 | 1,400 | Item Conservation 20% |
-| 17 | 1,500 | Unbroken Bond 20% |
-| 18 | 1,650 | Claim Conservation 20% |
-| 19 | 1,800 | Fortune's Favor 20% |
-| 20 | 1,950 | Negation 16% |
-| 21 | 2,100 | Echo 20% — final checkpoint |
+| Checkpoint | Total affection | Unlock or upgrade                 |
+| ---------: | --------------: | --------------------------------- |
+|          1 |             100 | Windfall 8% — accepted            |
+|          2 |             150 | Item Conservation 8%              |
+|          3 |             200 | Unbroken Bond 8%                  |
+|          4 |             250 | Windfall 10%                      |
+|          5 |             300 | Claim Conservation 8%             |
+|          6 |             400 | Item Conservation 16%             |
+|          7 |             500 | Fortune's Favor 8%                |
+|          8 |             600 | Unbroken Bond 16%                 |
+|          9 |             700 | Negation 8%                       |
+|         10 |             800 | Claim Conservation 16%            |
+|         11 |             900 | Echo 8% — all base perks unlocked |
+|         12 |           1,000 | Fortune's Favor 16%               |
+|         13 |           1,100 | Negation 12%                      |
+|         14 |           1,200 | Echo 16%                          |
+|         15 |           1,300 | Windfall 15%                      |
+|         16 |           1,400 | Item Conservation 20%             |
+|         17 |           1,500 | Unbroken Bond 20%                 |
+|         18 |           1,650 | Claim Conservation 20%            |
+|         19 |           1,800 | Fortune's Favor 20%               |
+|         20 |           1,950 | Negation 16%                      |
+|         21 |           2,100 | Echo 20% — final checkpoint       |
 
 This lowers Conservation from the previous proposed 300 to 150, Bond from 450 to 200, all-base unlock from 2,100 to 900, and full completion from 4,200 to 2,100. Checkpoint numbers only identify rows in this discussion; they do not introduce player levels.
 
@@ -231,10 +231,10 @@ Historical local recalculation using the prior 4/3/2 franchise scores, the unboo
 Q59 confirms higher awards for smaller franchises. Counts are from the authorized live catalog inspection on 2026-11-04:
 
 | Published characters in a franchise | Franchise count | Share of franchises | Accepted affection per match |
-| --- | ---: | ---: | ---: |
-| 1–5 | 1,867 | 64.0% | 12 |
-| 6–10 | 617 | 21.2% | 10 |
-| 11+ | 432 | 14.8% | 5 |
+| ----------------------------------- | --------------: | ------------------: | ---------------------------: |
+| 1–5                                 |           1,867 |               64.0% |                           12 |
+| 6–10                                |             617 |               21.2% |                           10 |
+| 11+                                 |             432 |               14.8% |                            5 |
 
 These three size bands supersede both earlier five-band proposals. The revised 12/10/5 awards replace the previous 4/3/2 awards without increasing progression thresholds. Shares describe franchise groups, not unique characters or roll probabilities.
 

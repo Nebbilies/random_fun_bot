@@ -2,13 +2,13 @@
 
 Use your server’s configured bot prefix wherever `{prefix}` appears below. These are traditional message commands, not slash commands.
 
-| Command | Purpose |
-| --- | --- |
-| `{prefix}affection` / `{prefix}aff` | Your affection overview, current soulmate, effective normal harem bonuses and pending item status |
-| `{prefix}affection @player` | Another player’s read-only server profile |
+| Command                                       | Purpose                                                                                           |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `{prefix}affection` / `{prefix}aff`           | Your affection overview, current soulmate, effective normal harem bonuses and pending item status |
+| `{prefix}affection @player`                   | Another player’s read-only server profile                                                         |
 | `{prefix}affection <name or #rank> [@player]` | One relationship’s saved progress; defaults to your relationship, not the current character owner |
-| `{prefix}soulmate` / `{prefix}sm` | Your current soulmate, active perks and switching availability |
-| `{prefix}soulmate <name or #rank>` | Find a character, choose if ambiguous, then explicitly confirm or cancel |
+| `{prefix}soulmate` / `{prefix}sm`             | Your current soulmate, active perks and switching availability                                    |
+| `{prefix}soulmate <name or #rank>`            | Find a character, choose if ambiguous, then explicitly confirm or cancel                          |
 
 Character lookup includes native names and curated aliases. Ranks resolve to a permanent character identity when the prompt opens: a later rank change cannot redirect that confirmation.
 

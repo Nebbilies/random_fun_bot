@@ -22,9 +22,9 @@ At bootstrap, Clover, Piñata and Rolling Fever use inclusive `rank <= 1500` in 
 
 Use the approved two files, joined by canonical UUID:
 
-| Input | SHA-256 |
-| --- | --- |
-| `danbooru-tags.csv` | `483e26dda6cc1c6679100578c4182f8af4d5bf315d3fb4fe3e3793e4a7b42a17` |
+| Input                    | SHA-256                                                            |
+| ------------------------ | ------------------------------------------------------------------ |
+| `danbooru-tags.csv`      | `483e26dda6cc1c6679100578c4182f8af4d5bf315d3fb4fe3e3793e4a7b42a17` |
 | `mudae-full-ranking.csv` | `89f3add50e8b95a134f9f09cc1fe7ce19f9191573eb1a7a05f64624cc2b8ae67` |
 
 The older `mudae-ranks.csv` is superseded. Both active inputs contain 15,409 UUIDs: 1,745 missing Danbooru inputs, 333 explicit zero counts, 1,064 missing Mudae ranks, 367 missing both metrics, and 14,345 URLs. Shared URLs are legal. Exact target coverage is mandatory; reconcile exports if the target roster differs. CSV names do not overwrite catalog names.

@@ -1,5 +1,5 @@
-import { runRoll } from '../lib/characterRollRuntime.js';
+import { runRoll } from "../lib/characterRollRuntime.js";
 
 export async function run(ctx) {
-  await runRoll(ctx, 'w');
+  await runRoll(ctx, "w");
 }

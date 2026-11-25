@@ -1,53 +1,83 @@
-import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-import { openCatalog, openCatalogReadOnly } from '../lib/catalogDb.js';
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { openCatalog, openCatalogReadOnly } from "../lib/catalogDb.js";
 
 function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'mystery-storage-'));
-  return { dir, path: join(dir, 'catalog.sqlite') };
+  const dir = mkdtempSync(join(tmpdir(), "mystery-storage-"));
+  return { dir, path: join(dir, "catalog.sqlite") };
 }
 
 function columns(db, table) {
-  return db.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name);
+  return db
+    .prepare(`PRAGMA table_info(${table})`)
+    .all()
+    .map((row) => row.name);
 }
 
-test('fresh database has mystery storage and one active session per guild', (t) => {
+test("fresh database has mystery storage and one active session per guild", (t) => {
   const { dir, path } = fixture();
   const db = openCatalog(path);
-  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
-  assert.ok(db.prepare('PRAGMA user_version').get().user_version >= 9);
-  assert.ok(columns(db, 'character_rolls').includes('mystery_session_id'));
-  assert.ok(columns(db, 'character_rolls').includes('exclusive_user_id'));
-  assert.ok(columns(db, 'mystery_sessions').includes('state_json'));
-  assert.ok(columns(db, 'mystery_sessions').includes('next_at'));
+  t.after(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  assert.ok(db.prepare("PRAGMA user_version").get().user_version >= 9);
+  assert.ok(columns(db, "character_rolls").includes("mystery_session_id"));
+  assert.ok(columns(db, "character_rolls").includes("exclusive_user_id"));
+  assert.ok(columns(db, "mystery_sessions").includes("state_json"));
+  assert.ok(columns(db, "mystery_sessions").includes("next_at"));
 
-  db.prepare('INSERT INTO guild_mystery_settings (guild_id, event_channel_id) VALUES (?, ?)')
-    .run('1', '10');
-  assert.equal(db.prepare('SELECT event_channel_id FROM guild_mystery_settings WHERE guild_id = ?')
-    .get('1').event_channel_id, '10');
-  db.prepare('INSERT INTO treasure_puzzle_wins (guild_id, puzzle_id, won_at) VALUES (?, ?, ?)')
-    .run('1', 'puzzle-1', 1000);
-  db.prepare('INSERT INTO treasure_puzzle_wins (guild_id, puzzle_id, won_at) VALUES (?, ?, ?)')
-    .run('2', 'puzzle-1', 1001);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM treasure_puzzle_wins').get().n, 2);
+  db.prepare(
+    "INSERT INTO guild_mystery_settings (guild_id, event_channel_id) VALUES (?, ?)",
+  ).run("1", "10");
+  assert.equal(
+    db
+      .prepare(
+        "SELECT event_channel_id FROM guild_mystery_settings WHERE guild_id = ?",
+      )
+      .get("1").event_channel_id,
+    "10",
+  );
+  db.prepare(
+    "INSERT INTO treasure_puzzle_wins (guild_id, puzzle_id, won_at) VALUES (?, ?, ?)",
+  ).run("1", "puzzle-1", 1000);
+  db.prepare(
+    "INSERT INTO treasure_puzzle_wins (guild_id, puzzle_id, won_at) VALUES (?, ?, ?)",
+  ).run("2", "puzzle-1", 1001);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM treasure_puzzle_wins").get().n,
+    2,
+  );
 
   const insert = db.prepare(`INSERT INTO mystery_sessions
     (guild_id, origin_roll_id, event_id, character_id, rank_snapshot, roller_id,
       event_channel_id, state, state_json, started_at, next_at, deadline_at)
     VALUES (?, ?, 'doors', ?, 20, '100', '10', ?, ?, 1000, 2000, 3000)`);
-  insert.run('1', 1, 101, 'reserved', '{}');
-  assert.throws(() => insert.run('1', 2, 102, 'running', '{}'), /UNIQUE constraint failed/);
-  insert.run('2', 3, 103, 'running', '{}');
-  db.prepare("UPDATE mystery_sessions SET state = 'completed', resolved_at = 2000, outcome = 'won' WHERE origin_roll_id = 1").run();
-  insert.run('1', 2, 102, 'running', '{}');
-  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM mystery_sessions WHERE guild_id = '1'").get().n, 2);
+  insert.run("1", 1, 101, "reserved", "{}");
+  assert.throws(
+    () => insert.run("1", 2, 102, "running", "{}"),
+    /UNIQUE constraint failed/,
+  );
+  insert.run("2", 3, 103, "running", "{}");
+  db.prepare(
+    "UPDATE mystery_sessions SET state = 'completed', resolved_at = 2000, outcome = 'won' WHERE origin_roll_id = 1",
+  ).run();
+  insert.run("1", 2, 102, "running", "{}");
+  assert.equal(
+    db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM mystery_sessions WHERE guild_id = '1'",
+      )
+      .get().n,
+    2,
+  );
 });
 
-test('v5 upgrade preserves existing game records and adds nullable card fields', (t) => {
+test("v5 upgrade preserves existing game records and adds nullable card fields", (t) => {
   const { dir, path } = fixture();
   const old = new DatabaseSync(path);
   old.exec(`
@@ -80,30 +110,74 @@ test('v5 upgrade preserves existing game records and adds nullable card fields',
   old.close();
 
   let db = openCatalog(path);
-  t.after(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
-  const upgradedVersion = db.prepare('PRAGMA user_version').get().user_version;
+  t.after(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const upgradedVersion = db.prepare("PRAGMA user_version").get().user_version;
   assert.ok(upgradedVersion >= 9);
-  assert.equal(db.prepare("SELECT owner_id FROM marriages WHERE guild_id = '1'").get().owner_id, '101');
-  assert.equal(db.prepare("SELECT prefix FROM guild_prefixes WHERE guild_id = '1'").get().prefix, '?');
-  assert.equal(db.prepare("SELECT used FROM roll_allowances WHERE guild_id = '1'").get().used, 3);
-  assert.equal(db.prepare("SELECT period FROM claim_allowances WHERE guild_id = '1'").get().period, 10);
-  assert.deepEqual({ ...db.prepare("SELECT state, message_id, mystery_session_id, exclusive_user_id FROM character_rolls WHERE command_message_id = '1000'").get() },
-    { state: 'open', message_id: '1001', mystery_session_id: null, exclusive_user_id: null });
+  assert.equal(
+    db.prepare("SELECT owner_id FROM marriages WHERE guild_id = '1'").get()
+      .owner_id,
+    "101",
+  );
+  assert.equal(
+    db.prepare("SELECT prefix FROM guild_prefixes WHERE guild_id = '1'").get()
+      .prefix,
+    "?",
+  );
+  assert.equal(
+    db.prepare("SELECT used FROM roll_allowances WHERE guild_id = '1'").get()
+      .used,
+    3,
+  );
+  assert.equal(
+    db.prepare("SELECT period FROM claim_allowances WHERE guild_id = '1'").get()
+      .period,
+    10,
+  );
+  assert.deepEqual(
+    {
+      ...db
+        .prepare(
+          "SELECT state, message_id, mystery_session_id, exclusive_user_id FROM character_rolls WHERE command_message_id = '1000'",
+        )
+        .get(),
+    },
+    {
+      state: "open",
+      message_id: "1001",
+      mystery_session_id: null,
+      exclusive_user_id: null,
+    },
+  );
   db.close();
   db = openCatalog(path);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, upgradedVersion);
+  assert.equal(
+    db.prepare("PRAGMA user_version").get().user_version,
+    upgradedVersion,
+  );
 
   const readOnly = openCatalogReadOnly(path);
-  assert.equal(readOnly.prepare('PRAGMA user_version').get().user_version, upgradedVersion);
+  assert.equal(
+    readOnly.prepare("PRAGMA user_version").get().user_version,
+    upgradedVersion,
+  );
   readOnly.close();
 });
 
-test('openers reject a database newer than the supported schema', (t) => {
+test("openers reject a database newer than the supported schema", (t) => {
   const { dir, path } = fixture();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const db = openCatalog(path);
-  db.exec('PRAGMA user_version = 9999');
+  db.exec("PRAGMA user_version = 9999");
   db.close();
-  assert.throws(() => openCatalogReadOnly(path), /Unsupported catalog database version 9999/);
-  assert.throws(() => openCatalog(path), /Unsupported catalog database version 9999/);
+  assert.throws(
+    () => openCatalogReadOnly(path),
+    /Unsupported catalog database version 9999/,
+  );
+  assert.throws(
+    () => openCatalog(path),
+    /Unsupported catalog database version 9999/,
+  );
 });

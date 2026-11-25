@@ -1,4 +1,4 @@
-import { startTrade } from '../lib/tradeRuntime.js';
+import { startTrade } from "../lib/tradeRuntime.js";
 
 /**
  * !me @user — exchange characters with another player.

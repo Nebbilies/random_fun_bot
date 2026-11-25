@@ -25,11 +25,11 @@ Status: Phase 2 design approved by user. Implementation followed the approved Ph
 
 ## Options
 
-| Approach | Advantages | Problems |
-| --- | --- | --- |
-| In-memory counters, timers, and collectors | Small initial implementation | Loses allowances and claim windows on restart; does not satisfy scope |
-| SQLite periods and persisted roll records, with shared event handlers | Reuses installed storage; atomic claims; restart recovery | Requires a schema migration and explicit Discord failure handling |
-| Separate queue/cache service and scheduled resets | Supports a larger distributed deployment | Adds infrastructure without a current need |
+| Approach                                                              | Advantages                                                | Problems                                                              |
+| --------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------- |
+| In-memory counters, timers, and collectors                            | Small initial implementation                              | Loses allowances and claim windows on restart; does not satisfy scope |
+| SQLite periods and persisted roll records, with shared event handlers | Reuses installed storage; atomic claims; restart recovery | Requires a schema migration and explicit Discord failure handling     |
+| Separate queue/cache service and scheduled resets                     | Supports a larger distributed deployment                  | Adds infrastructure without a current need                            |
 
 Recommendation: SQLite periods and persisted roll records. No new dependencies or separate service.
 

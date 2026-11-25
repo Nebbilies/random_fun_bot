@@ -20,12 +20,12 @@ Run the full suite with `npm test` and the checked-JavaScript validation with `n
 
 Windows, local Node 22, synthetic prepared character catalog; no production database read or modified. Fixture: 15,001 characters, each synthetic character has a numbered primary label, numbered alias and shared alias; one real-style `Satoru Gojo` target. Five calls per query, while regression tests were also active:
 
-| Query | Observed elapsed range |
-| --- | --- |
-| Exact `Satoru Gojo` | 1–3 ms |
-| Word `gojo` | 28–44 ms |
-| Typo `gojp` | 49–112 ms |
-| Unrelated `zzzzzzzz` | 45–74 ms |
+| Query                | Observed elapsed range |
+| -------------------- | ---------------------- |
+| Exact `Satoru Gojo`  | 1–3 ms                 |
+| Word `gojo`          | 28–44 ms               |
+| Typo `gojp`          | 49–112 ms              |
+| Unrelated `zzzzzzzz` | 45–74 ms               |
 
 These are smoke measurements, not percentiles or production guarantees. Prepared snapshots cache normalized tokens and character rank order; per-search memoization avoids repeated scoring of shared aliases/word sequences. Fuzzy distance uses bounded bands, length rejection and a conservative absent-code-point lower bound. Exact and meaningful-word matches skip the fuzzy pass.
 

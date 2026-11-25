@@ -1,23 +1,30 @@
-import {SlashCommandBuilder} from "discord.js";
-import {writeFileSync, readFileSync} from "fs";
-import {landmineRuntime} from "../../lib/landmineRuntime.js";
+import { SlashCommandBuilder } from "discord.js";
+import { writeFileSync, readFileSync } from "fs";
+import { landmineRuntime } from "../../lib/landmineRuntime.js";
 
 export const data = new SlashCommandBuilder()
-    .setName('set-rate')
-    .setDescription('Set ty le dap min')
-    .addNumberOption(option =>
-        option.setName('rate')
-            .setDescription('Ty le dap min moi (0-10%)')
-            .setRequired(true),
-);
+  .setName("set-rate")
+  .setDescription("Set ty le dap min")
+  .addNumberOption((option) =>
+    option
+      .setName("rate")
+      .setDescription("Ty le dap min moi (0-10%)")
+      .setRequired(true),
+  );
 
 export async function execute(client, interaction) {
-    const newRate = interaction.options.getNumber('rate');
-    if (newRate < 0 || newRate > 10) {
-        await interaction.reply({content: 'suc vat ty le phai trong khoang 0-10%', ephemeral: true});
-        return;
-    }
-    landmineRuntime.setRate(newRate);
-    landmineRuntime.reload();
-    await interaction.reply({content: `ty le dap min dang la **${newRate}%**`, ephemeral: false});
+  const newRate = interaction.options.getNumber("rate");
+  if (newRate < 0 || newRate > 10) {
+    await interaction.reply({
+      content: "suc vat ty le phai trong khoang 0-10%",
+      ephemeral: true,
+    });
+    return;
+  }
+  landmineRuntime.setRate(newRate);
+  landmineRuntime.reload();
+  await interaction.reply({
+    content: `ty le dap min dang la **${newRate}%**`,
+    ephemeral: false,
+  });
 }

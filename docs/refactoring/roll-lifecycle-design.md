@@ -29,11 +29,11 @@ Existing ownership, affection, item, and mystery integrations still execute at t
 
 ## Options and decision
 
-| Option | Benefit | Cost | Decision |
-| --- | --- | --- | --- |
-| Extract publication, claims, and closure | Cohesive state-transition rules; builds on allowance transactions | Requires small shared read/settlement seams | Recommended |
-| Extract all roll lifecycle and reservation | Larger immediate reduction in the legacy file | Couples this stage to selection, buffs, mystery and vault branches | Defer |
-| Extract Discord presentation/runtime first | Improves navigation of rendering and handlers | Leaves lifecycle decisions and storage coupled | Defer |
+| Option                                     | Benefit                                                           | Cost                                                               | Decision    |
+| ------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------ | ----------- |
+| Extract publication, claims, and closure   | Cohesive state-transition rules; builds on allowance transactions | Requires small shared read/settlement seams                        | Recommended |
+| Extract all roll lifecycle and reservation | Larger immediate reduction in the legacy file                     | Couples this stage to selection, buffs, mystery and vault branches | Defer       |
+| Extract Discord presentation/runtime first | Improves navigation of rendering and handlers                     | Leaves lifecycle decisions and storage coupled                     | Defer       |
 
 Use ordinary ES modules and existing concrete SQLite helpers. Avoid generic repositories, new classes, a dependency container, a configurable state-machine engine, or one file per function. The public interface remains the existing operations, IDs, options, results, and errors.
 
@@ -41,15 +41,15 @@ Use ordinary ES modules and existing concrete SQLite helpers. Avoid generic repo
 
 Names below describe the proposed design. The implementation plan will enumerate exact edits after approval.
 
-| Module | Responsibility |
-| --- | --- |
-| `features/rolls/rollLifecycleService.js` | Public publication, failure, claim, escape-refresh, lookup, notice, and reportability operations; validation, branch ordering, resource selection, and existing transaction entry points |
-| `features/rolls/rollLifecycleRepository.js` | Concrete lifecycle row projections, conditional state writes, existence/schema reads, and notice persistence; no gameplay decisions or transaction control |
-| `features/rolls/rollSnapshot.js` | The existing durable roll/mystery snapshot loading and cross-validation operation, reused by lifecycle, mystery publication, and recovery |
-| `lib/mysterySessionState.js` | Mechanical extraction of `getMysterySession` and the existing transaction-neutral `finishMystery` implementation so both lifecycle and the remaining mystery operations can reuse them |
-| `features/rolls/rollDeliveryCapture.js` | Existing synchronous delivery capability check, captured-window validation, and reservation capture; no Discord imports or transport operations |
-| `lib/characterRolls.js` | Existing reservation, mystery orchestration, recovery and cleanup; compatibility exports for extracted public operations |
-| Existing runtime and delivery modules | Existing Discord behavior; consume extracted operations without changing transport or acknowledgement ordering |
+| Module                                      | Responsibility                                                                                                                                                                           |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `features/rolls/rollLifecycleService.js`    | Public publication, failure, claim, escape-refresh, lookup, notice, and reportability operations; validation, branch ordering, resource selection, and existing transaction entry points |
+| `features/rolls/rollLifecycleRepository.js` | Concrete lifecycle row projections, conditional state writes, existence/schema reads, and notice persistence; no gameplay decisions or transaction control                               |
+| `features/rolls/rollSnapshot.js`            | The existing durable roll/mystery snapshot loading and cross-validation operation, reused by lifecycle, mystery publication, and recovery                                                |
+| `lib/mysterySessionState.js`                | Mechanical extraction of `getMysterySession` and the existing transaction-neutral `finishMystery` implementation so both lifecycle and the remaining mystery operations can reuse them   |
+| `features/rolls/rollDeliveryCapture.js`     | Existing synchronous delivery capability check, captured-window validation, and reservation capture; no Discord imports or transport operations                                          |
+| `lib/characterRolls.js`                     | Existing reservation, mystery orchestration, recovery and cleanup; compatibility exports for extracted public operations                                                                 |
+| Existing runtime and delivery modules       | Existing Discord behavior; consume extracted operations without changing transport or acknowledgement ordering                                                                           |
 
 The lifecycle repository owns SQL moved with lifecycle operations, including the existing legacy Double Date counter initialization. Allowance SQL continues to use the Stage 2 repository. Ownership and affection operations continue through their existing modules. Mystery-session lookup and terminal settlement retain their SQL in the narrowly extracted mystery helper; moving all mystery SQL into a new architecture is outside scope.
 
@@ -96,15 +96,15 @@ No new feature module imports the compatibility facade or Discord runtime. The m
 
 Use Simple TDD at the public operation seams: one failing behavior test for an extracted import or missing behavioral contract, minimal extraction, then the relevant regressions. Use real SQLite fixtures with explicit times and deterministic randomness; avoid mocks of repository internals. Keep existing compatibility-path tests and add direct-path coverage.
 
-| Area | Required evidence |
-| --- | --- |
-| Publication | Pending-only and repeated publication; captured versus legacy windows; own appearance; changed ownership/reservation; snapshot failure; rollback of state and affection writes |
-| Claims and closure | Normal success; repeated and competing claims; protected boundary and expiry boundary; reclaim and escape transfer; closure of other open cards; failure/repeated failure; notice deduplication |
-| Resources and atomicity | Existing allowance regressions plus injected failures after ownership/resource changes; rollback of buffs, usage/history, roll state, mystery settlement, and affection where enabled |
-| Caller-owned transactions | Invoke `claimRollInTransaction` inside a real outer transaction and force its rollback; prove the module neither commits nor begins a nested transaction |
-| Mystery integration | Exclusive winner checks and unchanged claimed/unavailable/failed terminal settlement, including affection reveal/cancellation flags |
-| Delivery and compatibility | Capture remains in reservation's transaction; legacy and final-schema fixtures; acknowledgement survives publication failure; old/new import paths; import smoke tests without bot startup |
-| Unchanged surrounding workflows | Existing reservation, commands, published terms, pending delivery, escape recovery, mystery, affection, and legacy-vault cleanup suites |
+| Area                            | Required evidence                                                                                                                                                                               |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Publication                     | Pending-only and repeated publication; captured versus legacy windows; own appearance; changed ownership/reservation; snapshot failure; rollback of state and affection writes                  |
+| Claims and closure              | Normal success; repeated and competing claims; protected boundary and expiry boundary; reclaim and escape transfer; closure of other open cards; failure/repeated failure; notice deduplication |
+| Resources and atomicity         | Existing allowance regressions plus injected failures after ownership/resource changes; rollback of buffs, usage/history, roll state, mystery settlement, and affection where enabled           |
+| Caller-owned transactions       | Invoke `claimRollInTransaction` inside a real outer transaction and force its rollback; prove the module neither commits nor begins a nested transaction                                        |
+| Mystery integration             | Exclusive winner checks and unchanged claimed/unavailable/failed terminal settlement, including affection reveal/cancellation flags                                                             |
+| Delivery and compatibility      | Capture remains in reservation's transaction; legacy and final-schema fixtures; acknowledgement survives publication failure; old/new import paths; import smoke tests without bot startup      |
+| Unchanged surrounding workflows | Existing reservation, commands, published terms, pending delivery, escape recovery, mystery, affection, and legacy-vault cleanup suites                                                         |
 
 Relevant existing suites include `characterRolls`, `characterEscapes`, `rollAllowanceTransactions`, `itemBuffRolls`, `rollPublishedTerms`, `rollDeliveryPublishedTerms`, `forcedEscapePublishedTerms`, `soulmateReclaim`, `mysteryRolls`, `mysterySnapshotIntegrity`, `pendingRollRecovery`, and `escapeRuntimeRecovery`. Reuse their fixtures where useful without building a new generic fixture framework.
 

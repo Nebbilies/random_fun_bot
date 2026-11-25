@@ -40,7 +40,7 @@ Use the engineering framework, with approval gates after this proposal and the i
 - A release entry has a fixed release date and added item IDs. Format its date as DD/MM/YYYY; do not calculate a new date on each command.
 - Derive names, counts, and rarity grouping from those entries. Support future single-item and mixed-rarity releases, not only this pair.
 - Apply permanent guild-wide discovery masking independently to each name; undiscovered names display as **???**.
-- Initial wording: **Changelog DD/MM/YYYY**: Added **two** new *Rare* items: **???** and **???**.
+- Initial wording: **Changelog DD/MM/YYYY**: Added **two** new _Rare_ items: **???** and **???**.
 - Keep the announcement visible independently of the current catalog rarity filter; navigation refreshes discovery as the current itemlist does.
 - Use the actual release date when preparing the release; the handoff filename is not authority for a release date.
 
@@ -56,6 +56,7 @@ Use the engineering framework, with approval gates after this proposal and the i
 Extend the existing durable vault session/reward boundary rather than implement a separate in-memory Fortune flow. Reuse inventory transactions, scope/message-binding checks, Components V2, configuration registry, and overflow delivery.
 
 Rejected alternatives:
+
 - Memory-only candidates/armed state: breaks restart and exactly-once guarantees.
 - Drawing Lens rewards on each click: permits rerolls and makes previews unreliable.
 - Delivering first and recasting inventory afterward: bypasses the agreed decision order and complicates overflow and acquisition history.

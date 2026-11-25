@@ -12,19 +12,19 @@ This proposal extends the earning rules in [affection-design.md](affection-desig
 
 ## Confirmed product rules
 
-| Situation | Result |
-| --- | --- |
-| Another owner manually reclaims a character the player rolled | Owner receives the existing 20 base affection; roller's eligible soulmate receives 5 base affection |
-| Golden Whistle completes that reclaim automatically | Same affection rules as a manual reclaim |
-| Rolled character shares no franchise with the roller's soulmate | The new 5-point award still qualifies |
-| Appearance already awarded franchise affection | The reclaim bonus adds separately; for example, 5 plus 5 gives 10 actual affection before any doubling or cap |
-| Roller changes soulmates between appearance and reclaim | The new bonus goes to the selected, owned soulmate at reclaim; earlier appearance affection keeps its original recipient |
-| Roller had no soulmate when rolling but selects one before reclaim | The selected, owned soulmate at reclaim qualifies |
-| Roller has no selected, owned soulmate when reclaim resolves | No roller bonus; owner reclaim and owner affection proceed normally |
-| Roller’s Unbroken Bond triggers | Double the new base award from 8 to 16, subject to the existing total cap |
-| Siren's Call creates the escape | No new roller bonus; existing owner reclaim affection remains available |
-| Roll predates feature activation | No new roller bonus, including when reclaimed after activation |
-| Escape expires, is canceled, or another player acquires the character | No new roller bonus |
+| Situation                                                             | Result                                                                                                                   |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Another owner manually reclaims a character the player rolled         | Owner receives the existing 20 base affection; roller's eligible soulmate receives 5 base affection                      |
+| Golden Whistle completes that reclaim automatically                   | Same affection rules as a manual reclaim                                                                                 |
+| Rolled character shares no franchise with the roller's soulmate       | The new 5-point award still qualifies                                                                                    |
+| Appearance already awarded franchise affection                        | The reclaim bonus adds separately; for example, 5 plus 5 gives 10 actual affection before any doubling or cap            |
+| Roller changes soulmates between appearance and reclaim               | The new bonus goes to the selected, owned soulmate at reclaim; earlier appearance affection keeps its original recipient |
+| Roller had no soulmate when rolling but selects one before reclaim    | The selected, owned soulmate at reclaim qualifies                                                                        |
+| Roller has no selected, owned soulmate when reclaim resolves          | No roller bonus; owner reclaim and owner affection proceed normally                                                      |
+| Roller’s Unbroken Bond triggers                                       | Double the new base award from 8 to 16, subject to the existing total cap                                                |
+| Siren's Call creates the escape                                       | No new roller bonus; existing owner reclaim affection remains available                                                  |
+| Roll predates feature activation                                      | No new roller bonus, including when reclaimed after activation                                                           |
+| Escape expires, is canceled, or another player acquires the character | No new roller bonus                                                                                                      |
 
 Only a successful owner reclaim qualifies. Rolling one's own character continues to grant its existing appearance affection without an escape or reclaim. No historical backfill, new daily cap, or additional reward for someone other than the actual roller is introduced.
 
@@ -32,11 +32,11 @@ The roughly 12-week completion target applies to typical active-player progressi
 
 ## Recommended engineering choices
 
-| Decision | Options considered | Recommendation |
-| --- | --- | --- |
-| Roller eligibility | Extend roll-time soulmate snapshots, or read current selection at successful reclaim | Read current selection and perks at reclaim, as confirmed; no new roll-time soulmate snapshot fields |
-| Activation boundary | Compare request timestamps with a global activation time, or mark newly reserved rolls | Save a versioned marker on new rolls and their permanent request outcome; eligibility does not depend on wall-clock comparisons |
-| Schema compatibility | Advance the global catalog version, or extend the existing exact-shape v12 upgrade path | Extend the existing upgrade path with a narrowly recognized predecessor and a bounded award-table migration |
+| Decision             | Options considered                                                                      | Recommendation                                                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Roller eligibility   | Extend roll-time soulmate snapshots, or read current selection at successful reclaim    | Read current selection and perks at reclaim, as confirmed; no new roll-time soulmate snapshot fields                            |
+| Activation boundary  | Compare request timestamps with a global activation time, or mark newly reserved rolls  | Save a versioned marker on new rolls and their permanent request outcome; eligibility does not depend on wall-clock comparisons |
+| Schema compatibility | Advance the global catalog version, or extend the existing exact-shape v12 upgrade path | Extend the existing upgrade path with a narrowly recognized predecessor and a bounded award-table migration                     |
 
 These choices keep the change within existing ownership, roll, affection, presentation, and catalog lifecycle modules. Technical names for the new marker and helper functions will be settled in Phase 3.
 

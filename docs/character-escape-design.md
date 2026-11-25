@@ -56,11 +56,11 @@ The user approved these defaults with the design:
 
 ## Design options
 
-| Option | Advantages | Tradeoffs |
-| --- | --- | --- |
-| Separate escape-event subsystem | Can grow independently | Duplicates roll reservation, claims, recovery, and card handling for one extra roll outcome |
-| Divorce automatically at 60 seconds | Can reuse unowned marriage handling afterward | Violates the accepted rule that ownership remains until another player succeeds |
-| Extend ordinary roll records and claim handling | Reuses existing storage, quotas, reaction routing, and rendering | Requires an explicit protected phase and guarded ownership transfer |
+| Option                                          | Advantages                                                       | Tradeoffs                                                                                   |
+| ----------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Separate escape-event subsystem                 | Can grow independently                                           | Duplicates roll reservation, claims, recovery, and card handling for one extra roll outcome |
+| Divorce automatically at 60 seconds             | Can reuse unowned marriage handling afterward                    | Violates the accepted rule that ownership remains until another player succeeds             |
+| Extend ordinary roll records and claim handling | Reuses existing storage, quotas, reaction routing, and rendering | Requires an explicit protected phase and guarded ownership transfer                         |
 
 Recommendation: extend the existing ordinary roll path. Escape attempts are a distinct owned-roll outcome, with no new dependency, command, or mystery event module.
 

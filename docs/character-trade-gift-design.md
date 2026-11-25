@@ -20,14 +20,14 @@ Let two players in one server hand characters over to each other without leaving
 
 ## Design options
 
-| Decision | Chosen | Other option and reason |
-| --- | --- | --- |
-| Who confirms | The receiving player only | A second confirmation from the initiator adds a step without protecting anyone, since the initiator already named the character. |
-| How to answer | Typed answers and buttons | Buttons alone break when a player answers in plain text, and typed alone ignores the richer component UI the bot already uses. |
-| Who may cancel | Either player | An initiator-only cancel would leave the recipient unable to walk away from a stale prompt. |
-| Ambiguous name | Select menu picker | Asking for a more specific name punishes characters that genuinely share a name; picking silently can move the wrong character. |
+| Decision                 | Chosen                                         | Other option and reason                                                                                                                     |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Who confirms             | The receiving player only                      | A second confirmation from the initiator adds a step without protecting anyone, since the initiator already named the character.            |
+| How to answer            | Typed answers and buttons                      | Buttons alone break when a player answers in plain text, and typed alone ignores the richer component UI the bot already uses.              |
+| Who may cancel           | Either player                                  | An initiator-only cancel would leave the recipient unable to walk away from a stale prompt.                                                 |
+| Ambiguous name           | Select menu picker                             | Asking for a more specific name punishes characters that genuinely share a name; picking silently can move the wrong character.             |
 | Where the transfer lives | The existing ownership table, owner field only | A separate transfer log would duplicate ownership and break the harem list, escape rules and protection locks that already read that table. |
-| Session lifetime | In memory, per channel | A trade is a conversation that lasts minutes. Persisting it would need a cleanup job for rows nobody is going to answer. |
+| Session lifetime         | In memory, per channel                         | A trade is a conversation that lasts minutes. Persisting it would need a cleanup job for rows nobody is going to answer.                    |
 
 ## Data and command boundaries
 
