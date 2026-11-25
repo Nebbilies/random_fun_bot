@@ -1,6 +1,6 @@
 # Threadbreaker implementation plan
 
-Status: Approved for implementation by the user. Item description emphasis: **highest rank *number***.
+Status: Approved for implementation by the user. Item description emphasis: **highest rank _number_**.
 
 Approved design: [Franchise divorce chain](franchise-divorce-chain-design.md).
 

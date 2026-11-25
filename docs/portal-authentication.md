@@ -45,15 +45,15 @@ Login attempts, successful or unsuccessful, are limited to five per socket addre
 
 ## Permission matrix
 
-| Workspace / API | Admin | Moderator |
-| --- | --- | --- |
-| Character/tag review and report resolution | Yes | Yes |
-| Franchise pages, searches, corrections (integrated and standalone) | Yes | Yes |
-| Catalog character/source/likes management | Yes, through attributed preview/confirmation services | Yes, through the same services |
-| Configuration page and all `/api/config` routes | Yes | No, including reads |
-| Game administration page and all `/api/game` routes | Yes | No, including item roster/rates reads |
-| Item grants, added rolls, claim resets | Yes | No |
-| Session info / logout | Own session | Own session |
+| Workspace / API                                                    | Admin                                                 | Moderator                             |
+| ------------------------------------------------------------------ | ----------------------------------------------------- | ------------------------------------- |
+| Character/tag review and report resolution                         | Yes                                                   | Yes                                   |
+| Franchise pages, searches, corrections (integrated and standalone) | Yes                                                   | Yes                                   |
+| Catalog character/source/likes management                          | Yes, through attributed preview/confirmation services | Yes, through the same services        |
+| Configuration page and all `/api/config` routes                    | Yes                                                   | No, including reads                   |
+| Game administration page and all `/api/game` routes                | Yes                                                   | No, including item roster/rates reads |
+| Item grants, added rolls, claim resets                             | Yes                                                   | No                                    |
+| Session info / logout                                              | Own session                                           | Own session                           |
 
 Checks run before assets or route dispatch on both server entry points, including unknown methods on admin namespaces. Exported internal route handlers are not standalone HTTP entry points; new entry points must install the shared auth gate before invoking them. New admin APIs outside `/api/config` or `/api/game` must explicitly extend the authorization policy. Do not rely on sidebar visibility.
 

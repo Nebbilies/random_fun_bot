@@ -31,16 +31,16 @@
 
 On November 24, 2026, a read-only SQLite inspection on the VPS found a 391 MiB database with no freelist pages or outstanding WAL bytes at the time of the check. The results below are aggregates and contain no Discord identifiers.
 
-| Measure | Observed value |
-| --- | --- |
-| Current ownership | 1,328 marriages across 33 owners in one guild |
-| Recent activity | 30 distinct players with an affection context in the previous ten days |
-| Catalog coverage | 21 of the current top 25, 44 of the top 50, 84 of the top 100, and 159 of the top 200 currently owned |
-| Top 100 ownership history | 90 of today's top 100 appear in current marriages or recorded ownership losses |
-| Currently owned soulmates | 10 across 16 stored selection records |
-| Largest gameplay storage groups | 132.5 MiB across vault, mystery, and reward tables, and 75.5 MiB across affection tables, including indexes |
-| Other core gameplay storage | About 1 MiB across marriages, ownership losses, wishes, inventory, and buffs, including indexes |
-| Recent payloads | About 69.6 MiB of payloads in recent affection, reward, vault, and mystery records, plus 42.8 MiB in catalog mutation snapshots written in the same ten-day window |
+| Measure                         | Observed value                                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Current ownership               | 1,328 marriages across 33 owners in one guild                                                                                                                      |
+| Recent activity                 | 30 distinct players with an affection context in the previous ten days                                                                                             |
+| Catalog coverage                | 21 of the current top 25, 44 of the top 50, 84 of the top 100, and 159 of the top 200 currently owned                                                              |
+| Top 100 ownership history       | 90 of today's top 100 appear in current marriages or recorded ownership losses                                                                                     |
+| Currently owned soulmates       | 10 across 16 stored selection records                                                                                                                              |
+| Largest gameplay storage groups | 132.5 MiB across vault, mystery, and reward tables, and 75.5 MiB across affection tables, including indexes                                                        |
+| Other core gameplay storage     | About 1 MiB across marriages, ownership losses, wishes, inventory, and buffs, including indexes                                                                    |
+| Recent payloads                 | About 69.6 MiB of payloads in recent affection, reward, vault, and mystery records, plus 42.8 MiB in catalog mutation snapshots written in the same ten-day window |
 
 Current-rank ownership coverage gives a calibration point for an automatic trigger. A moving leaderboard, divorce, and trade all change how live counts behave. The ten-day payload sample measures stored field bytes for records timestamped in that window. Estimating net file growth requires a comparable earlier database measurement. SQLite can reuse freed pages after deletes. File shrinkage needs a separate compaction decision.
 

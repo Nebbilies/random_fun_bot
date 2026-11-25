@@ -6,10 +6,10 @@ Let players submit several character names in the existing prefix commands. Reso
 
 ## Options
 
-| Input | Fits best | Tradeoff |
-| --- | --- | --- |
-| Names separated by `$` | Players who know which characters they want | Misspelled or shared names can require a picker. |
-| Discord string multi-select | Players browsing a small harem | Each menu holds up to 25 options. Larger harems need pagination, selection tracking across pages, and a review step. |
+| Input                       | Fits best                                   | Tradeoff                                                                                                             |
+| --------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Names separated by `$`      | Players who know which characters they want | Misspelled or shared names can require a picker.                                                                     |
+| Discord string multi-select | Players browsing a small harem              | Each menu holds up to 25 options. Larger harems need pagination, selection tracking across pages, and a review step. |
 
 Use typed lists with the existing harem display. Use single-select menus for individual names that need clarification.
 

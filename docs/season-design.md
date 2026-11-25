@@ -10,11 +10,11 @@ The bot verifies that the channel belongs to the server and that it can post the
 
 ## Trigger and storage choices
 
-| Choice | Effect |
-| --- | --- |
-| Manual scheduling with an editable target date | Gives the operator control over when the reminder reaches players. Each server can use its own schedule. |
-| Fixed automatic rotation after the target date | Makes season length predictable and can schedule a rollover while the community is unavailable. |
-| Chance of automatic rollover on a marriage | Makes the end of a season uncertain. It needs a precise coverage definition and tuning for each server. Current gameplay ranks can change on catalog publication, and the last-claim record is a cooldown record. |
+| Choice                                         | Effect                                                                                                                                                                                                            |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Manual scheduling with an editable target date | Gives the operator control over when the reminder reaches players. Each server can use its own schedule.                                                                                                          |
+| Fixed automatic rotation after the target date | Makes season length predictable and can schedule a rollover while the community is unavailable.                                                                                                                   |
+| Chance of automatic rollover on a marriage     | Makes the end of a season uncertain. It needs a precise coverage definition and tuning for each server. Current gameplay ranks can change on catalog publication, and the last-claim record is a cooldown record. |
 
 Use manual scheduling with a target length for v1. If an automatic rule is considered later, measuring distinct first marriages of characters from a fixed season-start rank list would give a stable signal. The existing server owns 84 of the current top 100, a useful coverage observation with limited timing history. [Production observations](season-brainstorm.md#production-observations)
 
@@ -32,11 +32,11 @@ When the cutoff passes with delivery still unconfirmed, a portal administrator c
 
 ### Work around the deadline
 
-| Time | Work |
-| --- | --- |
-| During the reminder window | Prepare the rollover, check the channel and schedule, and plan retention cleanup. Keep playing and changing the closing season normally. Final stats and soulmate eligibility remain live through the cutoff. |
-| At cutoff | Briefly hold writes for this guild, verify current members, archive closing stats, expire outstanding actions, and start the new season. The write transaction contains live state changes and the durable record that those changes succeeded. |
-| After commit | Resume play, deliver the start announcement and reward notices, and purge retired receipts in small batches. SQLite reuses their pages. Physical compaction is separate maintenance. |
+| Time                       | Work                                                                                                                                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| During the reminder window | Prepare the rollover, check the channel and schedule, and plan retention cleanup. Keep playing and changing the closing season normally. Final stats and soulmate eligibility remain live through the cutoff.                                   |
+| At cutoff                  | Briefly hold writes for this guild, verify current members, archive closing stats, expire outstanding actions, and start the new season. The write transaction contains live state changes and the durable record that those changes succeeded. |
+| After commit               | Resume play, deliver the start announcement and reward notices, and purge retired receipts in small batches. SQLite reuses their pages. Physical compaction is separate maintenance.                                                            |
 
 The existing claim reset is a time calculation. A scheduled worker can drive announcements and retries, and gameplay writers also check the stored cutoff under their write transaction. An action prepared in an earlier season can never resolve against the new one. Apply the same guard to delayed callbacks, component collectors, recovery jobs, and portal writes. Retire expired controls through their usual feedback paths and release in-memory reservations. Announcements and Discord membership lookups run outside the SQLite write transaction. Other guilds stay playable while one guild waits for a definitive membership response. [Bot startup](../app/bootstrap.js#L85) · [Game recovery](../lib/gameRecovery.js#L10) · [Membership lookup](../lib/serverLeaderboard.js#L42)
 
@@ -50,10 +50,10 @@ From the successful reminder through cutoff, a valid `!soulmate` selection may b
 
 Recompute passive bonuses and perks from the reduced affection. Award newly earned item milestones through the normal affection reward flow, with normal inventory delivery, charges, expiry, and notification. Under the current cap, 1,000 old affection crosses the only reachable item milestone, 100 starting affection, and grants one eligible Common item. Give it once in the new season. New gameplay can earn milestones again in that season as it crosses them. Scope milestone entitlements and reward identities so an old reward or button cannot address a new award. [Affection rules](../lib/affectionRules.js#L2) · [Reward delivery](../lib/affectionRewards.js#L126)
 
-| Reset at rollover | Persist |
-| --- | --- |
-| Other marriages and affection, wishes, prior ownership losses, and character protection locks | Eligible soulmate marriage and reduced affection, compact season profiles |
-| Items, expanded inventory capacity, buffs, claim and roll usage, and daily roll usage | Shared item discoveries and guild configuration |
+| Reset at rollover                                                                                                            | Persist                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Other marriages and affection, wishes, prior ownership losses, and character protection locks                                | Eligible soulmate marriage and reduced affection, compact season profiles  |
+| Items, expanded inventory capacity, buffs, claim and roll usage, and daily roll usage                                        | Shared item discoveries and guild configuration                            |
 | Open rolls and escapes, trades and gifts, mystery sessions, vaults, queued rewards, and pending item actions or reservations | Shared character catalog, rankings, moderation, and unrelated bot features |
 
 Take the archive first. Reset only the closing guild and prevent rollover divorces from becoming Chronicle of Return history. Effects fully committed before cutoff are reflected in the closing state. Pending effects expire with the closing season. Retired operational rows are unavailable to live gameplay and recovery before bulk deletion starts. Prune in dependency order and keep only the minimum evidence that a surviving replay path needs. Verify database integrity and restart recovery after pruning. [Ownership history](../lib/ownershipHistorySchema.js#L18) · [Runtime validation](../lib/catalogRuntimeRecovery.js#L25)

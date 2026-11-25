@@ -12,7 +12,7 @@ Add a one-charge Legendary item that targets a franchise in the activating Disco
 
 Default description:
 
-> Choose a franchise. Starting with the **highest rank *number***, divorce each owned character. Consecutive characters with the same owner instead have a 50% chance of divorce. The first spared character ends the chain. Permanently locked characters are skipped.
+> Choose a franchise. Starting with the **highest rank _number_**, divorce each owned character. Consecutive characters with the same owner instead have a 50% chance of divorce. The first spared character ends the chain. Permanently locked characters are skipped.
 
 The resolved description must display the current configured percentage rather than always saying 50%.
 
@@ -70,6 +70,7 @@ Save visited character identities, original owners and ranks, and each verdict. 
 Follow Grand Masquerade's activation style, using the final approved name:
 
 > # @Player has used Threadbreaker! 🥀
+>
 > **Franchise:** Naruto
 
 Suppress actual mention notifications as existing reveal components do.

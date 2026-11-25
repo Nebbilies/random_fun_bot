@@ -3,6 +3,7 @@
 ## Goal
 
 Extend the player marriage list command (`!mm` / `!mymarry`) with composable modifiers:
+
 - `a`: Group owned characters by anime franchise.
 - `i`: Display characters individually as full cards with Previous/Next navigation.
 - `r`: Sort by catalog rank (existing modifier, composable with `a` and `i`).

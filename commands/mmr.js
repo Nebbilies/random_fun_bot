@@ -1,5 +1,5 @@
-import { runMarriages } from './mm.js';
+import { runMarriages } from "./mm.js";
 
 export async function run(ctx) {
-  return runMarriages(ctx, 'rank');
+  return runMarriages(ctx, "rank");
 }

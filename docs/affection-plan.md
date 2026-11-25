@@ -40,14 +40,14 @@ The user's approval to execute this plan accepted its stated overview defaults: 
 
 Implementation should proceed as small red/green vertical increments after authorization, not a large batch of speculative tests followed by all code. Plan approval also confirms these proposed test seams; no new tests are written in this documentation phase.
 
-| Seam | Verify through | Covers / deliberately does not prove |
-| --- | --- | --- |
-| Relationship rules and transactions | New affection module's reads, selection, capture/earning and owed-reward operations, using real temporary SQLite | Progress, selection, matching, milestones, committed receipts; not real Discord rendering |
-| Catalog opening/upgrade | Existing writable/read-only/create/convert/rehearse entry points and schema/runtime inspectors | Exact layouts, constraints, rollback, retained rows; not a live deployment |
-| Paid roll/claim operations | `reserveRoll`, publication/delivery, `claimRoll`, mystery advancement/reveal helpers | Actual resource and award interactions; not private implementation call counts |
-| Item use/defense | Existing activation/action/Fortune/Binoculars/Whistle entry points with deterministic clocks/RNG | Semantic cost and protection outcomes, recovery; not general randomness inside generic inventory deletion |
-| Reward lifecycle | Existing reveal/decision/direct-delivery/pending interaction/recovery entry points | Parent/copy outcomes, inventory settlement, provenance, restart; not another reward engine |
-| Prefix commands/rendering | Command `run`, component interactions and pure renderer outputs with fake transport | Grammar, scope, display/payload limits, no unwanted mutation; not live client image cropping/notification behavior |
+| Seam                                | Verify through                                                                                                   | Covers / deliberately does not prove                                                                               |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Relationship rules and transactions | New affection module's reads, selection, capture/earning and owed-reward operations, using real temporary SQLite | Progress, selection, matching, milestones, committed receipts; not real Discord rendering                          |
+| Catalog opening/upgrade             | Existing writable/read-only/create/convert/rehearse entry points and schema/runtime inspectors                   | Exact layouts, constraints, rollback, retained rows; not a live deployment                                         |
+| Paid roll/claim operations          | `reserveRoll`, publication/delivery, `claimRoll`, mystery advancement/reveal helpers                             | Actual resource and award interactions; not private implementation call counts                                     |
+| Item use/defense                    | Existing activation/action/Fortune/Binoculars/Whistle entry points with deterministic clocks/RNG                 | Semantic cost and protection outcomes, recovery; not general randomness inside generic inventory deletion          |
+| Reward lifecycle                    | Existing reveal/decision/direct-delivery/pending interaction/recovery entry points                               | Parent/copy outcomes, inventory settlement, provenance, restart; not another reward engine                         |
+| Prefix commands/rendering           | Command `run`, component interactions and pure renderer outputs with fake transport                              | Grammar, scope, display/payload limits, no unwanted mutation; not live client image cropping/notification behavior |
 
 Use literal, worked expectations from the accepted tables, not expected outputs generated from the same constants being tested. Prefer real fixture DBs and injected external I/O/time/randomness; do not mock the new module's internal collaborators. Direct SQL assertions are appropriate when SQL schema/trigger constraints themselves are the seam, not a substitute for ordinary public behavior tests.
 
@@ -70,16 +70,16 @@ Avoid a new generic event framework, provider abstraction, portal track editor o
 
 Keep `PRAGMA user_version=12`; use `affection_schema` version 1/capture version 1. Names below are planned concrete relations; exact constraints/columns can be refined without changing semantics.
 
-| Relation | Keys and essential state |
-| --- | --- |
-| `affection_schema` | One feature/capture version and activation record; no populated historical relationship rows |
-| `character_affection` | PK guild/player/character UUID, total integer 0–2,100, update time; FK retained identities, no ownership cascade |
-| `player_soulmates` | PK guild/player; nullable selected UUID, selected/switch timestamps and optimistic selection revision; row/deadline survive loss |
-| `affection_contexts` | Unique scoped logical source kind/key; immutable actor/guild/channel, rule/capture version, saved award candidates/ownership/matching/perk data, explicit presentation/cancellation state; optional historical roll/action ID, not a deleting FK |
-| `affection_awards` | Unique logical source/player/character; qualifying base, saved Bond result, credited delta and resulting total; permanent deduplication |
-| `affection_decisions` | Unique invocation/effect/subject/cost ordinal; captured eligible chance (including zero), saved outcome, expected/actual debit, settlement/refund state and committed action result where applicable |
-| `affection_entitlements` | Unique guild/player/character/milestone key; fixed item or owed rarity, earned/selected/delivered/declined state, frozen definition/charges and neutral reward linkage |
-| `reward_grants` / `reward_copies` | Permanent source/parent lineage, pre-perk decision evidence, Favor/Echo capture and finalization; unique parent+ordinal (0/1) and unique delivery-row ID, item snapshot plus acquired inventory/time/expiry evidence |
+| Relation                          | Keys and essential state                                                                                                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `affection_schema`                | One feature/capture version and activation record; no populated historical relationship rows                                                                                                                                                     |
+| `character_affection`             | PK guild/player/character UUID, total integer 0–2,100, update time; FK retained identities, no ownership cascade                                                                                                                                 |
+| `player_soulmates`                | PK guild/player; nullable selected UUID, selected/switch timestamps and optimistic selection revision; row/deadline survive loss                                                                                                                 |
+| `affection_contexts`              | Unique scoped logical source kind/key; immutable actor/guild/channel, rule/capture version, saved award candidates/ownership/matching/perk data, explicit presentation/cancellation state; optional historical roll/action ID, not a deleting FK |
+| `affection_awards`                | Unique logical source/player/character; qualifying base, saved Bond result, credited delta and resulting total; permanent deduplication                                                                                                          |
+| `affection_decisions`             | Unique invocation/effect/subject/cost ordinal; captured eligible chance (including zero), saved outcome, expected/actual debit, settlement/refund state and committed action result where applicable                                             |
+| `affection_entitlements`          | Unique guild/player/character/milestone key; fixed item or owed rarity, earned/selected/delivered/declined state, frozen definition/charges and neutral reward linkage                                                                           |
+| `reward_grants` / `reward_copies` | Permanent source/parent lineage, pre-perk decision evidence, Favor/Echo capture and finalization; unique parent+ordinal (0/1) and unique delivery-row ID, item snapshot plus acquired inventory/time/expiry evidence                             |
 
 Retain `reward_sources` as the existing one-per-grant provenance anchor where possible; add the grant/copy sidecars rather than rebuilding its uniqueness to allow ambiguous sources. Ordinal zero uses the existing parent `vault_rewards` row; ordinal one uses a terminal neutral child row. Each milestone uses a unique direct grant and ordinal zero. Existing inventory ID is historical evidence, **not** a cascading FK: consuming/expiring an item cannot erase acquisition settlement. No destructive compaction/ledger cleanup in the initial implementation.
 
@@ -127,6 +127,7 @@ New: `affectionRules.js`; proposed focused suite `test/affectionRules.test.js`.
 New: `affectionSchema.js`; core durable helpers in `characterAffection.js`/`affectionPerks.js`.
 
 Existing touchpoints:
+
 - `catalogFinalSchema.js`: preserve immutable pre-affection current-v12 DDL; derive old Fortune/expiry/items-Phase-2/gender definitions from that baseline, not the newly extended final template. Install new DDL in fresh final catalogs; include exact object/row/UUID/JSON/version/constraint validation and inspector entry points.
 - `vaultFortuneUpgrade.js`: extend its existing coordinator through exact historical intermediates, then affection, under one owned `BEGIN IMMEDIATE`; restore timeout; no nested upgrade. Keep current-layout fast path without a write lock and under-lock recheck for simultaneous bot/portal opens.
 - `catalogDb.js`: normal/strict writable final opens use the extension; read-only opens never install it and give actionable predecessor diagnostics.
@@ -215,14 +216,14 @@ Primary files: `characterRolls.js`, `rollDelivery.js`, `characterRollRuntime.js`
 
 Use the shared saved-decision operation, not an ownership trigger, for these exact touchpoints:
 
-| Files / action | Placement and result |
-| --- | --- |
+| Files / action                                   | Placement and result                                                                                                                                                 |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `items/masterKey.js`, `items/pickpocketsHook.js` | Select/validate original target before existing Shield check; negation prevents transfer. Invalid/no eligible target cannot consume defense/source as a valid block. |
-| `characterRolls.js` opposing Misfire | Before Shield; on Negation retain marriage/exhaust armed Misfire and ordinary escape behavior; own appearances still skip/retain it. |
-| `itemActions.js` Severed Fate | Validated confirmation before Shield/Crown; no divorce. |
-| `itemActions.js` Heart for a Heart | Same, but stop own sacrifice too; source normally pays/conserves. |
-| `itemActions.js` Hostage | At validated opening only; prevent challenge, normally pay/conserve Note; no later check. |
-| `items/sirensCall.js` | At validated activation before Crown; no escape created, normally pay/conserve Siren. |
+| `characterRolls.js` opposing Misfire             | Before Shield; on Negation retain marriage/exhaust armed Misfire and ordinary escape behavior; own appearances still skip/retain it.                                 |
+| `itemActions.js` Severed Fate                    | Validated confirmation before Shield/Crown; no divorce.                                                                                                              |
+| `itemActions.js` Heart for a Heart               | Same, but stop own sacrifice too; source normally pays/conserves.                                                                                                    |
+| `itemActions.js` Hostage                         | At validated opening only; prevent challenge, normally pay/conserve Note; no later check.                                                                            |
+| `items/sirensCall.js`                            | At validated activation before Crown; no escape created, normally pay/conserve Siren.                                                                                |
 
 - Snapshot defender and attacker protection/cost chances before consequences, including an attack on the funding soulmate. Persist failed/no-perk outcomes as well as successful Negation.
 - Keep existing item-specific defense scopes/order **after** failed Negation. Crown redirects once within same owner, not a new attack/check. Misfire still bypasses Crown; Siren still does not suddenly consult Shield.
@@ -298,19 +299,19 @@ Maintain a concise eventual `docs/affection-validation.md` with actual baseline/
 
 ### Acceptance traceability
 
-| Accepted requirement | Principal implementation slices |
-| --- | --- |
-| Exact awards/membership min/fallback and both reward tables | 1,3,4,5 |
-| Ownership persistence/clearing, switching cooldown/busy checks | 2,3,10 |
-| Nonclaimable own/soulbound appearances and Misfire change | 5,8 |
-| Selection/reveal/reclaim snapshots and permanent replay evidence | 2–5,7,11 |
-| Capacity/Rush, fixed claims and final Ring exception | 6 |
-| All semantic inventory costs and actual-debit refunds | 7, with5/8/9 consumers |
-| Validated action-specific Negation/exclusions | 8 |
-| Favor/Echo ordering/copy lineage/Chit reveal gate | 4,9,11 |
-| Pending milestone/empty-tier recovery and public query purity | 4,10,11 |
-| Standard embeds, gold/pink, compact meters, hidden inactive text | 10 |
-| Exact upgrades/fresh/readonly/legacy transition/operational safety | 2,11 |
+| Accepted requirement                                               | Principal implementation slices |
+| ------------------------------------------------------------------ | ------------------------------- |
+| Exact awards/membership min/fallback and both reward tables        | 1,3,4,5                         |
+| Ownership persistence/clearing, switching cooldown/busy checks     | 2,3,10                          |
+| Nonclaimable own/soulbound appearances and Misfire change          | 5,8                             |
+| Selection/reveal/reclaim snapshots and permanent replay evidence   | 2–5,7,11                        |
+| Capacity/Rush, fixed claims and final Ring exception               | 6                               |
+| All semantic inventory costs and actual-debit refunds              | 7, with5/8/9 consumers          |
+| Validated action-specific Negation/exclusions                      | 8                               |
+| Favor/Echo ordering/copy lineage/Chit reveal gate                  | 4,9,11                          |
+| Pending milestone/empty-tier recovery and public query purity      | 4,10,11                         |
+| Standard embeds, gold/pink, compact meters, hidden inactive text   | 10                              |
+| Exact upgrades/fresh/readonly/legacy transition/operational safety | 2,11                            |
 
 ## 6. Risks, stop conditions, and rollout separation
 

@@ -37,13 +37,13 @@ The stopped VPS database contains newer writes than the supplied backup and reta
 - On a further clone, manual creation, exact confirmation retry, search, marriage, wishing and gifting passed. No acceptance fixture was added to the pristine conversion artifact.
 - Both the fresh source and reconciled input checksums remained unchanged after verification. No historical attribution was invented.
 
-| VPS operation | Measured time |
-| --- | ---: |
-| Rollback conversion rehearsal | 113.094 s |
-| Committed working-copy conversion | 133.467 s |
-| Normal writable reopen | 10.007 s |
-| Character-index load | 0.362 s |
-| Normal read-only reopen with independent verification | 26.649 s |
+| VPS operation                                         | Measured time |
+| ----------------------------------------------------- | ------------: |
+| Rollback conversion rehearsal                         |     113.094 s |
+| Committed working-copy conversion                     |     133.467 s |
+| Normal writable reopen                                |      10.007 s |
+| Character-index load                                  |       0.362 s |
+| Normal read-only reopen with independent verification |      26.649 s |
 
 These are measured single runs under hosting load. Allow a maintenance window of at least 10 minutes for a fresh conversion, verification, runtime selection and restart smoke checks; this includes a buffer beyond the measured conversion/open times. If cutover is deferred or any writer resumes, take a new consistent backup and revalidate its state instead of installing this older snapshot.
 

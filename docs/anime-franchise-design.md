@@ -20,11 +20,11 @@ For example, AniList links the [2012 Sword Art Online anime](https://anilist.co/
 
 ## Storage options
 
-| Option | Benefit | Problem |
-| --- | --- | --- |
-| Put related anime IDs in a JSON attribute of a “main” anime | Small initial schema | Duplicates membership, obscures relation types, makes merges and queries harder, and assumes a canonical main anime. |
-| Add `main_anime_id` to every anime row | Simple grouping query | Forces a tree and one chosen root; loses typed links and handles corrections poorly. |
-| Store anime, typed links, character appearances, and local franchise membership separately | Supports many-to-many facts, search, and corrections without claiming AniList defines a main series | Requires a migration and a controlled grouping step. |
+| Option                                                                                     | Benefit                                                                                             | Problem                                                                                                              |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Put related anime IDs in a JSON attribute of a “main” anime                                | Small initial schema                                                                                | Duplicates membership, obscures relation types, makes merges and queries harder, and assumes a canonical main anime. |
+| Add `main_anime_id` to every anime row                                                     | Simple grouping query                                                                               | Forces a tree and one chosen root; loses typed links and handles corrections poorly.                                 |
+| Store anime, typed links, character appearances, and local franchise membership separately | Supports many-to-many facts, search, and corrections without claiming AniList defines a main series | Requires a migration and a controlled grouping step.                                                                 |
 
 **Recommendation:** the third option. Use AniList IDs as keys for anime and characters. Use local IDs for franchises. The logical records are:
 

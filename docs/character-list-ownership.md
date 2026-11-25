@@ -3,6 +3,7 @@
 Multi-character Discord lists display `Character Name 💞` when the character is married to anyone in the current server. Ownership in another server and wishes do not qualify. Characters in an escape attempt remain owned until their marriage ends or transfers.
 
 Covered displays:
+
 - Catalog top lists.
 - Franchise character lists, with or without ranks.
 - Marriage lists, including franchise-grouped lists.
