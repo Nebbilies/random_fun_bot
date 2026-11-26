@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openCatalog } from "../lib/catalogDb.js";
+import { MAIN_FRANCHISE_DDL } from "../lib/catalogFinalSchema.js";
 import { escapeMarkdown } from "discord.js";
 import { haremListComponents } from "../lib/haremView.js";
 import { marryCharacter } from "../lib/characterMarriage.js";
@@ -256,6 +257,11 @@ test("franchise rank view (!mmar) shows bold rank and sorts characters within fr
 
 test("individual card view (!mmi) displays single character card with header, details, footer and buttons", async (t) => {
   const db = fixture(t);
+  db.exec(
+    MAIN_FRANCHISE_DDL.replace("character_id TEXT", "character_id INTEGER"),
+  );
+  db.exec(`INSERT INTO franchises(id,display_name,created_at) VALUES(4,'Main Series','now');
+    INSERT INTO character_main_franchises VALUES(2,4);`);
   marryCharacter(db, "1", 1, "101");
   marryCharacter(db, "1", 2, "101");
   db.prepare(
@@ -272,7 +278,8 @@ test("individual card view (!mmi) displays single character card with header, de
   // mmi defaults to time sort (newest married first: Casca married on 2026-01-02)
   assert.ok(text.includes("# [Casca](https://anilist.co/character/2)"));
   assert.ok(!text.includes("💞"));
-  assert.ok(text.includes("**Anime:** Berserk"));
+  assert.ok(text.includes("**Franchise:** Main Series"));
+  assert.doesNotMatch(text, /Berserk/);
   assert.ok(text.includes("**Rank:** #247"));
   assert.doesNotMatch(text, /Favorites|600/);
   assert.ok(text.includes("<@101>'s harem • Character 1 of 2"));

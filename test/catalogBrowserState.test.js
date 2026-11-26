@@ -84,15 +84,17 @@ function browser(module = "catalog") {
     [...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, new Element()]),
   );
   if (module === "catalog") {
-    elements.franchisePicker.append(
-      elements.franchiseChips,
-      elements.franchiseSearch,
-      elements.franchiseOptions,
-    );
-    elements.characterForm.append(
-      elements.franchisePicker,
-      elements.franchiseIds,
-    );
+    for (const prefix of ["franchise", "mainFranchise"]) {
+      elements[prefix + "Picker"].append(
+        elements[prefix + "Chips"],
+        elements[prefix + "Search"],
+        elements[prefix + "Options"],
+      );
+      elements.characterForm.append(
+        elements[prefix + "Picker"],
+        elements[prefix + "Ids"],
+      );
+    }
   }
   const requests = [];
   let key = 0;
@@ -106,8 +108,8 @@ function browser(module = "catalog") {
           (id) => elements[id],
         ),
     },
-    Option: function (text, value) {
-      return Object.assign(new Element(value), { textContent: text });
+    Option: function (text, value, _defaultSelected, selected = false) {
+      return Object.assign(new Element(value), { textContent: text, selected });
     },
     URL,
     crypto: { randomUUID: () => `request-key-${++key}` },
@@ -242,7 +244,7 @@ test("franchise picker searches names and aliases without changing a preview, se
   const enter = await input.fire("keydown", { key: "Enter" });
   assert.equal(enter.defaultPrevented, true);
   assert.equal(b.run("pending"), null);
-  assert.deepEqual(Array.from(b.run("selectedFranchises()")), [1]);
+  assert.deepEqual(Array.from(b.run("directPicker.ids()")), [1]);
   assert.equal(input.validationMessage, "");
   assert.equal(b.elements.franchiseChips.children.length, 1);
   assert.equal(
@@ -254,13 +256,6 @@ test("franchise picker searches names and aliases without changing a preview, se
     !b.elements.franchiseOptions.children.some(
       (option) => option.textContent === "One",
     ),
-  );
-  await preview(b, "unchanged");
-  b.run("setFranchiseSelection([1, 1], true)");
-  assert.equal(
-    b.run("pending.previewId"),
-    "unchanged",
-    "duplicate selection is not an edit",
   );
   await input.fire("keydown", { key: "ArrowUp" });
   assert.equal(input.attributes["aria-activedescendant"], "franchise-option-3");
@@ -285,7 +280,7 @@ test("franchise picker searches names and aliases without changing a preview, se
   );
   assert.equal((await option.fire("mousedown")).defaultPrevented, true);
   await option.fire("click");
-  assert.deepEqual(Array.from(b.run("selectedFranchises()")), [1, 2]);
+  assert.deepEqual(Array.from(b.run("directPicker.ids()")), [1, 2]);
   await b.elements.franchisePicker.fire("focusout", {
     relatedTarget: b.elements.name,
   });
@@ -326,6 +321,75 @@ test("chip removal invalidates selection previews and visible validation follows
   );
 });
 
+test("creation has an independent required main franchise picker and previews its names", async () => {
+  const b = await pickerReady();
+  const { mainFranchiseSearch: main, franchiseSearch: direct } = b.elements;
+  assert.match(main.validationMessage, /at least one main franchise/);
+  await preview(b, "unchanged");
+  main.value = "Second";
+  await main.fire("input");
+  assert.equal(b.run("pending.previewId"), "unchanged");
+  await main.fire("keydown", { key: "ArrowDown" });
+  assert.equal(
+    main.attributes["aria-activedescendant"],
+    "mainFranchise-option-2",
+  );
+  await main.fire("keydown", { key: "Enter" });
+  assert.equal(b.run("pending"), null);
+  assert.equal(main.validationMessage, "");
+  assert.match(direct.validationMessage, /at least one direct franchise/);
+
+  for (const [id, query] of [
+    ["franchise", "First"],
+    ["mainFranchise", "Three"],
+  ]) {
+    const input = b.elements[id + "Search"];
+    input.value = query;
+    await input.fire("input");
+    await input.fire("keydown", { key: "ArrowDown" });
+    await input.fire("keydown", { key: "Enter" });
+  }
+  const loading = b.elements.characterForm.fire("submit");
+  const request = b.requests.at(-1);
+  assert.equal(request.path, "/api/catalog/create/preview");
+  assert.deepEqual(request.body.input.franchiseIds, [1]);
+  assert.deepEqual(request.body.input.mainFranchiseIds, [2, 3]);
+  request.resolve({
+    previewId: "create",
+    payloadHash: "hash",
+    mainFranchises: franchiseRows
+      .slice(1)
+      .map((row) => ({ id: row.id, name: row.display_name })),
+  });
+  await loading;
+  assert.ok(
+    b.elements.previewSummary.textContent.includes(
+      franchiseRows[1].display_name + ", Three",
+    ),
+  );
+
+  for (let i = 0; i < 2; i++)
+    await b.elements.mainFranchiseChips.children[0].children[1].fire("click");
+  assert.equal(b.run("pending"), null);
+  assert.match(main.validationMessage, /at least one main franchise/);
+  assert.equal(b.elements.franchiseChips.children.length, 1);
+
+  b.run(`editor(${JSON.stringify(character("manual", [1]))})`);
+  assert.equal(b.elements.mainFranchiseField.hidden, true);
+  assert.equal(main.validationMessage, "");
+  const editing = b.elements.characterForm.fire("submit");
+  assert.equal(b.requests.at(-1).path, "/api/catalog/edit/preview");
+  assert.equal(
+    Object.hasOwn(b.requests.at(-1).body.input, "mainFranchiseIds"),
+    false,
+  );
+  b.requests.at(-1).resolve({ previewId: "edit", payloadHash: "hash" });
+  await editing;
+  b.run("editor()");
+  assert.equal(b.elements.mainFranchiseField.hidden, false);
+  assert.match(main.validationMessage, /at least one main franchise/);
+});
+
 test("late lists, editor switches, refresh and franchise publication preserve chip IDs and payloads", async () => {
   const b = browser();
   b.run(`editor(${JSON.stringify(character("A", [1]))})`);
@@ -343,10 +407,12 @@ test("late lists, editor switches, refresh and franchise publication preserve ch
     franchiseRows[1].display_name,
   );
   const refreshing = b.run("loadFranchises()");
-  b.run("setFranchiseSelection([1, 3], true)");
+  for (const option of b.elements.franchiseIds.options)
+    option.selected = ["1", "3"].includes(option.value);
+  await b.elements.franchiseIds.fire("change");
   b.requests.at(-1).resolve(franchiseRows);
   await refreshing;
-  assert.deepEqual(Array.from(b.run("selectedFranchises()")), [1, 3]);
+  assert.deepEqual(Array.from(b.run("directPicker.ids()")), [1, 3]);
   const publishing = b.run("showPreview('franchise', {input: {}})");
   b.requests.at(-1).resolve({ previewId: "franchise", payloadHash: "hash" });
   await publishing;
@@ -362,7 +428,7 @@ test("late lists, editor switches, refresh and franchise publication preserve ch
   await flush();
   b.requests.at(-1).resolve({ characters: [], count: 0 });
   await confirming;
-  assert.deepEqual(Array.from(b.run("selectedFranchises()")), [1, 3]);
+  assert.deepEqual(Array.from(b.run("directPicker.ids()")), [1, 3]);
   b.elements.franchiseSearch.value = "published";
   await b.elements.franchiseSearch.fire("input");
   await b.elements.franchiseOptions.children[0].fire("click");

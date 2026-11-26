@@ -89,7 +89,77 @@ const metadata = {
   gender: "female",
   portraitUrl: "https://example.test/portrait",
   franchiseIds: [1],
+  mainFranchiseIds: [1],
 };
+
+test("portal creation requires and persists separate main franchise selections", async (t) => {
+  const { db, request, post } = await setup(t, createReviewServer);
+  db.exec(
+    "INSERT INTO franchises (id, display_name, created_at) VALUES (1,'Direct','now'),(2,'Alpha','now'),(3,'Zulu','now'),(4,'Stale','now')",
+  );
+
+  for (const mainFranchiseIds of [undefined, [], [999]]) {
+    const incomplete = await request("/api/catalog/create/preview", {
+      input: { ...metadata, mainFranchiseIds },
+    });
+    assert.equal(incomplete.status, 400);
+    assert.match((await incomplete.json()).error, /main franchise/i);
+  }
+
+  const preview = await post("/create/preview", {
+    input: { ...metadata, mainFranchiseIds: [3, 2, 3] },
+  });
+  assert.deepEqual(preview.mainFranchises, [
+    { id: 2, name: "Alpha" },
+    { id: 3, name: "Zulu" },
+  ]);
+  const confirm = {
+    previewId: preview.previewId,
+    payloadHash: preview.payloadHash,
+    idempotencyKey: "main-franchises",
+  };
+  const result = await post("/create/confirm", confirm);
+  assert.deepEqual(await post("/create/confirm", confirm), result);
+  assert.deepEqual(
+    db
+      .prepare(
+        "SELECT franchise_id FROM character_main_franchises WHERE character_id=? ORDER BY franchise_id",
+      )
+      .all(result.characterId)
+      .map((row) => row.franchise_id),
+    [2, 3],
+  );
+  assert.deepEqual(
+    db
+      .prepare(
+        "SELECT franchise_id FROM effective_character_franchises WHERE character_id=?",
+      )
+      .all(result.characterId)
+      .map((row) => row.franchise_id),
+    [1],
+  );
+  const audit = JSON.parse(
+    db.prepare("SELECT after_json FROM catalog_mutations").get().after_json,
+  );
+  assert.deepEqual(audit.mainFranchises, [
+    { franchise_id: 2 },
+    { franchise_id: 3 },
+  ]);
+
+  const stale = await post("/create/preview", {
+    input: { ...metadata, mainFranchiseIds: [4] },
+  });
+  db.exec("DELETE FROM franchises WHERE id=4");
+  const response = await request("/api/catalog/create/confirm", {
+    previewId: stale.previewId,
+    payloadHash: stale.payloadHash,
+    idempotencyKey: "stale-main-franchise",
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /unknown main franchise/i);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM characters").get().n, 1);
+});
+
 for (const [name, factory] of [
   ["combined", createReviewServer],
   ["standalone", createFranchiseReviewServer],

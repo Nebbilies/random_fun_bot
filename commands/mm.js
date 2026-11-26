@@ -1,4 +1,4 @@
-import { characterSeries } from "../lib/characterSeries.js";
+import { characterMainFranchises } from "../lib/characterSeries.js";
 import { getGameConfig } from "../lib/gameConfig.js";
 import {
   ActionRowBuilder,
@@ -201,9 +201,9 @@ function individualCardComponents(rows, targetId, index, disabled = false) {
     ? `# [${title}](${row.site_url})`
     : `# ${title}`;
 
-  const series = characterSeries(row, "Unknown", short);
+  const franchises = characterMainFranchises(row, 150, escapeMarkdown);
   const details = [
-    `**${series.label}:** ${escapeMarkdown(series.text)}`,
+    ...(franchises ? [`**${franchises.label}:** ${franchises.text}`] : []),
     `**Rank:** #${formatNumber(row.rank)}`,
   ];
   const footer = `<@${targetId}>'s harem • Character ${index + 1} of ${total}`;

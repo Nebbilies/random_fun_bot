@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { ButtonStyle, ComponentType, MessageFlags } from "discord.js";
 import { openCatalog, saveDecision } from "../lib/catalogDb.js";
+import { MAIN_FRANCHISE_DDL } from "../lib/catalogFinalSchema.js";
 import { loadCharacterIndex } from "../lib/gameCharacterLookup.js";
 import { run as characterCommand } from "../commands/char.js";
 import { run as imCommand } from "../commands/im.js";
@@ -28,6 +29,11 @@ test("character command shows catalog metadata and approved image", async (t) =>
     VALUES (1, 1234, 999, 'Satoru Gojou', '五条悟', '["Satoru Gojo"]', '["JUJUTSU KAISEN"]',
     'https://anilist.co/portrait.jpg', 'https://anilist.co/character/1')`,
   ).run();
+  db.exec(
+    MAIN_FRANCHISE_DDL.replace("character_id TEXT", "character_id INTEGER"),
+  );
+  db.exec(`INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Jujutsu Main','now');
+    INSERT INTO character_main_franchises VALUES(1,1);`);
   saveDecision(db, 1, "approve", "gojou_satoru");
   let reply;
   const ctx = {
@@ -59,7 +65,8 @@ test("character command shows catalog metadata and approved image", async (t) =>
   assert.equal(reply.flags, MessageFlags.IsComponentsV2);
   assert.equal(card.type, ComponentType.Container);
   assert.match(card.components[0].content, /Satoru Gojou/);
-  assert.match(card.components[1].content, /JUJUTSU KAISEN/);
+  assert.match(card.components[1].content, /Jujutsu Main/);
+  assert.doesNotMatch(card.components[1].content, /JUJUTSU KAISEN/);
   assert.match(
     card.components[1].content,
     /\*\*Other names:\*\*\n• 五条悟\n• Satoru Gojo/,
@@ -91,6 +98,7 @@ test("ambiguous lookup pages through matches, selects a character, and returns t
     site_url: null,
   }));
   characters[26].rank = 1234;
+  characters[26].main_franchise_names = '["Main 27"]';
   const collector = new EventEmitter();
   let resets = 0;
   collector.resetTimer = () => {
@@ -157,11 +165,11 @@ test("ambiguous lookup pages through matches, selects a character, and returns t
   assert.equal(chooser().components[1].components[0].options.length, 2);
   assert.equal(
     chooser().components[1].components[0].options[0].label,
-    "#26 • Sora 26 (Anime 26)",
+    "#26 • Sora 26",
   );
   assert.equal(
     chooser().components[1].components[0].options[1].label,
-    "#1,234 • Sora 27 (Anime 27)",
+    "#1,234 • Sora 27 (Main 27)",
   );
 
   await collect(act("char:page:prev"));

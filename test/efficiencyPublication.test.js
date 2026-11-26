@@ -31,6 +31,7 @@ const input = {
   gender: "female",
   portraitUrl: "https://example.test/image",
   franchiseIds: [1],
+  mainFranchiseIds: [1],
   tagName: null,
 };
 test("creation previews mint the final UUID and publish derived ranks without manual rank input", () => {
@@ -55,8 +56,13 @@ test("creation previews mint the final UUID and publish derived ranks without ma
       null,
     );
     assert.deepEqual(
-      db.prepare("SELECT * FROM character_main_franchises").all(),
-      [],
+      db
+        .prepare(
+          "SELECT franchise_id FROM character_main_franchises WHERE character_id=?",
+        )
+        .all(result.characterId)
+        .map((row) => row.franchise_id),
+      [1],
     );
     assert.equal(validateFinalCatalogSchema(db, { readOnly: false }), true);
     assert.throws(

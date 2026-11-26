@@ -2,13 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { openCatalog } from "../lib/catalogDb.js";
+import { MAIN_FRANCHISE_DDL } from "../lib/catalogFinalSchema.js";
 import { migrateCharacterIdentities } from "../lib/characterIdentityMigration.js";
 import { initializeCatalogReleaseSchema } from "../lib/catalogReleaseSchema.js";
 import {
   previewManualCharacterCreation,
   confirmManualCharacterCreation,
 } from "../lib/manualCharacterMutations.js";
-import { characterSeries } from "../lib/characterSeries.js";
+import {
+  characterMainFranchises,
+  withCharacterMainFranchises,
+} from "../lib/characterSeries.js";
 import {
   captureCharacterSnapshot,
   validateCharacterSnapshot,
@@ -34,10 +38,11 @@ function fixture(t) {
   const db = openCatalog(":memory:");
   t.after(() => db.close());
   db.exec(
-    "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Zulu','now'),(2,'Alpha','now')",
+    "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Zulu','now'),(2,'Alpha','now'),(3,'Zebra Main','now'),(4,'Alpha Main','now')",
   );
   migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 });
   initializeCatalogReleaseSchema(db);
+  db.exec(MAIN_FRANCHISE_DDL);
   const auth = { account: "editor", role: "moderator" };
   const preview = previewManualCharacterCreation(db, {
     ...auth,
@@ -47,6 +52,7 @@ function fixture(t) {
       name: "Manual Hero",
       gender: "female",
       franchiseIds: [1, 2],
+      mainFranchiseIds: [3, 4],
       aliases: [],
       portraitUrl: "https://example.test/hero.png",
       description: "",
@@ -111,28 +117,59 @@ function context(db, args, index = loadCharacterIndex(db)) {
   };
 }
 
-test("shared series policy prefers anime, sorts/deduplicates franchises and preserves unknowns", () => {
-  assert.deepEqual(
-    characterSeries({
-      anime_titles: '["Anime Z","Anime A"]',
-      franchise_names: '["Alpha"]',
-    }),
-    { label: "Anime", text: "Anime Z (+1 more)" },
+test("character cards use assigned main franchises when anime and direct memberships differ", async (t) => {
+  const { db, id } = fixture(t);
+  db.prepare("UPDATE characters SET anime_titles=? WHERE id=?").run(
+    '["Original Anime"]',
+    id,
   );
-  for (const anime_titles of ["[]", null, "not json", "{}", '[null," "]']) {
-    assert.deepEqual(
-      characterSeries({
-        anime_titles,
-        franchise_names: '["Zulu","alpha","Alpha","Zulu"]',
-      }),
-      { label: "Franchise", text: "Alpha (+2 more)" },
-    );
-  }
-  assert.deepEqual(characterSeries({}, "-"), { label: "Anime", text: "-" });
+
+  const detail = context(db, ["char", "#1"]);
+  await charCommand(detail.ctx);
+  const card = serialize(detail.sent[0]);
+  assert.match(card, /\*\*Franchises:\*\* Alpha Main, Zebra Main/);
+  assert.doesNotMatch(card, /Original Anime|Zulu/);
+});
+
+test("main franchise display sorts names and counts only titles that do not fit", () => {
   assert.equal(
-    characterSeries({ franchise_names: '["Zulu","Alpha"]' }).text,
-    "Alpha (+1 more)",
+    characterMainFranchises({
+      anime_titles: '["Anime"]',
+      franchise_names: '["Effective"]',
+    }),
+    null,
   );
+  const character = {
+    main_franchise_names: '["Zulu","Alpha","Alpha","Gamma Long"]',
+  };
+  assert.deepEqual(characterMainFranchises(character), {
+    label: "Franchises",
+    text: "Alpha, Gamma Long, Zulu",
+  });
+  assert.equal(characterMainFranchises(character, 16).text, "Alpha (+2 more)");
+  assert.equal(
+    characterMainFranchises({ main_franchise_names: '["Long Series","X"]' }, 14)
+      .text,
+    "Long Series, X",
+  );
+});
+
+test("new roll snapshots preserve the main franchise names across a later rename", (t) => {
+  const { db } = fixture(t);
+
+  const roll = reserve(db);
+  assert.equal(roll.status, "reserved");
+  assert.equal(roll.character.version, 3);
+  assert.equal(
+    roll.character.main_franchise_names,
+    '["Alpha Main","Zebra Main"]',
+  );
+
+  db.exec("UPDATE franchises SET display_name='Renamed' WHERE id=3");
+  const saved = loadRollCharacterSnapshot(db, roll.rollId);
+  assert.deepEqual(saved, roll.character);
+  assert.match(serialize(rollCard(saved, null, 6)), /Alpha Main, Zebra Main/);
+  assert.doesNotMatch(serialize(rollCard(saved, null, 6)), /Renamed|Zulu/);
 });
 
 test("real manual/direct character is hydrated by production search, harem, top and roll reads", (t) => {
@@ -149,20 +186,29 @@ test("real manual/direct character is hydrated by production search, harem, top 
     0,
   );
   const index = loadCharacterIndex(db);
-  assert.equal(characterSeries(index[0]).text, "Alpha (+1 more)");
+  assert.equal(
+    characterMainFranchises(index[0]).text,
+    "Alpha Main, Zebra Main",
+  );
   marryCharacter(db, "1", id, "101");
   assert.equal(
-    characterSeries(listMarriages(db, "1", "101")[0]).text,
-    "Alpha (+1 more)",
+    characterMainFranchises(listMarriages(db, "1", "101")[0]).text,
+    "Alpha Main, Zebra Main",
   );
-  assert.equal(topCharacters(db)[0].anime, "Alpha (+1 more)");
+  assert.equal(
+    characterMainFranchises(topCharacters(db)[0]).text,
+    "Alpha Main, Zebra Main",
+  );
   const roll = reserve(db);
   assert.equal(roll.status, "reserved");
-  assert.equal(roll.character.version, 2);
-  assert.equal(characterSeries(roll.character).text, "Alpha (+1 more)");
+  assert.equal(roll.character.version, 3);
+  assert.equal(
+    characterMainFranchises(roll.character).text,
+    "Alpha Main, Zebra Main",
+  );
   assert.match(
     serialize(rollCard(roll.character, null, 6)),
-    /Alpha \(\+1 more\)/,
+    /Alpha Main, Zebra Main/,
   );
 });
 
@@ -174,16 +220,16 @@ test("legacy anime-derived franchise relation is hydrated without release views"
     INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Derived','now');
     INSERT INTO character_anime(character_id,anime_id) VALUES(1,10);
     INSERT INTO franchise_anime(franchise_id,anime_id) VALUES(1,10)`);
-  assert.equal(characterSeries(loadCharacterIndex(db)[0]).text, "Derived");
+  assert.equal(characterMainFranchises(loadCharacterIndex(db)[0]), null);
 });
 
-test("char detail/chooser and individual harem cards use fallback and correct label", async (t) => {
+test("char detail/chooser and individual harem cards use main assignments and correct label", async (t) => {
   const { db, id } = fixture(t);
   const detail = context(db, ["char", "#1"]);
   await charCommand(detail.ctx);
   assert.match(
     serialize(detail.sent[0]),
-    /\*\*Franchise:\*\* Alpha \(\+1 more\)/,
+    /\*\*Franchises:\*\* Alpha Main, Zebra Main/,
   );
   assert.doesNotMatch(serialize(detail.sent[0]), /\*\*Anime:\*\*/);
   const index = loadCharacterIndex(db);
@@ -196,17 +242,17 @@ test("char detail/chooser and individual harem cards use fallback and correct la
     ],
   );
   await charCommand(chooser.ctx);
-  assert.match(serialize(chooser.sent[0]), /Alpha \(\+1 more\)/);
+  assert.match(serialize(chooser.sent[0]), /Alpha Main, Zebra Main/);
   marryCharacter(db, "1", id, "101");
   const harem = context(db, ["mmi"]);
   await mmCommand(harem.ctx);
   assert.match(
     serialize(harem.sent[0]),
-    /\*\*Franchise:\*\* Alpha \(\+1 more\)/,
+    /\*\*Franchises:\*\* Alpha Main, Zebra Main/,
   );
 });
 
-test("Masquerade production reveal hydrates manual/direct franchise names", async (t) => {
+test("Masquerade production reveal shows assigned main franchise names", async (t) => {
   const { db, id } = fixture(t);
   const sent = [];
   await publishMasqueradeReveal({
@@ -230,7 +276,7 @@ test("Masquerade production reveal hydrates manual/direct franchise names", asyn
     saveProgress() {},
     wait: async () => {},
   });
-  assert.match(sent.at(-1), /Alpha \(\+1 more\)/);
+  assert.match(sent.at(-1), /Alpha Main, Zebra Main/);
 });
 
 for (const mystery of [false, true])
@@ -260,7 +306,10 @@ for (const mystery of [false, true])
         selectedMysteryCharacter(db, getMysterySession(db, roll.sessionId)),
         original,
       );
-    assert.equal(characterSeries(original).text, "Alpha (+1 more)");
+    assert.equal(
+      characterMainFranchises(original).text,
+      "Alpha Main, Zebra Main",
+    );
     // Recovery must not even require the current membership tables to exist.
     db.exec("DROP VIEW effective_character_franchises");
     assert.deepEqual(loadRollCharacterSnapshot(db, roll.rollId), original);
@@ -271,37 +320,63 @@ for (const mystery of [false, true])
       );
   });
 
-test("historical v1 stored roll and mystery snapshots recover without live franchise enrichment", (t) => {
-  const { db } = fixture(t);
-  const roll = reserve(db, "100", {
-    eventChannelId: "10",
-    selectEvent: () => ({ eventId: "doors", durationMs: 60000, state: {} }),
+for (const version of [1, 2]) {
+  test(`v${version} recovery can render current main franchises without changing the saved snapshot`, (t) => {
+    const { db } = fixture(t);
+    const roll = reserve(db, "100", {
+      eventChannelId: "10",
+      selectEvent: () => ({ eventId: "doors", durationMs: 60000, state: {} }),
+    });
+    const { main_franchise_names, ...base } = roll.character;
+    const legacy = {
+      ...base,
+      version,
+      ...(version === 2 ? { franchise_names: '["Old effective"]' } : {}),
+    };
+    db.prepare(
+      "UPDATE character_rolls SET character_snapshot_json=? WHERE id=?",
+    ).run(JSON.stringify(legacy), roll.rollId);
+    const session = getMysterySession(db, roll.sessionId);
+    const state = {
+      ...JSON.parse(session.stateJson),
+      characterSnapshot: legacy,
+    };
+    db.prepare("UPDATE mystery_sessions SET state_json=? WHERE id=?").run(
+      JSON.stringify(state),
+      roll.sessionId,
+    );
+
+    db.exec("UPDATE franchises SET display_name='Current Main' WHERE id=3");
+    const saved = loadRollCharacterSnapshot(db, roll.rollId);
+    assert.deepEqual(saved, legacy);
+    assert.deepEqual(
+      selectedMysteryCharacter(db, getMysterySession(db, roll.sessionId)),
+      legacy,
+    );
+    const render = withCharacterMainFranchises(db, saved);
+    assert.equal(
+      characterMainFranchises(render).text,
+      "Alpha Main, Current Main",
+    );
+    assert.deepEqual(loadRollCharacterSnapshot(db, roll.rollId), legacy);
   });
-  const { franchise_names, ...legacy } = { ...roll.character, version: 1 };
-  db.prepare(
-    "UPDATE character_rolls SET character_snapshot_json=? WHERE id=?",
-  ).run(JSON.stringify(legacy), roll.rollId);
-  const session = getMysterySession(db, roll.sessionId);
-  const state = { ...JSON.parse(session.stateJson), characterSnapshot: legacy };
-  db.prepare("UPDATE mystery_sessions SET state_json=? WHERE id=?").run(
-    JSON.stringify(state),
-    roll.sessionId,
+}
+
+test("an explicitly empty published main-franchise list stays empty", (t) => {
+  const { db, id } = fixture(t);
+  db.prepare("DELETE FROM character_main_franchises WHERE character_id=?").run(
+    id,
   );
-  db.exec(
-    "UPDATE franchises SET display_name='Renamed'; DROP VIEW effective_character_franchises",
-  );
-  assert.deepEqual(loadRollCharacterSnapshot(db, roll.rollId), legacy);
-  assert.deepEqual(
-    selectedMysteryCharacter(db, getMysterySession(db, roll.sessionId)),
-    legacy,
-  );
+  const roll = reserve(db);
+  db.prepare("INSERT INTO character_main_franchises VALUES (?,3)").run(id);
+  assert.equal(roll.character.main_franchise_names, "[]");
   assert.equal(
-    characterSeries(loadRollCharacterSnapshot(db, roll.rollId)).text,
-    "Unknown anime",
+    characterMainFranchises(withCharacterMainFranchises(db, roll.character)),
+    null,
   );
 });
 
-test("Siren pending escape captures fallback before rename and delivers frozen names", async (t) => {
+test("Siren pending escape captures main franchises before rename and delivers frozen names", async (t) => {
   const { db, id } = fixture(t);
   marryCharacter(db, "1", id, "101");
   const result = sirensCall.execute({
@@ -339,44 +414,53 @@ test("Siren pending escape captures fallback before rename and delivers frozen n
   });
   assert.equal(delivered.status, "started");
   assert.deepEqual(delivered.character, original);
-  assert.match(sent[0], /Alpha \(\+1 more\)/);
+  assert.match(sent[0], /Alpha Main, Zebra Main/);
   assert.doesNotMatch(sent[0], /Renamed/);
 });
 
-test("v1 exact keys stay valid and unenriched; v2 requires exact, valid frozen names", () => {
+test("published snapshots validate their own exact versioned franchise fields", () => {
   const current = captureCharacterSnapshot({
     id: 1,
     name_full: "Historical Hero",
     rank: 1,
     favourites: 0,
-    anime_titles: "[]",
-    franchise_names: '["Original"]',
+    anime_titles: '["Original Anime"]',
+    main_franchise_names: '["Original Main"]',
   });
-  const { franchise_names, ...legacy } = { ...current, version: 1 };
-  assert.deepEqual(validateCharacterSnapshot(legacy), legacy);
-  assert.deepEqual(captureCharacterSnapshot(legacy), legacy);
-  assert.equal(characterSeries(legacy).text, "Unknown anime");
-  const legacyAnime = {
-    ...legacy,
-    anime_titles: '["First Anime","Second Anime"]',
+  const { main_franchise_names, ...base } = current;
+  const first = { ...base, version: 1 };
+  const second = {
+    ...base,
+    version: 2,
+    franchise_names: '["Original Effective"]',
   };
-  assert.equal(characterSeries(legacyAnime).text, "First Anime");
-  assert.match(serialize(rollCard(legacyAnime, null, 6)), /First Anime/);
-  assert.doesNotMatch(serialize(rollCard(legacyAnime, null, 6)), /more/);
-  assert.throws(
-    () => validateCharacterSnapshot({ ...legacy, franchise_names }),
-    /snapshot/,
-  );
-  for (const bad of [null, "null", "{}", "[null]", '[""]', "bad"]) {
+  for (const snapshot of [first, second, current]) {
+    assert.deepEqual(validateCharacterSnapshot(snapshot), snapshot);
+    assert.deepEqual(captureCharacterSnapshot(snapshot), snapshot);
     assert.throws(
-      () => validateCharacterSnapshot({ ...current, franchise_names: bad }),
+      () => validateCharacterSnapshot({ ...snapshot, extra: true }),
       /snapshot/,
     );
   }
+  assert.doesNotMatch(serialize(rollCard(first, null, 6)), /Original Anime/);
+  assert.doesNotMatch(
+    serialize(rollCard(second, null, 6)),
+    /Original Effective/,
+  );
+  assert.match(serialize(rollCard(current, null, 6)), /Original Main/);
   assert.throws(
-    () => validateCharacterSnapshot({ ...current, extra: true }),
+    () => validateCharacterSnapshot({ ...first, main_franchise_names }),
     /snapshot/,
   );
-  const { franchise_names: omitted, ...missing } = current;
-  assert.throws(() => validateCharacterSnapshot(missing), /snapshot/);
+  assert.throws(
+    () => validateCharacterSnapshot({ ...second, main_franchise_names }),
+    /snapshot/,
+  );
+  assert.throws(() => validateCharacterSnapshot({ ...base }), /snapshot/);
+  for (const bad of [null, "null", "{}", "[null]", '[""]', "bad"])
+    assert.throws(
+      () =>
+        validateCharacterSnapshot({ ...current, main_franchise_names: bad }),
+      /snapshot/,
+    );
 });
