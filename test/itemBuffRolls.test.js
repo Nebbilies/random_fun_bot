@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { openCatalog } from "../lib/catalogDb.js";
+import { ensureMainFranchiseTable } from "./helpers/mainFranchiseTable.js";
 import {
   reserveRoll,
   claimRoll,
@@ -8,8 +9,9 @@ import {
   getClaimStatus,
 } from "../lib/characterRolls.js";
 import { addActiveBuff, getActiveBuffs } from "../lib/itemStorage.js";
+import { franchisePassport } from "../lib/items/franchisePassport.js";
 
-test("Franchise Passport guarantees rolls from the specified franchise and consumes a buff roll", () => {
+test("Franchise Passport requires main assignments and consumes a qualifying roll", () => {
   const db = openCatalog(":memory:");
   const guildId = "1001";
   const channelId = "2001";
@@ -30,16 +32,13 @@ test("Franchise Passport guarantees rolls from the specified franchise and consu
     INSERT INTO character_anime (character_id, anime_id) VALUES (1, 1), (2, 1), (3, 2);
   `);
 
-  // Activate Franchise Passport for Frieren (franchise_id = 1)
-  addActiveBuff(
-    db,
-    guildId,
-    userId,
-    "franchise_passport",
-    JSON.stringify({ franchiseId: 1 }),
-    null,
-    5,
-  );
+  ensureMainFranchiseTable(db);
+
+  const params = { db, guildId, userId, args: ["Frieren"] };
+  assert.equal(franchisePassport.execute(params).success, false);
+  assert.deepEqual(getActiveBuffs(db, guildId, userId), []);
+  db.exec("INSERT INTO character_main_franchises VALUES(1,1),(2,1)");
+  assert.equal(franchisePassport.execute(params).success, true);
 
   const res = reserveRoll(db, {
     guildId,

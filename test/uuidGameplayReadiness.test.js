@@ -66,6 +66,7 @@ function fixture(t, characterType = "TEXT", ids = [A, B, C]) {
       lock_type TEXT, protected_until INTEGER);
     CREATE TABLE character_anime (character_id ${characterType}, anime_id INTEGER);
     CREATE TABLE franchise_anime (franchise_id INTEGER, anime_id INTEGER);
+    CREATE TABLE character_main_franchises (character_id ${characterType}, franchise_id INTEGER, PRIMARY KEY (character_id,franchise_id));
     CREATE TABLE franchises (id INTEGER PRIMARY KEY, display_name TEXT);
     INSERT INTO franchises VALUES (1, 'Shared series');
     INSERT INTO franchise_anime VALUES (1, 10);
@@ -87,6 +88,7 @@ function fixture(t, characterType = "TEXT", ids = [A, B, C]) {
       index < 2 ? "Shared" : "Third",
     );
     db.prepare("INSERT INTO character_anime VALUES (?,10)").run(id);
+    db.prepare("INSERT INTO character_main_franchises VALUES (?,1)").run(id);
   });
   return db;
 }

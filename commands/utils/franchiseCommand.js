@@ -16,7 +16,7 @@ import {
   isFranchiseCatalogCurrent,
   loadFranchiseCharacters,
   loadFranchiseCover,
-  loadFranchiseIndex,
+  loadMainFranchiseIndex,
 } from "../../lib/franchiseLookup.js";
 import { formatNumber } from "../../lib/formatNumber.js";
 import {
@@ -56,21 +56,12 @@ export async function runFranchiseCommand(ctx) {
   const directOnly = snapshot
     ? !snapshot.franchiseCurrent
     : !isFranchiseCatalogCurrent(db);
-  const lookupOptions = { directOnly };
-  const warning = directOnly
-    ? "\n⚠️ Partial results: showing direct franchise memberships only. Anime-derived data is out of date; ask an administrator to refresh it."
-    : "";
-  const index = snapshot
-    ? directOnly
-      ? snapshot.directFranchiseIndex
-      : snapshot.franchiseIndex
-    : loadFranchiseIndex(db, lookupOptions);
+  const coverOptions = { directOnly };
+  const index = snapshot?.mainFranchiseIndex ?? loadMainFranchiseIndex(db);
   const franchises = findFranchises(index, query);
   if (!franchises.length) {
     await ctx.message.reply(
-      directOnly
-        ? "The franchise catalog is missing or out of date, and no direct franchise matches were found. Ask an administrator to refresh it."
-        : "No franchise found. Try a fuller title or another alias.",
+      "No franchise found. Try a fuller title or another alias.",
     );
     return;
   }
@@ -81,10 +72,10 @@ export async function runFranchiseCommand(ctx) {
   let franchisePage = 0;
   let selected = franchises.length === 1 ? franchises[0] : null;
   let characters = selected
-    ? loadFranchiseCharacters(db, selected.id, guildId, lookupOptions)
+    ? loadFranchiseCharacters(db, selected.id, guildId, { mainOnly: true })
     : [];
   let cover = selected
-    ? loadFranchiseCover(db, selected.id, lookupOptions)
+    ? loadFranchiseCover(db, selected.id, coverOptions)
     : null;
   if (selected && !characters.length) {
     await ctx.message.reply(
@@ -107,7 +98,7 @@ export async function runFranchiseCommand(ctx) {
         }));
       return [
         container(
-          `## Choose a franchise\n${formatNumber(franchises.length)} matches • Page ${franchisePage + 1} of ${pages}${warning}`,
+          `## Choose a franchise\n${formatNumber(franchises.length)} matches • Page ${franchisePage + 1} of ${pages}`,
         )
           .addActionRowComponents(
             new ActionRowBuilder().addComponents(
@@ -138,7 +129,7 @@ export async function runFranchiseCommand(ctx) {
     if (!characters.length)
       return [
         container(
-          `## ${escapeMarkdown(selected.name)}\nNo current catalog characters found in this franchise.${warning}`,
+          `## ${escapeMarkdown(selected.name)}\nNo current catalog characters found in this franchise.`,
         ),
       ];
     const pages = Math.max(
@@ -160,7 +151,7 @@ export async function runFranchiseCommand(ctx) {
         characterListName(character.name_full, character.married) + owner;
       return showRank ? `#${formatNumber(character.rank)} - ${name}` : name;
     });
-    const content = `## ${escapeMarkdown(selected.name)}\n${formatNumber(characters.length)} characters • Page ${page + 1} of ${pages}\n\n${lines.join("\n")}${warning}`;
+    const content = `## ${escapeMarkdown(selected.name)}\n${formatNumber(characters.length)} characters • Page ${page + 1} of ${pages}\n\n${lines.join("\n")}`;
     const result = new ContainerBuilder().setAccentColor(0x5865f2);
     if (cover)
       result.addSectionComponents(
@@ -227,13 +218,10 @@ export async function runFranchiseCommand(ctx) {
             (item) => String(item.id) === interaction.values?.[0],
           ) ?? null;
         if (selected) {
-          characters = loadFranchiseCharacters(
-            db,
-            selected.id,
-            guildId,
-            lookupOptions,
-          );
-          cover = loadFranchiseCover(db, selected.id, lookupOptions);
+          characters = loadFranchiseCharacters(db, selected.id, guildId, {
+            mainOnly: true,
+          });
+          cover = loadFranchiseCover(db, selected.id, coverOptions);
           page = 0;
         }
       } else if (

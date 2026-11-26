@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { openCatalog } from "../lib/catalogDb.js";
+import { ensureMainFranchiseTable } from "./helpers/mainFranchiseTable.js";
 import {
   addActiveBuff,
   addItemToInventory,
@@ -546,6 +547,8 @@ test("Four-Leaf Clover keeps its charges while a Franchise Passport is the activ
     INSERT INTO anime (id, title_english, title_romaji, fetched_at) VALUES (1, 'Show A', 'Show A', '2026');
     INSERT INTO franchise_anime (franchise_id, anime_id) VALUES (1, 1);
     INSERT INTO character_anime (character_id, anime_id) VALUES (1, 1), (2, 1);`);
+  ensureMainFranchiseTable(db);
+  db.exec("INSERT INTO character_main_franchises VALUES(1,1),(2,1)");
   addActiveBuff(db, "1", "101", "four_leaf_clover", null, null, 5);
   addActiveBuff(
     db,

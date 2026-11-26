@@ -9,6 +9,7 @@ import { convertLegacyCatalogToFinal } from "../lib/characterIdentityMigration.j
 import { createCatalogCache, getCatalogCache } from "../lib/catalogCache.js";
 import { findCharacters } from "../lib/gameCharacterLookup.js";
 import { findFranchises } from "../lib/franchiseLookup.js";
+import { ensureMainFranchiseTable } from "./helpers/mainFranchiseTable.js";
 
 test("search cache observes another connection revision and reloads both models coherently", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "catalog-cache-")),
@@ -24,6 +25,7 @@ test("search cache observes another connection revision and reloads both models 
     "INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,1,10,'Old'); INSERT INTO character_identities SELECT id,name_full,image_url FROM characters;",
   );
   convertLegacyCatalogToFinal(db, { dryRun: false });
+  ensureMainFranchiseTable(db);
   writer = new DatabaseSync(file);
   writer.exec("PRAGMA foreign_keys=ON");
   const cache = createCatalogCache(db),
@@ -31,12 +33,18 @@ test("search cache observes another connection revision and reloads both models 
   assert.equal(initial.characterIndex[0].name_full, "Old");
   assert.equal(cache.get(), initial);
   writer.exec(
-    "BEGIN IMMEDIATE; UPDATE characters SET name_full='New'; INSERT INTO franchises(display_name,name_source,created_at) VALUES('New franchise','manual','now'); UPDATE catalog_state SET revision=revision+1; COMMIT;",
+    "BEGIN IMMEDIATE; UPDATE characters SET name_full='New'; INSERT INTO franchises(display_name,name_source,created_at) VALUES('New franchise','manual','now'); INSERT INTO character_main_franchises SELECT id,1 FROM characters; UPDATE catalog_state SET revision=revision+1; COMMIT;",
   );
   const next = cache.get();
   assert.notEqual(next, initial);
   assert.equal(next.characterIndex[0].name_full, "New");
   assert.equal(next.franchiseIndex[0].name, "New franchise");
+  assert.deepEqual(
+    findFranchises(next.mainFranchiseIndex, "New franchise").map(
+      (row) => row.id,
+    ),
+    [1],
+  );
   writer.exec(
     "BEGIN IMMEDIATE; UPDATE characters SET name_full='Rolled back'; UPDATE catalog_state SET revision=revision+1; ROLLBACK;",
   );

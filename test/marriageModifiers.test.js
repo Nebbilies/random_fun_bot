@@ -55,6 +55,10 @@ function fixture(t) {
     (3, 103)`,
   ).run();
 
+  db.exec(
+    MAIN_FRANCHISE_DDL.replace("character_id TEXT", "character_id INTEGER"),
+  );
+  db.exec("INSERT INTO character_main_franchises VALUES(1,1),(2,2),(3,3)");
   return db;
 }
 
@@ -226,6 +230,22 @@ test("franchise view (!mma) lists franchises alphabetically without rank and gro
   assert.ok(text.includes("Wanderer"));
 });
 
+test("grouped harem uses main assignments and includes effective-only characters in Other", async (t) => {
+  const db = fixture(t);
+  db.exec(`INSERT INTO franchises(id,display_name,created_at) VALUES(4,'Alpha main','now'),(5,'Zulu main','now');
+    DELETE FROM character_main_franchises;
+    INSERT INTO character_main_franchises VALUES(1,4),(1,5);`);
+  marryCharacter(db, "1", 1, "101");
+  marryCharacter(db, "1", 2, "101");
+  const mock = context(db, ["mma"]);
+  await mmCommand(mock.ctx);
+  const text = textContent(mock.payload());
+  assert.match(text, /Alpha main - 1/);
+  assert.match(text, /Zulu main - 1/);
+  assert.match(text, /Other - 1.*Casca/s);
+  assert.doesNotMatch(text, /BLEACH|Berserk/);
+});
+
 test("franchise rank view (!mmar) shows bold rank and sorts characters within franchise by rank", async (t) => {
   const db = fixture(t);
   // Add another BLEACH character
@@ -238,6 +258,7 @@ test("franchise rank view (!mmar) shows bold rank and sorts characters within fr
   ).run();
 
   marryCharacter(db, "1", 1, "101"); // Rangiku (rank 253)
+  db.exec("INSERT INTO character_main_franchises VALUES(5,1)");
   marryCharacter(db, "1", 5, "101"); // Ichigo (rank 10)
 
   const mock = context(db, ["mmar"]);
@@ -257,11 +278,8 @@ test("franchise rank view (!mmar) shows bold rank and sorts characters within fr
 
 test("individual card view (!mmi) displays single character card with header, details, footer and buttons", async (t) => {
   const db = fixture(t);
-  db.exec(
-    MAIN_FRANCHISE_DDL.replace("character_id TEXT", "character_id INTEGER"),
-  );
   db.exec(`INSERT INTO franchises(id,display_name,created_at) VALUES(4,'Main Series','now');
-    INSERT INTO character_main_franchises VALUES(2,4);`);
+    UPDATE character_main_franchises SET franchise_id=4 WHERE character_id=2;`);
   marryCharacter(db, "1", 1, "101");
   marryCharacter(db, "1", 2, "101");
   db.prepare(

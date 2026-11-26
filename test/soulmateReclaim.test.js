@@ -177,9 +177,7 @@ test("appearance franchise affection and reclaim bonus are independent permanent
     "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Shared','d')",
   );
   for (const id of [first, foreign])
-    db.prepare("INSERT INTO character_franchise_memberships VALUES(?,1)").run(
-      id,
-    );
+    db.prepare("INSERT INTO character_main_franchises VALUES(?,1)").run(id);
   const rolled = reserve(db);
   assert.equal(rolled.soulmateReclaimVersion, 1);
   publish(db, rolled);
@@ -200,9 +198,7 @@ test("new bonus follows current selection while earlier appearance affection sta
     "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Shared','d')",
   );
   for (const id of [first, foreign])
-    db.prepare("INSERT INTO character_franchise_memberships VALUES(?,1)").run(
-      id,
-    );
+    db.prepare("INSERT INTO character_main_franchises VALUES(?,1)").run(id);
   const rolled = reserve(db);
   publish(db, rolled);
   assert.equal(

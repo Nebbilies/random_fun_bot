@@ -63,6 +63,13 @@ function context(t) {
   ])
     franchise.run(...pair);
 
+  db.exec(
+    "INSERT INTO franchises(id,display_name,created_at) VALUES(3,'Main A','d'),(4,'Main B','d')",
+  );
+  db.prepare(
+    "INSERT INTO character_main_franchises VALUES(?,3),(?,3),(?,4),(?,4)",
+  ).run(ids[0], ids[1], ids[0], ids[6]);
+
   const replies = [];
   const edits = [];
   const member = {
@@ -139,8 +146,8 @@ test("profile takes a read-only guild snapshot and replaces one reply with the c
       assert.deepEqual(
         model.topFranchises.map(({ name, count }) => [name, count]),
         [
-          ["Series A", 2],
-          ["Series B", 2],
+          ["Main A", 2],
+          ["Main B", 1],
         ],
       );
       return new Map();

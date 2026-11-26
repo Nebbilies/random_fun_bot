@@ -110,6 +110,28 @@ test("own overview includes zero progress, bounded pages and dynamic-prefix deta
   assert.equal(db.prepare("SELECT total_changes() n").get().n, before);
 });
 
+test("affection cards display only assigned main franchises", async (t) => {
+  const db = fixture(t);
+  db.exec(`INSERT INTO franchises(id,display_name,created_at) VALUES
+    (1,'Effective only','now'),(2,'Zulu main','now'),(3,'Alpha main','now');`);
+  db.prepare(
+    "INSERT INTO character_franchise_memberships VALUES(?,1),(?,1)",
+  ).run(ids[0], ids[1]);
+  db.prepare("INSERT INTO character_main_franchises VALUES(?,2),(?,3)").run(
+    ids[0],
+    ids[0],
+  );
+  const assigned = transport(db, ["aff", "#1"]);
+  await run(assigned.ctx);
+  assert.equal(
+    assigned.payload().embeds[0].toJSON().description,
+    "Alpha main, Zulu main",
+  );
+  const unassigned = transport(db, ["aff", "#2"]);
+  await run(unassigned.ctx);
+  assert.equal(unassigned.payload().embeds[0].toJSON().description, undefined);
+});
+
 test("trailing player mention is removed before rank lookup; public views remain pure", async (t) => {
   const db = fixture(t),
     mock = transport(db, ["affection", "#1", "<@202>"]);

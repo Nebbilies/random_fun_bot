@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { openCatalog } from "../lib/catalogDb.js";
+import { ensureMainFranchiseTable } from "./helpers/mainFranchiseTable.js";
 import {
   useHourglassOfHaste,
   useLoveLetter,
@@ -179,6 +180,8 @@ test("Wish Upon A Star marries unowned top 3 character of franchise", () => {
     INSERT INTO franchise_anime (franchise_id, anime_id) VALUES (1, 1);
   `);
 
+  ensureMainFranchiseTable(db);
+  db.exec("INSERT INTO character_main_franchises VALUES(1,1),(2,1),(3,1)");
   // Suppose Rem (#1) is already married to another user
   marryCharacter(db, guildId, 1, "9999");
 

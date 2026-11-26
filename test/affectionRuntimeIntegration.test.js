@@ -59,9 +59,7 @@ function fixture(t, { mystery = false } = {}) {
       "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Shared','d')",
     );
     for (const id of [own, other])
-      db.prepare("INSERT INTO character_franchise_memberships VALUES(?,1)").run(
-        id,
-      );
+      db.prepare("INSERT INTO character_main_franchises VALUES(?,1)").run(id);
   }
   const r = reserveRoll(db, {
     guildId: "1",
