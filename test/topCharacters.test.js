@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { ComponentType, MessageFlags } from "discord.js";
 import { openCatalog } from "../lib/catalogDb.js";
+import { MAIN_FRANCHISE_DDL } from "../lib/catalogFinalSchema.js";
 import { topCharacters, topPageCount } from "../lib/topCharacters.js";
 import { run as topCommand } from "../commands/top.js";
 import { run as topoCommand } from "../commands/topo.js";
@@ -68,7 +69,14 @@ function seed(db, count) {
       JSON.stringify([`Anime ${index}`]),
     );
   }
-  db.exec("COMMIT");
+  db.exec(
+    MAIN_FRANCHISE_DDL.replace("character_id TEXT", "character_id INTEGER"),
+  );
+  db.exec(`INSERT INTO franchises(id,display_name,created_at) VALUES
+    (1,'Zebra Main','now'),(2,'Alpha Main','now');
+    INSERT INTO character_main_franchises SELECT id, 1 FROM characters WHERE id IN (1,16,31);
+    INSERT INTO character_main_franchises SELECT id, 2 FROM characters WHERE id=1;
+    COMMIT;`);
 }
 
 function collectorFixture() {
@@ -115,8 +123,8 @@ test("the top list shows the highest ranked characters, 15 per page", async (t) 
   assert.match(card.components[0].content, /:trophy: TOP 1000/);
   const rows = card.components[1].content.split("\n");
   assert.equal(rows.length, 15);
-  assert.equal(rows[0], "**#1 - Character 1** - Anime 1");
-  assert.equal(rows[14], "**#15 - Character 15** - Anime 15");
+  assert.equal(rows[0], "**#1 - Character 1** - Alpha Main, Zebra Main");
+  assert.equal(rows[14], "**#15 - Character 15**");
   assert.match(card.components[2].content, /Page 1 of 2/);
   assert.equal(card.components[3].components[0].custom_id, "top:prev");
   assert.equal(card.components[3].components[0].disabled, true);
@@ -157,8 +165,8 @@ test("the top list pages through the catalog with the navigation buttons", async
   let card = container(harness.state.payload);
   const rows = card.components[1].content.split("\n");
   assert.equal(rows.length, 5);
-  assert.equal(rows[0], "**#16 - Character 16** - Anime 16");
-  assert.equal(rows[4], "**#20 - Character 20** - Anime 20");
+  assert.equal(rows[0], "**#16 - Character 16** - Zebra Main");
+  assert.equal(rows[4], "**#20 - Character 20**");
   assert.match(card.components[2].content, /Page 2 of 2/);
   assert.equal(card.components[3].components[1].disabled, true);
 
@@ -166,7 +174,7 @@ test("the top list pages through the catalog with the navigation buttons", async
   card = container(harness.state.payload);
   assert.equal(
     card.components[1].content.split("\n")[0],
-    "**#1 - Character 1** - Anime 1",
+    "**#1 - Character 1** - Alpha Main, Zebra Main",
   );
   assert.match(card.components[2].content, /Page 1 of 2/);
 
@@ -200,7 +208,7 @@ test("the top list can open a requested page", async (t) => {
   const card = container(harness.state.payload);
   assert.equal(
     card.components[1].content.split("\n")[0],
-    "**#31 - Character 31** - Anime 31",
+    "**#31 - Character 31** - Zebra Main",
   );
   assert.match(card.components[2].content, /Page 3 of 3/);
 });
@@ -233,7 +241,7 @@ test("topo displays server-local owners without pinging and refreshes them on na
     yoshiko: { catalogDb: db },
   });
   const text = container(harness.state.payload).components[1].content;
-  assert.match(text, /Character 1 💞\*\* - Anime 1 => <@123>/);
+  assert.match(text, /Character 1 💞\*\* - Alpha Main, Zebra Main => <@123>/);
   assert.doesNotMatch(text, /<@456>/);
   assert.deepEqual(harness.state.payload.allowedMentions, {
     parse: [],
@@ -248,7 +256,7 @@ test("topo displays server-local owners without pinging and refreshes them on na
   });
   assert.match(
     container(harness.state.payload).components[1].content,
-    /Character 16 💞\*\* - Anime 16 => <@789>/,
+    /Character 16 💞\*\* - Zebra Main => <@789>/,
   );
 });
 

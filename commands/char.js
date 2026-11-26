@@ -1,4 +1,4 @@
-import { characterSeries } from "../lib/characterSeries.js";
+import { characterMainFranchises } from "../lib/characterSeries.js";
 import { getGameConfig } from "../lib/gameConfig.js";
 import {
   ActionRowBuilder,
@@ -55,12 +55,13 @@ function chooserComponents(matches, page, disabled = false) {
   const options = matches
     .slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
     .map((character) => {
-      const anime = characterSeries(character).text;
+      const name = `#${formatNumber(character.rank)} • ${character.name_full}`;
+      const franchises = characterMainFranchises(
+        character,
+        100 - name.length - 3,
+      );
       return {
-        label: short(
-          `#${formatNumber(character.rank)} • ${character.name_full} (${anime})`,
-          100,
-        ),
+        label: franchises ? `${name} (${franchises.text})` : short(name, 100),
         value: String(character.id),
       };
     });
@@ -100,7 +101,7 @@ function buildCardComponents(
   disabled = false,
   ownerId = null,
 ) {
-  const series = characterSeries(character, "Unknown", short);
+  const franchises = characterMainFranchises(character, 180, escapeMarkdown);
   const names = [
     character.name_native,
     ...jsonArray(character.name_alternatives),
@@ -115,7 +116,7 @@ function buildCardComponents(
     ? `# [${title}](${character.site_url})`
     : `# ${title}`;
   const details = [
-    `**${series.label}:** ${escapeMarkdown(series.text)}`,
+    ...(franchises ? [`**${franchises.label}:** ${franchises.text}`] : []),
     ...(names.length
       ? [
           "**Other names:**",

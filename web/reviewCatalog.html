@@ -146,6 +146,54 @@
               missing franchises below, then select them here. Anime-derived
               memberships are separate.
             </p>
+            <div id="mainFranchiseField">
+              <label
+                id="mainFranchiseLabel"
+                class="field-label"
+                for="mainFranchiseSearch"
+                >Main franchises (required)</label
+              >
+              <div id="mainFranchisePicker" class="franchise-multiselect">
+                <div
+                  id="mainFranchiseChips"
+                  class="franchise-chips"
+                  role="group"
+                  aria-label="Selected main franchises"
+                ></div>
+                <div class="picker">
+                  <input
+                    id="mainFranchiseSearch"
+                    class="picker-input"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded="false"
+                    aria-controls="mainFranchiseOptions"
+                    aria-describedby="mainFranchiseHint"
+                    aria-required="true"
+                    autocomplete="off"
+                    placeholder="Search franchise names or aliases…"
+                  />
+                  <ul
+                    id="mainFranchiseOptions"
+                    class="picker-options"
+                    role="listbox"
+                    aria-labelledby="mainFranchiseLabel"
+                    aria-multiselectable="true"
+                    hidden
+                  ></ul>
+                </div>
+                <p
+                  id="mainFranchiseSearchStatus"
+                  class="sr-only"
+                  role="status"
+                  aria-live="polite"
+                ></p>
+              </div>
+              <select id="mainFranchiseIds" multiple hidden></select>
+              <p id="mainFranchiseHint" class="input-hint">
+                Choose one or more franchises to show on character cards.
+              </p>
+            </div>
             <div id="createTagField">
               <label class="field-label" for="createTag"
                 >Danbooru character or copyright tag (optional)</label

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openCatalog } from "../lib/catalogDb.js";
+import { MAIN_FRANCHISE_DDL } from "../lib/catalogFinalSchema.js";
 import {
   claimRoll,
   getClaimStatus,
@@ -92,7 +93,7 @@ function channel(id) {
   };
 }
 
-function fixture(t, eventDraw = 0, slotDraw = 0, franchiseFallback = false) {
+function fixture(t, eventDraw = 0, slotDraw = 0, withMainFranchises = false) {
   const dir = mkdtempSync(join(tmpdir(), "mystery-runtime-"));
   const db = openCatalog(join(dir, "catalog.sqlite"));
   t.after(() => {
@@ -105,10 +106,15 @@ function fixture(t, eventDraw = 0, slotDraw = 0, franchiseFallback = false) {
   db.exec(`INSERT INTO anime (id, title_english, genres, tags, season_year, format, is_adult, fetched_at)
     VALUES (10, 'Example Anime', '["Adventure"]', '[{"name":"Space","rank":90}]', 2020, 'TV', 0, 'now');
     INSERT INTO character_anime (character_id, anime_id) VALUES (1, 10)`);
-  if (franchiseFallback)
-    db.exec(`UPDATE characters SET anime_titles='[]';
-    INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Zulu','now'),(2,'Alpha','now');
-    INSERT INTO franchise_anime(franchise_id,anime_id) VALUES(1,10),(2,10)`);
+  if (withMainFranchises) {
+    db.exec(
+      MAIN_FRANCHISE_DDL.replace("character_id TEXT", "character_id INTEGER"),
+    );
+    db.exec(`INSERT INTO franchises(id,display_name,created_at) VALUES
+      (1,'Zulu Main','now'),(2,'Alpha Main','now'),(3,'Effective','now');
+      INSERT INTO franchise_anime(franchise_id,anime_id) VALUES(3,10);
+      INSERT INTO character_main_franchises VALUES(1,1),(1,2);`);
+  }
   const origin = channel("10");
   const event = channel("20");
   setMysteryEventChannel(db, "1", "20");
@@ -279,7 +285,7 @@ test("Door winner reveals the prize after three seconds with a 60-second exclusi
   await time.advanceTo(9100);
   const prize = event.sent[3];
   assert.equal(prize.embeds[0].data.title, "Hidden Prize");
-  assert.equal(prize.embeds[0].data.description, "Example Anime");
+  assert.equal(prize.embeds[0].data.description, undefined);
   assert.deepEqual(prize.reactions, ["❤️"]);
   assert.equal(
     getMysterySession(db, reservation.sessionId).state,
@@ -364,7 +370,7 @@ test("both slot placements use timed reveals; John Pork precedes an unclaimable 
       const card = event.sent[3];
       if (selected !== winning) {
         assert.equal(card.embeds[0].data.title, "John Pork");
-        assert.equal(card.embeds[0].data.description, "-");
+        assert.equal(card.embeds[0].data.description, undefined);
         assert.deepEqual(
           card.embeds[0].data.fields.map((field) => field.value),
           ["?"],
@@ -1323,14 +1329,21 @@ test("Doors confirms a durable choice privately while the public announcement is
 });
 
 for (const selected of ["1", "2"])
-  test(`mystery ${selected === "1" ? "winning" : "unclaimable"} prize keeps frozen franchise fallback`, async (t) => {
+  test(`mystery ${selected === "1" ? "winning" : "unclaimable"} prize keeps the frozen main franchises`, async (t) => {
     const { db, event, time, start } = fixture(t, 0, 0, true);
-    db.exec("UPDATE franchises SET display_name='Renamed'");
+    db.exec("UPDATE franchises SET display_name='Renamed' WHERE id=1");
     await start();
     await time.advanceTo(6100);
+    assert.doesNotMatch(
+      JSON.stringify(event.sent[1].payload),
+      /Hidden Prize|Alpha Main|Zulu Main|Example Anime|Effective/,
+    );
     await onMysteryButton(db, doorInteraction(event.sent[1], selected));
     await time.advanceTo(selected === "1" ? 9100 : 11100);
     const prize = event.sent.at(-1);
-    assert.equal(prize.embeds[0].data.description, "Alpha (+1 more)");
-    assert.doesNotMatch(JSON.stringify(prize.payload), /Renamed/);
+    assert.equal(prize.embeds[0].data.description, "Alpha Main, Zulu Main");
+    assert.doesNotMatch(
+      JSON.stringify(prize.payload),
+      /Renamed|Example Anime|Effective/,
+    );
   });

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { openCatalog } from "../lib/catalogDb.js";
 import { migrateCharacterIdentities } from "../lib/characterIdentityMigration.js";
 import { initializeCatalogReleaseSchema } from "../lib/catalogReleaseSchema.js";
+import { MAIN_FRANCHISE_DDL } from "../lib/catalogFinalSchema.js";
 import { sirensCall } from "../lib/items/sirensCall.js";
 import { startForcedEscape } from "../lib/characterRollRuntime.js";
 import {
@@ -31,6 +32,13 @@ function fixture(t, { file = ":memory:", legacy = false } = {}) {
       UPDATE characters SET likes_source='generated';`);
   }
   const id = db.prepare("SELECT id FROM characters").get().id;
+  if (!legacy) {
+    db.exec(MAIN_FRANCHISE_DDL);
+    db.exec(
+      "INSERT INTO franchises (id, display_name, created_at) VALUES (1, 'Old Main', 'now')",
+    );
+    db.prepare("INSERT INTO character_main_franchises VALUES (?, 1)").run(id);
+  }
   db.prepare(
     `INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES('1',?,'101','original')`,
   ).run(id);
@@ -63,7 +71,8 @@ function edit(db) {
       .all()
       .some((c) => c.name === "likes_source")
   ) {
-    db.exec(`UPDATE characters SET likes_source='anilist'`);
+    db.exec(`UPDATE characters SET likes_source='anilist';
+      UPDATE franchises SET display_name='New Main';`);
   }
 }
 const serialize = (payload) =>
@@ -101,12 +110,15 @@ function delivery(db, directive, extra = {}) {
   };
   return { options, sent, edits, timers };
 }
-function assertOld(text, generated = true) {
+function assertOld(text) {
   assert.match(text, /Original name/);
-  assert.match(text, /Old anime/);
+  assert.match(text, /Old Main/);
   assert.doesNotMatch(text, /Likes|1,234|\[generated\]/);
   assert.match(text, /#1/);
-  assert.doesNotMatch(text, /Edited name|9,876|#999|New anime/);
+  assert.doesNotMatch(
+    text,
+    /Edited name|9,876|#999|Old anime|New anime|New Main/,
+  );
 }
 
 test("init12 manual generated Siren terms survive offline raw reopen, catalog edits, and card updates", async (t) => {

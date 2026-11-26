@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { openCatalog } from "../lib/catalogDb.js";
+import { MAIN_FRANCHISE_DDL } from "../lib/catalogFinalSchema.js";
 import {
   getRoll,
   getRollStatus,
@@ -31,6 +32,11 @@ function fixture(t) {
   db.exec(
     "INSERT INTO characters (id,rank,favourites,name_full,gender,image_url,anime_titles) VALUES (1,1,100,'A <@999>','Female','https://example.com/a.png','[\"A Show\"]'),(2,2,90,'B','Male','https://example.com/b.png','[\"B Show\"]')",
   );
+  db.exec(
+    MAIN_FRANCHISE_DDL.replace("character_id TEXT", "character_id INTEGER"),
+  );
+  db.exec(`INSERT INTO franchises(id,display_name,created_at) VALUES(1,'A Franchise','now');
+    INSERT INTO character_main_franchises VALUES(1,1);`);
   const sent = [];
   const reacted = [];
   const channel = {
@@ -120,11 +126,12 @@ test("daily refills exhausted rolls, denies repeats across hours, and renews at 
   }
 });
 
-test("card shows anime under the name and keeps one report button", () => {
+test("card shows the main franchise under the name and keeps one report button", () => {
   const card = rollCard(
     {
       name_full: "A",
       anime_titles: '["A Show"]',
+      main_franchise_names: '["A Franchise"]',
       rank: 1234,
       favourites: 1234,
     },
@@ -134,9 +141,12 @@ test("card shows anime under the name and keeps one report button", () => {
   const content = JSON.stringify(
     card.components.map((component) => component.toJSON()),
   );
-  assert.match(content, /A Show/);
-  assert.ok(content.indexOf("A Show") > content.indexOf("# A"));
-  assert.ok(content.indexOf("A Show") < content.indexOf("**Rank:** #1,234"));
+  assert.match(content, /A Franchise/);
+  assert.doesNotMatch(content, /A Show/);
+  assert.ok(content.indexOf("A Franchise") > content.indexOf("# A"));
+  assert.ok(
+    content.indexOf("A Franchise") < content.indexOf("**Rank:** #1,234"),
+  );
   assert.match(content, /\*\*Rank:\*\* #1,234/);
   assert.doesNotMatch(content, /Likes|Favorites/);
   assert.match(content, /Report tag/);
@@ -148,9 +158,13 @@ test("card shows anime under the name and keeps one report button", () => {
     null,
     1,
   );
-  assert.match(
-    JSON.stringify(unknown.components.map((component) => component.toJSON())),
-    /Unknown anime/,
+  const unassigned = unknown.components[0].toJSON();
+  assert.ok("components" in unassigned);
+  assert.deepEqual(
+    unassigned.components
+      .slice(0, 2)
+      .map((component) => "content" in component && component.content),
+    ["# B", "**Rank:** #13"],
   );
   assert.match(
     JSON.stringify(unknown.components.map((component) => component.toJSON())),
@@ -249,10 +263,11 @@ test("1% boundary proceeds to character selection; exhausted rolls skip the pran
 test("roll publishes before reacting; heart claims immediately and report stays usable", async (t) => {
   const x = fixture(t);
   await runRoll({ message: x.message, yoshiko: x.yoshiko }, "w", () => 0.5);
-  assert.match(
-    JSON.stringify(x.sent[0].components.map((component) => component.toJSON())),
-    /A Show/,
+  const cardText = JSON.stringify(
+    x.sent[0].components.map((component) => component.toJSON()),
   );
+  assert.match(cardText, /A Franchise/);
+  assert.doesNotMatch(cardText, /A Show/);
   assert.match(
     JSON.stringify(x.sent[0].components.map((component) => component.toJSON())),
     /6 rolls left/,
