@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getConfigView, saveConfigSection } from "../lib/gameConfig.js";
 import { openCatalog } from "../lib/catalogDb.js";
+import { ensureMainFranchiseTable } from "./helpers/mainFranchiseTable.js";
 import { addItemToInventory, getInventory } from "../lib/itemStorage.js";
 import { getItemAction } from "../lib/itemActionStorage.js";
 import {
@@ -320,6 +321,10 @@ function pactPool(f) {
     INSERT INTO anime(id,title_romaji,fetched_at) VALUES(1,'Shared franchise','2026');
     INSERT INTO franchise_anime(franchise_id,anime_id) VALUES(1,1);
     INSERT INTO character_anime(character_id,anime_id) VALUES(1,1),(2,1),(3,1),(4,1);`);
+  ensureMainFranchiseTable(f.db);
+  f.db.exec(
+    "INSERT INTO character_main_franchises VALUES(1,1),(2,1),(3,1),(4,1)",
+  );
   return choices;
 }
 
@@ -371,13 +376,13 @@ for (const changed of [
     if (changed === "ownership")
       f.db.exec("UPDATE marriages SET owner_id='202' WHERE character_id=1");
     if (changed === "franchise")
-      f.db.exec("DELETE FROM character_anime WHERE character_id=1");
+      f.db.exec("DELETE FROM character_main_franchises WHERE character_id=1");
     if (changed === "soulbind")
       f.db.exec(
         "INSERT INTO character_protection_locks(guild_id,character_id,lock_type,protected_until) VALUES('1',1,'soulbound',NULL)",
       );
     if (changed === "no reward")
-      f.db.exec("DELETE FROM character_anime WHERE character_id=4");
+      f.db.exec("DELETE FROM character_main_franchises WHERE character_id=4");
     await onItemActionInteraction(
       f.db,
       f.click(control(f.sent[0], changed === "cancel" ? "cancel" : "confirm")),
@@ -1080,14 +1085,23 @@ test("Chronicle empty selector is terminal and never renders an empty select men
 });
 
 function franchiseFixture(f) {
+  ensureMainFranchiseTable(f.db);
+  f.db.exec(
+    "INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,1,0,'Assigned')",
+  );
+  const assign = f.db.prepare(
+    "INSERT INTO character_main_franchises VALUES(1,?)",
+  );
   const insert = f.db.prepare(
     "INSERT INTO franchises(id,display_name,name_source,created_at) VALUES(?,?,'manual','now')",
   );
-  for (let id = 1; id <= 30; id++)
+  for (let id = 1; id <= 30; id++) {
     insert.run(
       id,
       id === 1 ? "Naruto" : id === 2 ? "One Piece" : `Series ${id}`,
     );
+    assign.run(id);
+  }
   f.db
     .prepare(
       "INSERT INTO franchise_aliases(franchise_id,alias,normalized_alias,source) VALUES(1,'Hidden Leaf','hidden leaf','manual')",

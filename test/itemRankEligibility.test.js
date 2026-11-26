@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { openCatalog } from "../lib/catalogDb.js";
+import { ensureMainFranchiseTable } from "./helpers/mainFranchiseTable.js";
 import { reserveRoll } from "../lib/characterRolls.js";
 import { addActiveBuff } from "../lib/itemStorage.js";
 import { getGameConfig } from "../lib/gameConfig.js";
@@ -140,6 +141,10 @@ test("Wish Upon A Star selects by gameplay rank when favourites disagree", () =>
       INSERT INTO franchise_anime(franchise_id,anime_id) VALUES(1,1);
       INSERT INTO characters(id,rank,favourites,name_full) VALUES(1,1,0,'Best'),(2,2,1,'Second'),(3,3,2,'Third'),(4,4,99999,'Popular');
       INSERT INTO character_anime VALUES(1,1),(2,1),(3,1),(4,1)`);
+    ensureMainFranchiseTable(db);
+    db.exec(
+      "INSERT INTO character_main_franchises SELECT id,1 FROM characters",
+    );
     const result = useWishUponAStar(db, "1", "2", "Series", () => 0);
     assert.equal(result.character.id, 1);
   } finally {

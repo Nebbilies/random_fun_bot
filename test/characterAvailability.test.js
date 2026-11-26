@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { openCatalog } from "../lib/catalogDb.js";
+import { ensureMainFranchiseTable } from "./helpers/mainFranchiseTable.js";
 import {
   marryCharacter,
   divorceCharacter,
@@ -40,6 +41,7 @@ function fixture(t) {
     guild_id TEXT, user_id TEXT, character_id INTEGER, marriage_id INTEGER, generation_id TEXT,
     PRIMARY KEY(guild_id, user_id));
     INSERT INTO characters (id, rank, favourites, name_full) VALUES (1, 1, 100, 'One'), (2, 2, 90, 'Two');`);
+  ensureMainFranchiseTable(db);
   return db;
 }
 
@@ -239,7 +241,7 @@ test("summons leave held prizes alone and Blood Pact rejects a busy sacrifice", 
   db.exec(`INSERT INTO franchises (id, display_name, created_at) VALUES (1, 'Show', 'fixture');
     INSERT INTO anime (id, title_romaji, fetched_at) VALUES (10, 'Show', 'fixture');
     INSERT INTO franchise_anime (franchise_id, anime_id) VALUES (1, 10);
-    INSERT INTO character_anime (character_id, anime_id) VALUES (1, 10), (2, 10);`);
+    INSERT INTO character_main_franchises VALUES (1, 1), (2, 1);`);
   const roll = reserveRoll(db, {
     guildId: "1",
     channelId: "10",
@@ -281,7 +283,7 @@ test("Blood Pact skips a held best-ranked replacement rather than taking a roll 
     INSERT INTO franchises (id, display_name, created_at) VALUES (1, 'Show', 'fixture');
     INSERT INTO anime (id, fetched_at) VALUES (10, 'fixture');
     INSERT INTO franchise_anime (franchise_id, anime_id) VALUES (1, 10);
-    INSERT INTO character_anime (character_id, anime_id) VALUES (1, 10), (2, 10), (3, 10), (4, 10), (5, 10);`);
+    INSERT INTO character_main_franchises VALUES (1, 1), (2, 1), (3, 1), (4, 1), (5, 1);`);
   for (const id of [3, 4, 5]) marryCharacter(db, "1", id, "101");
   reserveRoll(db, {
     guildId: "1",

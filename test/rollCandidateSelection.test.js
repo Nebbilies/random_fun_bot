@@ -201,14 +201,15 @@ test("point checks preserve the Soulbind owner exception and durable item reserv
   assert.equal(poolScans(x.queries).length, 1);
 });
 
-test("Passport uses effective franchise membership ahead of Clover and Piñata", (t) => {
+test("Passport uses main franchise membership ahead of Clover and Piñata", (t) => {
   const x = fixture(t);
   x.db.exec(
     "INSERT INTO franchises(id,display_name,name_source,created_at) VALUES(1,'Saga','manual','now')",
   );
   x.db
     .prepare("INSERT INTO character_franchise_memberships VALUES(?,?)")
-    .run(shared, 1);
+    .run(first, 1);
+  x.db.prepare("INSERT INTO character_main_franchises VALUES(?,1)").run(shared);
   x.cache.warmRollPools();
   addActiveBuff(x.db, guildId, "", "pinata", '{"maxRank":1}', null, 3);
   addActiveBuff(
@@ -239,6 +240,38 @@ test("Passport uses effective franchise membership ahead of Clover and Piñata",
     [3, 2],
   );
   assert.equal(getGuildBuffs(x.db, guildId, 1000)[0].remaining_rolls, 3);
+});
+
+test("SQL Passport filtering uses main membership and keeps a charge when its pool is empty", (t) => {
+  const x = fixture(t);
+  x.db.exec(
+    "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Saga','now')",
+  );
+  x.db
+    .prepare("INSERT INTO character_franchise_memberships VALUES(?,1)")
+    .run(first);
+  x.db.prepare("INSERT INTO character_main_franchises VALUES(?,1)").run(shared);
+  addActiveBuff(
+    x.db,
+    guildId,
+    userId,
+    "franchise_passport",
+    '{"franchiseId":1}',
+    null,
+    3,
+  );
+  const exact = reserve(x, { getRollPool: undefined });
+  assert.equal(exact.character.id, shared);
+  x.db.exec("DELETE FROM character_main_franchises");
+  const fallback = reserve(x, {
+    getRollPool: undefined,
+    commandMessageId: "101",
+  });
+  assert.equal(fallback.character.id, first);
+  assert.equal(
+    getActiveBuffs(x.db, guildId, userId, 1000)[0].remaining_rolls,
+    2,
+  );
 });
 
 test("another connection publishes an addition and gender correction before the next reservation", async (t) => {
@@ -284,7 +317,7 @@ test("published rank and franchise changes replace constrained pools from the sa
     "PRAGMA foreign_keys=ON; INSERT INTO franchises(id,display_name,name_source,created_at) VALUES(1,'Saga','manual','now')",
   );
   writer
-    .prepare("INSERT INTO character_franchise_memberships VALUES(?,?)")
+    .prepare("INSERT INTO character_main_franchises VALUES(?,?)")
     .run(first, 1);
   x.cache.warmRollPools();
   writer.exec("BEGIN IMMEDIATE");
@@ -293,7 +326,7 @@ test("published rank and franchise changes replace constrained pools from the sa
   writer.prepare("UPDATE characters SET rank=3 WHERE id=?").run(first);
   writer
     .prepare(
-      "UPDATE character_franchise_memberships SET character_id=? WHERE franchise_id=1",
+      "UPDATE character_main_franchises SET character_id=? WHERE franchise_id=1",
     )
     .run(shared);
   writer.exec("UPDATE catalog_state SET revision=revision+1; COMMIT");

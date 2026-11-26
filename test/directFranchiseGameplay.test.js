@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { openCatalog, setMeta } from "../lib/catalogDb.js";
+import { ensureMainFranchiseTable } from "./helpers/mainFranchiseTable.js";
 import { migrateCharacterIdentities } from "../lib/characterIdentityMigration.js";
 import { characterFranchiseRelation } from "../lib/characterFranchises.js";
 import {
@@ -20,7 +21,7 @@ import { wishUponAStar } from "../lib/items/wishUponAStar.js";
 
 import { initializeCatalogReleaseSchema } from "../lib/catalogReleaseSchema.js";
 
-function fixture(t, mode) {
+function fixture(t, mode, assignMain = true) {
   const db = openCatalog(":memory:");
   t.after(() => db.close());
   db.exec(`INSERT INTO characters (id, rank, favourites, name_full, gender) VALUES
@@ -58,6 +59,15 @@ function fixture(t, mode) {
         "INSERT INTO character_anime (character_id, anime_id) VALUES (?, 100)",
       ).run(ids[name]);
     }
+  }
+  ensureMainFranchiseTable(db);
+  if (assignMain) {
+    const assign = db.prepare(
+      "INSERT INTO character_main_franchises VALUES(?,?)",
+    );
+    for (const name of ["Prize", "Alpha", "Beta", "Gamma"])
+      assign.run(ids[name], 10);
+    if (mode === "release") assign.run(ids.Prize, 20);
   }
   return { db, ids };
 }
@@ -115,7 +125,7 @@ for (const mode of ["legacy", "migrated", "release"]) {
     assert.equal(getMarriage(db, "1", ids.Prize).ownerId, "2");
   });
 
-  test(`${mode}: Wish Upon A Star includes direct targets without duplicate weighting`, (t) => {
+  test(`${mode}: Wish Upon A Star includes main targets without duplicate weighting`, (t) => {
     const { db, ids } = fixture(t, mode);
     const result = wishUponAStar.execute({
       db,
@@ -168,6 +178,31 @@ for (const mode of ["legacy", "migrated", "release"]) {
   });
 }
 
+test("Blood Pact and Wish select a main-only member over a better-ranked effective-only member", (t) => {
+  const { db, ids } = fixture(t, "release", false);
+  for (const name of ["Alpha", "Beta", "Gamma", "Outsider"])
+    db.prepare("INSERT INTO character_main_franchises VALUES(?,10)").run(
+      ids[name],
+    );
+  for (const name of ["Alpha", "Beta", "Gamma"])
+    marryCharacter(db, "1", ids[name], "2");
+  const pact = bloodPact.execute({
+    db,
+    guildId: "1",
+    userId: "2",
+    args: ["Alpha", "Beta", "Gamma"],
+  });
+  assert.equal(pact.character.id, ids.Outsider);
+  const wish = wishUponAStar.execute({
+    db,
+    guildId: "9",
+    userId: "2",
+    args: ["Shared"],
+    random: () => 0,
+  });
+  assert.equal(wish.character.id, ids.Alpha);
+});
+
 test("release covers skip unsafe URLs; relevant source coverage ignores metadata timestamps", (t) => {
   const { db } = fixture(t, "release");
   db.exec(
@@ -197,11 +232,11 @@ test("release covers skip unsafe URLs; relevant source coverage ignores metadata
   assert.equal(isFranchiseCatalogCurrent(db), true);
 });
 
-test("Wish tied direct targets use catalog rank, not UUID order", (t) => {
+test("Wish ranks comparable main targets by catalog rank", (t) => {
   const { db } = fixture(t, "release");
   const tied = db
     .prepare(
-      "SELECT c.id FROM characters c JOIN effective_character_franchises f ON f.character_id=c.id WHERE f.franchise_id=10 ORDER BY c.id DESC",
+      "SELECT c.id FROM characters c JOIN character_main_franchises f ON f.character_id=c.id WHERE f.franchise_id=10 ORDER BY c.id DESC",
     )
     .all();
   db.exec(

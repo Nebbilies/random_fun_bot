@@ -231,14 +231,14 @@ test("semantic decisions persist false and zero, consult receipt before new chan
   });
 });
 
-test("franchise counts use all published identities and minimum shared category, direct pair stays separate", (t) => {
+test("main franchise counts use published members and the minimum shared category", (t) => {
   const db = fixture(t);
   db.exec(
     "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Small','d'),(2,'Large','d')",
   );
   for (const id of [a, b])
     for (const fid of [1, 2])
-      db.prepare("INSERT INTO character_franchise_memberships VALUES(?,?)").run(
+      db.prepare("INSERT INTO character_main_franchises VALUES(?,?)").run(
         id,
         fid,
       );
@@ -250,9 +250,7 @@ test("franchise counts use all published identities and minimum shared category,
     db.prepare(
       "INSERT INTO characters(id,rank,favourites,tie_order,likes_source) VALUES(?,?,0,?,'generated')",
     ).run(id, n, n);
-    db.prepare("INSERT INTO character_franchise_memberships VALUES(?,2)").run(
-      id,
-    );
+    db.prepare("INSERT INTO character_main_franchises VALUES(?,2)").run(id);
   }
   confirmSoulmate(db, { ...scope, characterId: a, now: 1 });
   const saved = capture(db, "related", b);
@@ -271,9 +269,32 @@ test("franchise counts use all published identities and minimum shared category,
     direct.awards.map((x) => x.base),
     [100],
   );
-  db.exec("DELETE FROM character_franchise_memberships WHERE franchise_id=2");
+  db.exec("DELETE FROM character_main_franchises WHERE franchise_id=2");
   assert.equal(
     capture(db, "small", b).awards.find((x) => x.characterId === a).base,
+    12,
+  );
+});
+
+test("Soulmate related affection ignores a shared effective-only franchise", (t) => {
+  const db = fixture(t);
+  db.exec(
+    "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Effective only','d')",
+  );
+  db.prepare(
+    "INSERT INTO character_franchise_memberships VALUES(?,1),(?,1)",
+  ).run(a, b);
+  confirmSoulmate(db, { ...scope, characterId: a, now: 1 });
+  assert.deepEqual(
+    capture(db, "effective", b).awards.map((award) => award.characterId),
+    [b],
+  );
+  db.prepare("INSERT INTO character_main_franchises VALUES(?,1),(?,1)").run(
+    a,
+    b,
+  );
+  assert.equal(
+    capture(db, "main", b).awards.find((award) => award.characterId === a).base,
     12,
   );
 });
@@ -799,9 +820,7 @@ for (const [label, corrupt] of corruptSnapshots) {
       "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Shared','d')",
     );
     for (const id of [a, b])
-      db.prepare("INSERT INTO character_franchise_memberships VALUES(?,1)").run(
-        id,
-      );
+      db.prepare("INSERT INTO character_main_franchises VALUES(?,1)").run(id);
     confirmSoulmate(db, { ...scope, characterId: a, now: 1 });
     const snapshot = capture(db, "corrupt", b);
     validateAffectionState(db); // Corruption can also arrive after startup inspection.
@@ -864,9 +883,7 @@ test("saved matching and pre-event Bond survive live metadata, ownership and sel
     "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Saved','d')",
   );
   for (const id of [a, b])
-    db.prepare("INSERT INTO character_franchise_memberships VALUES(?,1)").run(
-      id,
-    );
+    db.prepare("INSERT INTO character_main_franchises VALUES(?,1)").run(id);
   const saved = capture(db, "frozen", b, 100, () => 0);
   assert.deepEqual(
     saved.awards.map((x) => [x.base, x.bondChance, x.bond]),
@@ -876,7 +893,7 @@ test("saved matching and pre-event Bond survive live metadata, ownership and sel
     ],
   );
   db.exec(
-    "DELETE FROM character_franchise_memberships; DELETE FROM marriages; UPDATE character_affection SET total=0",
+    "DELETE FROM character_main_franchises; DELETE FROM marriages; UPDATE character_affection SET total=0",
   );
   validateAffectionState(db);
   assert.deepEqual(capture(db, "frozen", b), JSON.parse(JSON.stringify(saved)));

@@ -143,6 +143,22 @@ test("switch preview names the replaced soulmate and disables confirm during coo
   );
 });
 
+test("soulmate status shows the selected character's main franchise", async (t) => {
+  const db = fixture(t);
+  db.exec(
+    "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Effective only','now'),(2,'Main assignment','now')",
+  );
+  db.prepare("INSERT INTO character_franchise_memberships VALUES(?,1)").run(a);
+  db.prepare("INSERT INTO character_main_franchises VALUES(?,2)").run(a);
+  confirmSoulmate(db, { guildId: "1", userId: "101", characterId: a, now: 1 });
+  const mock = transport(db, ["sm"]);
+  await run(mock.ctx);
+  assert.equal(
+    mock.payload().embeds[0].toJSON().description,
+    "Main assignment",
+  );
+});
+
 test("no selection gives dynamic-prefix guidance, not an invented meter", async (t) => {
   const db = fixture(t),
     mock = transport(db, ["sm"]);

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { ComponentType, MessageFlags } from "discord.js";
 import { openCatalog, setMeta } from "../lib/catalogDb.js";
+import { ensureMainFranchiseTable } from "./helpers/mainFranchiseTable.js";
 import { runFranchiseCommand } from "../commands/utils/franchiseCommand.js";
 import { run as runIma } from "../commands/ima.js";
 import { parseFranchiseCommand } from "../lib/franchiseModifiers.js";
@@ -19,9 +20,10 @@ import { isFranchiseCatalogCurrent } from "../lib/franchiseLookup.js";
 import { createCatalogCache } from "../lib/catalogCache.js";
 
 function staleManualCatalog(t) {
-  const db = setup(t);
+  const db = setup(t, false);
   migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 });
   initializeCatalogReleaseSchema(db);
+  ensureMainFranchiseTable(db);
   db.exec(`INSERT INTO franchises (id, display_name, name_source, created_at, curated_cover_url)
     VALUES (30, 'Zenless Zone Zero', 'manual', 'now', 'https://example.com/zzz.jpg');
     INSERT INTO franchise_aliases (franchise_id, alias, normalized_alias, source) VALUES
@@ -39,6 +41,7 @@ function staleManualCatalog(t) {
         aliases: [],
         gender: "unknown",
         franchiseIds: [30],
+        mainFranchiseIds: [30],
         portraitUrl: "https://example.com/portrait.jpg",
       },
     });
@@ -129,7 +132,7 @@ function text(payload) {
   return component.content ?? component.components[0].content;
 }
 
-function setup(t) {
+function setup(t, assignMain = true) {
   const directory = mkdtempSync(join(tmpdir(), "franchise-command-"));
   const db = openCatalog(join(directory, "catalog.sqlite"));
   t.after(() => {
@@ -166,12 +169,37 @@ function setup(t) {
     `INSERT INTO marriages (guild_id, character_id, owner_id, married_at)
     VALUES ('1', 2, 'owner', 'now')`,
   ).run();
+  if (assignMain) seedSwordArtMain(db);
   return db;
 }
 
-test("identity migration preserves fresh legacy franchise lookups for !ima and !imar", async (t) => {
+function seedSwordArtMain(db) {
+  ensureMainFranchiseTable(db);
+  db.exec(`INSERT INTO character_main_franchises
+    SELECT id, 10 FROM characters WHERE name_full IN ('Kirito','Asuna');
+    INSERT INTO character_main_franchises SELECT id, 20 FROM characters WHERE name_full='Kirito';`);
+}
+
+test("a curated franchise lookup finds assigned main members while anime enrichment is stale", async (t) => {
   const db = setup(t);
+  db.exec(`DELETE FROM character_main_franchises WHERE character_id=2 OR franchise_id=20;
+    INSERT INTO franchise_aliases (franchise_id, alias, normalized_alias, source) VALUES (10, 'Hidden Alias', 'hidden alias', 'excluded');
+    UPDATE catalog_meta SET value='stale' WHERE key='franchise_source_published_at';`);
+  const matched = await command(db, "SAO");
+  assert.match(text(matched.payload), /Kirito/);
+  assert.doesNotMatch(text(matched.payload), /Asuna|Partial results/);
+  const animeOnly = await command(db, "Sword Art Online Special");
+  assert.match(text(animeOnly.payload), /No franchise found/);
+  assert.match(
+    text((await command(db, "Hidden Alias")).payload),
+    /No franchise found/,
+  );
+});
+
+test("identity migration preserves fresh legacy franchise lookups for !ima and !imar", async (t) => {
+  const db = setup(t, false);
   migrateCharacterIdentities(db, { dryRun: false, targetVersion: 12 });
+  seedSwordArtMain(db);
   for (const name of ["ima", "imar"]) {
     const result = await command(db, "Sword Art Online", { command: name });
     assert.match(text(result.payload), /Kirito/);
@@ -181,8 +209,9 @@ test("identity migration preserves fresh legacy franchise lookups for !ima and !
 });
 
 test("manual character publication preserves migrated anime franchise freshness", async (t) => {
-  const db = setup(t);
+  const db = setup(t, false);
   migrateCharacterIdentities(db, { dryRun: false, targetVersion: 12 });
+  seedSwordArtMain(db);
   const preview = previewManualCharacterCreation(db, {
     account: "editor",
     role: "moderator",
@@ -193,6 +222,7 @@ test("manual character publication preserves migrated anime franchise freshness"
       aliases: [],
       gender: "unknown",
       franchiseIds: [10],
+      mainFranchiseIds: [10],
       portraitUrl: "https://example.com/portrait.jpg",
     },
   });
@@ -210,30 +240,33 @@ test("manual character publication preserves migrated anime franchise freshness"
   assert.doesNotMatch(content, /Partial results|out of date/);
 });
 
-test("migrated legacy freshness fallback rejects stale, missing and changed-source coverage", async (t) => {
-  const db = setup(t);
+test("main roster remains available with stale, missing and changed-source coverage", async (t) => {
+  const db = setup(t, false);
   migrateCharacterIdentities(db, { dryRun: false, targetVersion: 12 });
-  const reject = async () => {
+  seedSwordArtMain(db);
+  const checkMainRoster = async () => {
     assert.equal(isFranchiseCatalogCurrent(db), false);
-    assert.match(
-      text((await command(db, "Sword Art Online")).payload),
-      /out of date.*no direct.*refresh/i,
+    const { payload } = await command(db, "Sword Art Online");
+    assert.match(text(payload), /Kirito/);
+    assert.equal(
+      payload.components[0].toJSON().components[0].type,
+      ComponentType.TextDisplay,
     );
   };
   setMeta(db, "franchise_source_published_at", "older");
-  await reject();
+  await checkMainRoster();
   db.prepare(
     "DELETE FROM catalog_meta WHERE key = 'franchise_source_published_at'",
   ).run();
-  await reject();
+  await checkMainRoster();
   setMeta(db, "franchise_source_published_at", "snapshot-1");
   setMeta(db, "franchise_source_token", "source:999");
-  await reject();
+  await checkMainRoster();
   db.prepare(
     "DELETE FROM catalog_meta WHERE key = 'franchise_source_token'",
   ).run();
   db.exec("UPDATE catalog_state SET source_revision = 1 WHERE singleton = 1");
-  await reject();
+  await checkMainRoster();
 });
 
 test("stale source still exposes three confirmed manual ZZZ characters, ranks, owners and curated cover", async (t) => {
@@ -248,7 +281,7 @@ test("stale source still exposes three confirmed manual ZZZ characters, ranks, o
   assert.match(content, /#1 - Anby 💞 => <@zzz-owner>/);
   assert.match(content, /#2 - Billy/);
   assert.match(content, /#3 - Nicole/);
-  assert.match(content, /Partial results.*direct.*out of date/i);
+  assert.doesNotMatch(content, /Partial results/);
   assert.doesNotMatch(content, /Kirito|Asuna/);
   assert.equal(
     result.payload.components[0].toJSON().components[0].accessory.media.url,
@@ -256,7 +289,7 @@ test("stale source still exposes three confirmed manual ZZZ characters, ranks, o
   );
   assert.deepEqual(result.payload.allowedMentions, { parse: [] });
   await result.collector.listeners("end")[0]();
-  assert.match(text(result.payload), /Partial results/);
+  assert.doesNotMatch(text(result.payload), /Partial results/);
 });
 
 test("stale lookup hides derived-only franchises, automatic aliases and member anime titles", async (t) => {
@@ -268,18 +301,17 @@ test("stale lookup hides derived-only franchises, automatic aliases and member a
     "missing",
   ]) {
     const result = await command(db, query);
-    assert.match(text(result.payload), /out of date.*no direct.*refresh/i);
+    assert.match(text(result.payload), /No franchise found/);
   }
   db.exec(
     "UPDATE franchises SET name_source = 'automatic', display_name = 'Stale Generated Name' WHERE id = 30",
   );
   assert.match(
     text((await command(db, "Stale Generated Name")).payload),
-    /out of date.*no direct/i,
+    /Stale Generated Name/,
   );
   const result = await command(db, "ZZZ");
-  assert.match(text(result.payload), /ZZZ/);
-  assert.doesNotMatch(text(result.payload), /Stale Generated Name/);
+  assert.match(text(result.payload), /Stale Generated Name/);
   db.exec("UPDATE franchises SET curated_cover_url = NULL WHERE id = 30");
   assert.equal(
     (await command(db, "ZZZ")).payload.components[0].toJSON().components[0]
@@ -288,7 +320,7 @@ test("stale lookup hides derived-only franchises, automatic aliases and member a
   );
 });
 
-test("fresh mixed membership deduplicates and restores anime search, members and cover", async (t) => {
+test("fresh anime enrichment provides cover art while roster and search use main franchises", async (t) => {
   const { db, ids } = staleManualCatalog(t);
   db.prepare(
     "INSERT INTO character_anime (character_id, anime_id) VALUES (?, 100)",
@@ -296,9 +328,13 @@ test("fresh mixed membership deduplicates and restores anime search, members and
   assert.match(text((await command(db, "ZZZ")).payload), /3 characters/);
   setMeta(db, "franchise_source_token", "source:0");
   assert.equal(isFranchiseCatalogCurrent(db), true);
-  const result = await command(db, "Stale Alias");
-  assert.match(text(result.payload), /5 characters/);
-  assert.match(text(result.payload), /Kirito/);
+  const result = await command(db, "ZZZ");
+  assert.match(text(result.payload), /3 characters/);
+  assert.doesNotMatch(text(result.payload), /Kirito|Asuna/);
+  assert.match(
+    text((await command(db, "Stale Alias")).payload),
+    /No franchise found/,
+  );
   assert.equal((text(result.payload).match(/Anby/g) ?? []).length, 1);
   assert.doesNotMatch(text(result.payload), /Partial results/);
   assert.equal(
@@ -307,20 +343,20 @@ test("fresh mixed membership deduplicates and restores anime search, members and
   );
 });
 
-test("stale direct chooser keeps paging, requester controls and warning after selection", async (t) => {
+test("main franchise chooser keeps paging and requester controls with stale enrichment", async (t) => {
   const { db, ids } = staleManualCatalog(t);
   for (let id = 40; id < 66; id++) {
     db.prepare(
       `INSERT INTO franchises (id, display_name, name_source, created_at)
       VALUES (?, ?, 'manual', 'now')`,
-    ).run(id, `Direct Group ${id}`);
+    ).run(id, `Main Group ${id}`);
     db.prepare(
-      "INSERT INTO character_franchise_memberships (character_id, franchise_id) VALUES (?, ?)",
+      "INSERT INTO character_main_franchises (character_id, franchise_id) VALUES (?, ?)",
     ).run(ids[0], id);
   }
-  const result = await command(db, "Direct Group");
+  const result = await command(db, "Main Group");
   assert.match(text(result.payload), /26 matches • Page 1 of 2/);
-  assert.match(text(result.payload), /Partial results/);
+  assert.doesNotMatch(text(result.payload), /Partial results/);
   const collect = result.collector.listeners("collect")[0];
   let rejection;
   await collect({
@@ -347,31 +383,25 @@ test("stale direct chooser keeps paging, requester controls and warning after se
     user: { id: "viewer" },
     deferUpdate: async () => {},
   });
-  assert.match(text(result.payload), /Direct Group 65/);
+  assert.match(text(result.payload), /Main Group 65/);
   assert.match(text(result.payload), /1 characters/);
   assert.match(text(result.payload), /#1 - Anby/);
-  assert.match(text(result.payload), /Partial results/);
+  assert.doesNotMatch(text(result.payload), /Partial results/);
 });
 
-test("stale release catalog without direct memberships retains refresh protection", async (t) => {
-  const db = setup(t);
+test("stale release catalog without main assignments has no franchise results", async (t) => {
+  const db = setup(t, false);
   migrateCharacterIdentities(db, { dryRun: false, targetVersion: 11 });
   initializeCatalogReleaseSchema(db);
   setMeta(db, "franchise_source_token", "source:999");
   assert.equal(isFranchiseCatalogCurrent(db), false);
-  assert.match(
-    text((await command(db, "SAO")).payload),
-    /out of date.*no direct.*refresh/i,
-  );
+  assert.match(text((await command(db, "SAO")).payload), /No franchise found/);
 });
 
-test("stale legacy catalog retains refresh guard", async (t) => {
-  const db = setup(t);
+test("legacy catalog without an assignment table has no franchise results", async (t) => {
+  const db = setup(t, false);
   setMeta(db, "franchise_source_published_at", "older");
-  assert.match(
-    text((await command(db, "SAO")).payload),
-    /out of date.*refresh/i,
-  );
+  assert.match(text((await command(db, "SAO")).payload), /No franchise found/);
 });
 
 test("!ima shows franchise characters by name without rank metadata", async (t) => {
@@ -454,12 +484,12 @@ test("franchise character pages show at most 15 names", async (t) => {
   const addCharacter = db.prepare(
     "INSERT INTO characters (id, rank, favourites, name_full) VALUES (?, ?, 1, ?)",
   );
-  const addAppearance = db.prepare(
-    "INSERT INTO character_anime (character_id, anime_id) VALUES (?, 100)",
+  const assign = db.prepare(
+    "INSERT INTO character_main_franchises VALUES (?, 10)",
   );
   for (let rank = 3; rank <= 16; rank++) {
     addCharacter.run(rank, rank === 16 ? 1234 : rank, `Character ${rank}`);
-    addAppearance.run(rank);
+    assign.run(rank);
   }
   const collector = new EventEmitter();
   let payload;

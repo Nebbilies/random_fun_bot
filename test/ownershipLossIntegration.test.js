@@ -295,9 +295,7 @@ function actionSetup(f, kind) {
       "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Shared','fixture')",
     );
     for (const id of ids.slice(0, 4))
-      db.prepare("INSERT INTO character_franchise_memberships VALUES(?,1)").run(
-        id,
-      );
+      db.prepare("INSERT INTO character_main_franchises VALUES(?,1)").run(id);
     selections = { sacrifices: rows };
   } else if (kind === "grand_masquerade") {
     rows = [own(0), own(1, "202"), own(2, "303"), own(3, "404")];

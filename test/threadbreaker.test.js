@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { openCatalog } from "../lib/catalogDb.js";
+import { MAIN_FRANCHISE_DDL } from "../lib/catalogFinalSchema.js";
 import { addItemToInventory } from "../lib/itemStorage.js";
 import { marryCharacter, getMarriage } from "../lib/characterMarriage.js";
 import { createItemAction, activateItemAction } from "../lib/itemActions.js";
@@ -32,6 +33,12 @@ function setup(t) {
     ).run(id);
     marryCharacter(db, "1", id, id >= 3 ? "101" : "202");
   }
+  db.exec(
+    MAIN_FRANCHISE_DDL.replace("character_id TEXT", "character_id INTEGER"),
+  );
+  db.exec(
+    "INSERT INTO character_main_franchises VALUES(1,10),(2,10),(3,10),(4,10)",
+  );
   const item = addItemToInventory(db, "1", "101", "threadbreaker", 1).item;
   const action = createItemAction(db, {
     guildId: "1",
@@ -75,6 +82,20 @@ test("Threadbreaker stops the entire descending chain on same-owner survival and
     result,
   );
 });
+test("Threadbreaker rechecks assignments and preserves an effective-only marriage", (t) => {
+  const { db, action } = setup(t);
+  db.exec("DELETE FROM character_main_franchises WHERE character_id=4");
+  const result = activateItemAction(db, {
+    actionId: action.id,
+    guildId: "1",
+    actorId: "101",
+    now: 1001,
+    random: () => 0,
+  });
+  assert.equal(result.visited[0].characterId, 3);
+  assert.ok(getMarriage(db, "1", 4));
+});
+
 test("Threadbreaker description preserves emphasis and resolves the configured chance", () => {
   const config = structuredClone(getGameConfig());
   config.itemEffects.threadbreaker.divorceChance = 0.25;
