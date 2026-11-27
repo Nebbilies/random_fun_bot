@@ -5,6 +5,7 @@ import { currentSeason } from "./seasonStore.js";
 const id = (value) =>
   typeof value === "string" && /^[1-9]\d{0,19}$/.test(value);
 const day = 86_400_000;
+const activePhases = ["queued", "posting", "announced"];
 const defaults = {
   target_days: 30,
   revision: 0,
@@ -46,6 +47,10 @@ export function getSeasonStatus(db, guildId, now = Date.now()) {
           .all(guildId, deliverySeason, guildId, deliverySeason);
   const canAbandonReminder =
     rollover?.phase === "posting" && rollover.cutoff_at <= now;
+  const canCancel =
+    !!rollover &&
+    activePhases.includes(rollover.phase) &&
+    now < rollover.cutoff_at;
   return {
     guildId,
     current: active,
@@ -53,6 +58,7 @@ export function getSeasonStatus(db, guildId, now = Date.now()) {
     rollover,
     lastRollover: lastRollover ?? null,
     deliveries,
+    canCancel,
     canAbandonReminder,
     targetAt:
       active.startedAt == null
@@ -83,10 +89,10 @@ export function saveSeasonSettings(
     if (
       settings.channel_id !== channelId &&
       rollover &&
-      ["queued", "posting", "announced"].includes(rollover.phase)
+      activePhases.includes(rollover.phase)
     ) {
       throw conflict(
-        "Cancel the queued reminder or wait for rollover before changing its announcement channel.",
+        "Cancel the rollover or wait for it to finish before changing its announcement channel.",
       );
     }
     db.prepare(
@@ -103,7 +109,7 @@ export function saveSeasonSettings(
 
 export function previewRollover(db, guildId, now = Date.now()) {
   if (!id(guildId)) throw new Error("Enter a valid server ID.");
-  const { current, settings, rollover } = getSeasonStatus(db, guildId);
+  const { current, settings, rollover } = getSeasonStatus(db, guildId, now);
   if (current.season !== 0 && current.startedAt === null)
     throw new Error("This server has no season players yet.");
   if (
@@ -113,25 +119,24 @@ export function previewRollover(db, guildId, now = Date.now()) {
   ) {
     throw new Error("Wait for the bot to verify the announcement channel.");
   }
-  if (rollover && ["queued", "posting", "announced"].includes(rollover.phase))
+  if (rollover && activePhases.includes(rollover.phase))
     throw conflict("This server already has a scheduled rollover.");
-  const reminderAt = nextClaimReset(now, db, guildId);
   return {
     season: current.season,
     channelId: settings.channel_id,
     settingsRevision: settings.revision,
     revision: rollover?.revision ?? 0,
-    reminderAt,
-    cutoffAt: nextClaimReset(reminderAt, db, guildId),
+    cutoffAt: nextClaimReset(now, db, guildId),
   };
 }
 
 export function queueRollover(
   db,
-  { guildId, requester, preview, now = Date.now() },
+  { guildId, requester, preview, now = undefined },
 ) {
   return transaction(db, () => {
-    const plan = previewRollover(db, guildId, now);
+    const confirmedAt = now ?? Date.now();
+    const plan = previewRollover(db, guildId, confirmedAt);
     if (!preview || Object.keys(plan).some((key) => plan[key] !== preview[key]))
       throw conflict(
         "The rollover preview changed. Review the new times and confirm again.",
@@ -141,13 +146,13 @@ export function queueRollover(
       VALUES (?,?,?,'queued',?,?,?,?) ON CONFLICT(guild_id,season) DO UPDATE SET
         revision=excluded.revision,phase='queued',channel_id=excluded.channel_id,
         reminder_at=excluded.reminder_at,cutoff_at=excluded.cutoff_at,requester=excluded.requester,
-        last_error=NULL`,
+        announced_at=NULL,last_error=NULL`,
     ).run(
       guildId,
       plan.season,
       Number(plan.revision) + 1,
       plan.channelId,
-      plan.reminderAt,
+      confirmedAt,
       plan.cutoffAt,
       requester,
     );
@@ -162,22 +167,20 @@ export function cancelRollover(
     revision,
     abandonUnconfirmed = false,
     requester = "",
-    now = Date.now(),
+    now = undefined,
   },
 ) {
   return transaction(db, () => {
-    const { current, rollover, canAbandonReminder } = getSeasonStatus(
-      db,
-      guildId,
-      now,
-    );
+    const canceledAt = now ?? Date.now();
+    const { current, rollover, canCancel, canAbandonReminder } =
+      getSeasonStatus(db, guildId, canceledAt);
     if (
       !rollover ||
       rollover.revision !== revision ||
-      (abandonUnconfirmed ? !canAbandonReminder : rollover.phase !== "queued")
+      (abandonUnconfirmed ? !canAbandonReminder : !canCancel)
     ) {
       throw conflict(
-        "Only a queued reminder or an overdue unconfirmed reminder can be canceled.",
+        "Only a rollover before cutoff or an overdue unconfirmed reminder can be canceled.",
       );
     }
     if (abandonUnconfirmed) {
@@ -193,6 +196,12 @@ export function cancelRollover(
         "UPDATE season_rollovers SET phase='canceled' WHERE guild_id=? AND season=?",
       ).run(guildId, current.season);
     }
+    // Keep the original reminder revision so the bot can correct the Discord message.
+    db.prepare(
+      `UPDATE season_messages SET retry_at=?
+       WHERE guild_id=? AND season=? AND revision=? AND kind='reminder'
+         AND state IN ('sending','sent')`,
+    ).run(canceledAt, guildId, current.season, rollover.revision);
     return getSeasonStatus(db, guildId).rollover;
   });
 }

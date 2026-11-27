@@ -6,6 +6,7 @@ import {
 } from "../lib/recoveryObservation.js";
 import { performance as clock } from "node:perf_hooks";
 import {
+  hasDueSeasonWork,
   nextSeasonDeadline,
   runSeasonWork,
 } from "../features/seasons/seasonRuntime.js";
@@ -29,13 +30,39 @@ export function startRecoveryWorker(
   let recoveryTotals = {};
   let recoveryCycles = 0;
   let deadlineTimer;
+  let seasonPass;
   function armSeasonDeadline() {
     clearTimeout(deadlineTimer);
     const now = Date.now();
     const deadline = nextSeasonDeadline(yoshiko.catalogDb, now);
     if (deadline === null || deadline - now > 2_147_483_647) return;
-    deadlineTimer = setTimeout(tick, deadline - now);
+    deadlineTimer = setTimeout(pollSeason, deadline - now);
     deadlineTimer.unref();
+  }
+  function recoverSeason(maintenance) {
+    if (seasonPass) return seasonPass;
+    seasonPass = runSeasonWork({
+      db: yoshiko.catalogDb,
+      client: yoshiko.client,
+      prefix: yoshiko.config?.prefix,
+      maintenance,
+    })
+      .catch((error) =>
+        console.error("Season recovery failed:", recoveryError(error)),
+      )
+      .finally(() => {
+        seasonPass = undefined;
+        armSeasonDeadline();
+      });
+    return seasonPass;
+  }
+  function pollSeason() {
+    try {
+      if (!seasonPass && hasDueSeasonWork(yoshiko.catalogDb))
+        return recoverSeason(false);
+    } catch (error) {
+      console.error("Season recovery failed:", recoveryError(error));
+    }
   }
   async function publishCards() {
     if (publicationRunning) return;
@@ -80,13 +107,7 @@ export function startRecoveryWorker(
     });
     try {
       if (hasSeasonSchema(yoshiko.catalogDb)) {
-        await runSeasonWork({
-          db: yoshiko.catalogDb,
-          client: yoshiko.client,
-          prefix: yoshiko.config?.prefix,
-        }).catch((error) =>
-          console.error("Season recovery failed:", recoveryError(error)),
-        );
+        await recoverSeason(true);
       }
       if (hasWeeklyEventSchema(yoshiko.catalogDb)) {
         await runWeeklyWork({
@@ -121,11 +142,13 @@ export function startRecoveryWorker(
       console.error("Vault recovery failed:", recoveryError(error));
     } finally {
       vaultRecoveryRunning = false;
-      armSeasonDeadline();
     }
   }
   const vaultRecovery = schedule(tick, 15000);
   vaultRecovery.unref();
-  armSeasonDeadline();
+  if (hasSeasonSchema(yoshiko.catalogDb)) {
+    schedule(pollSeason, 1000).unref();
+    armSeasonDeadline();
+  }
   return vaultRecovery;
 }

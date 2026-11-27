@@ -122,7 +122,7 @@ export function claimResetBoundary(
   );
 }
 
-export function adjustSeasonSchedules(db, guildId, before, after, now) {
+export function adjustSeasonSchedules(db, guildId, before, after) {
   if (
     before.claimIntervalMs === after.claimIntervalMs &&
     before.timezoneOffsetMinutes === after.timezoneOffsetMinutes
@@ -135,21 +135,9 @@ export function adjustSeasonSchedules(db, guildId, before, after, now) {
     )
     .get(guildId);
   if (!row) return;
-  if (row.phase !== "queued") {
-    if (
-      claimResetBoundary(Number(row.cutoff_at) - 1, after) !== row.cutoff_at
-    ) {
-      throw Object.assign(
-        new Error(
-          "This schedule change would move an announced season cutoff.",
-        ),
-        { code: "CONFIG_SEASON_CUTOFF" },
-      );
-    }
-    return;
-  }
-  const reminder = claimResetBoundary(now, after);
-  db.prepare(
-    "UPDATE season_rollovers SET reminder_at=?,cutoff_at=?,revision=revision+1 WHERE guild_id=? AND season=?",
-  ).run(reminder, claimResetBoundary(reminder, after), guildId, row.season);
+  if (claimResetBoundary(Number(row.cutoff_at) - 1, after) !== row.cutoff_at)
+    throw Object.assign(
+      new Error("This schedule change would move a confirmed season cutoff."),
+      { code: "CONFIG_SEASON_CUTOFF" },
+    );
 }

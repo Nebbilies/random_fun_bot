@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { installEmptyFinalCatalog } from "../lib/catalogFinalSchema.js";
 import { installSeasonSchema } from "../lib/seasonSchema.js";
+import { getGameConfig } from "../lib/gameConfig.js";
 import { nextClaimReset } from "../features/rolls/rollAllowanceService.js";
 import {
   cancelRollover,
@@ -11,9 +12,12 @@ import {
   queueRollover,
   saveSeasonSettings,
 } from "../features/seasons/seasonSchedule.js";
-import { seasonCutoffReached } from "../features/seasons/seasonStore.js";
+import {
+  adjustSeasonSchedules,
+  seasonCutoffReached,
+} from "../features/seasons/seasonStore.js";
 
-test("an administrator previews two consecutive claim boundaries and cancels a queued rollover", (t) => {
+test("confirmation queues an immediate reminder and uses the next claim boundary", (t) => {
   const now = 1_800_000_000_000;
   const db = new DatabaseSync(":memory:");
   t.after(() => db.close());
@@ -26,23 +30,59 @@ test("an administrator previews two consecutive claim boundaries and cancels a q
     "UPDATE guild_season_settings SET channel_checked_at=? WHERE guild_id='10'",
   ).run(now);
   const preview = previewRollover(db, "10", now);
-  assert.deepEqual(
-    [preview.season, preview.reminderAt, preview.cutoffAt],
-    [
-      1,
-      nextClaimReset(now, db, "10"),
-      nextClaimReset(nextClaimReset(now, db, "10"), db, "10"),
-    ],
+  assert.equal(preview.season, 1);
+  assert.equal(preview.cutoffAt, nextClaimReset(now, db, "10"));
+  assert.throws(
+    () =>
+      queueRollover(db, {
+        guildId: "10",
+        requester: "admin",
+        preview,
+        now: preview.cutoffAt,
+      }),
+    { code: "SEASON_STALE" },
   );
+  const confirmedAt = now + 100;
   const queued = queueRollover(db, {
     guildId: "10",
     requester: "admin",
     preview,
-    now,
+    now: confirmedAt,
   });
   assert.equal(queued.phase, "queued");
+  assert.equal(queued.reminder_at, confirmedAt);
+  assert.equal(queued.cutoff_at, preview.cutoffAt);
+  const rules = getGameConfig(db, "10").schedules;
+  assert.throws(
+    () =>
+      adjustSeasonSchedules(db, "10", rules, {
+        ...rules,
+        timezoneOffsetMinutes: rules.timezoneOffsetMinutes + 1,
+      }),
+    { code: "CONFIG_SEASON_CUTOFF" },
+  );
   assert.equal(
-    cancelRollover(db, { guildId: "10", revision: queued.revision }).phase,
+    getSeasonStatus(db, "10", confirmedAt).rollover.cutoff_at,
+    preview.cutoffAt,
+  );
+  db.exec("UPDATE season_rollovers SET phase='announced'");
+  assert.equal(getSeasonStatus(db, "10", preview.cutoffAt - 1).canCancel, true);
+  assert.equal(getSeasonStatus(db, "10", preview.cutoffAt).canCancel, false);
+  assert.throws(
+    () =>
+      cancelRollover(db, {
+        guildId: "10",
+        revision: queued.revision,
+        now: preview.cutoffAt,
+      }),
+    { code: "SEASON_STALE" },
+  );
+  assert.equal(
+    cancelRollover(db, {
+      guildId: "10",
+      revision: queued.revision,
+      now: preview.cutoffAt - 1,
+    }).phase,
     "canceled",
   );
 });

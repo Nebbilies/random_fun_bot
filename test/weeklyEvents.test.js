@@ -40,6 +40,7 @@ import {
   bindVaultSessionMessage,
 } from "../lib/vaultSessions.js";
 import { runWeeklyWork } from "../features/weeklyEvents/weeklyRuntime.js";
+import { runSeasonWork } from "../features/seasons/seasonRuntime.js";
 import {
   setWeeklyControls,
   advanceWeeklyContest,
@@ -49,7 +50,6 @@ import {
   weeklyView,
   weeklyPrize,
   tryWeeklyClaimReset,
-  cancelWeeklyForSeason,
 } from "../features/weeklyEvents/weeklyEvents.js";
 
 const sunday = Date.parse("2026-11-28T17:00:00Z");
@@ -696,7 +696,7 @@ test("a schedule edit preserves the cutoff and prize week, then skips wholly mis
   );
 });
 
-test("a season rollover on the weekly cutoff cancels the contest and skips that start", (t) => {
+test("a season rollover on the weekly cutoff cancels the contest and skips that start", async (t) => {
   const db = catalog(t);
   db.prepare("INSERT INTO guild_seasons VALUES(?,?,?)").run("1", 0, null);
   setWeeklyControls(db, {
@@ -709,14 +709,44 @@ test("a season rollover on the weekly cutoff cancels the contest and skips that 
   const first = advanceWeeklyContest(db, "1", sunday);
   const cutoff = sunday + week;
   db.prepare(
-    `INSERT INTO season_rollovers(guild_id,season,revision,phase,channel_id,reminder_at,cutoff_at,requester)
-    VALUES('1',0,1,'applied','2',?,?,?)`,
-  ).run(sunday, cutoff, "test");
-  db.prepare(
-    "UPDATE guild_seasons SET season=1,started_at=? WHERE guild_id='1'",
-  ).run(cutoff);
-  cancelWeeklyForSeason(db, "1", cutoff);
-  assert.equal(advanceWeeklyContest(db, "1", cutoff), null);
+    `INSERT INTO season_rollovers(guild_id,season,revision,phase,channel_id,reminder_at,cutoff_at,requester,announced_at)
+    VALUES('1',0,1,'announced','2',?,?,?,?)`,
+  ).run(sunday, cutoff, "test", sunday);
+  const sent = [];
+  const channel = {
+    guildId: "1",
+    isTextBased: () => true,
+    permissionsFor: () => ({ has: () => true }),
+    async send(payload) {
+      sent.push(payload.content);
+      return { id: String(sent.length) };
+    },
+  };
+  const client = {
+    guilds: {
+      fetch: async () => ({
+        channels: { fetch: async () => channel },
+        members: { me: {} },
+      }),
+    },
+    channels: { fetch: async () => channel },
+  };
+  for (let pass = 0; pass < 2; pass++) {
+    await runSeasonWork({ db, client, now: () => cutoff });
+    await runWeeklyWork({ db, client, now: cutoff });
+  }
+  assert.equal(
+    db.prepare("SELECT season FROM guild_seasons WHERE guild_id='1'").get()
+      .season,
+    1,
+  );
+  assert.equal(
+    db.prepare("SELECT state FROM weekly_contests WHERE id=?").get(first.id)
+      .state,
+    "cancelled",
+  );
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /Season 1 has started/);
   settleWeeklyContest(db, first.id, new Set(["10"]));
   assert.equal(weeklyPrize(db, "1", "10", "wishes", cutoff), null);
   assert.equal(advanceWeeklyContest(db, "1", cutoff + week).season, 1);

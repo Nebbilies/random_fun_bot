@@ -148,6 +148,7 @@ const seasonPreview = document.querySelector('#seasonPreview');
 const seasonCancel = document.querySelector('#seasonCancel');
 const date = time => new Date(time).toLocaleString();
 let loadedSeason;
+let seasonRefresh;
 
 async function getSeason(action, guildId) {
   const response = await fetch(`/api/game/seasons${action}?guildId=${encodeURIComponent(guildId)}`);
@@ -156,30 +157,47 @@ async function getSeason(action, guildId) {
   return result;
 }
 
-function showSeason(result) {
+function refreshPendingSeason(result) {
+  const {rollover} = result;
+  if (!rollover || !['queued','posting'].includes(rollover.phase)) return;
+  seasonRefresh = setTimeout(async () => {
+    try {
+      const fresh = await getSeason('',result.guildId);
+      if (loadedSeason === result) showSeason(fresh, false);
+    } catch {
+      if (loadedSeason === result) refreshPendingSeason(result);
+    }
+  }, 2000);
+}
+
+function showSeason(result, updateSettings = true) {
   if (seasonGuild.value.trim() !== result.guildId) return;
+  clearTimeout(seasonRefresh);
   loadedSeason = result;
-  const {current,settings,rollover,lastRollover,targetAt,deliveries,canAbandonReminder} = result;
+  const {current,settings,rollover,lastRollover,targetAt,deliveries,canCancel,canAbandonReminder} = result;
   seasonSettings.hidden = false;
-  seasonChannel.value = settings.channel_id ?? '';
-  seasonDays.value = settings.target_days;
+  if (updateSettings) {
+    seasonChannel.value = settings.channel_id ?? '';
+    seasonDays.value = settings.target_days;
+  }
   const details = [`Season ${current.season}`];
   if (targetAt) details.push(`Target date ${date(targetAt)}`);
   if (settings.channel_id && settings.channel_checked_at == null) details.push('Waiting for the bot to verify the channel.');
   if (settings.channel_error) details.push(settings.channel_error);
   if (rollover && rollover.phase !== 'canceled') details.push(
-    `Reminder ${date(rollover.reminder_at)}. Cutoff ${date(rollover.cutoff_at)}. Status: ${rollover.phase}.`);
+    `Reminder ${rollover.announced_at == null ? 'pending' : `posted ${date(rollover.announced_at)}`}. Cutoff ${date(rollover.cutoff_at)}. Status: ${rollover.phase}.`);
   if (rollover?.last_error) details.push(rollover.last_error);
   if (lastRollover) details.push(`Last rollover ${date(lastRollover.completed_at)}`);
   for (const {kind,state,count,error} of deliveries) details.push(`${count} ${kind} ${state}${error ? `: ${error}` : ''}`);
   seasonDetails.textContent = details.join(' · ');
-  seasonCancel.hidden = rollover?.phase !== 'queued' && !canAbandonReminder;
-  seasonCancel.textContent = canAbandonReminder ? 'Abandon unconfirmed reminder' : 'Cancel reminder';
+  seasonCancel.hidden = !canCancel && !canAbandonReminder;
+  seasonCancel.textContent = canAbandonReminder ? 'Abandon unconfirmed reminder' : 'Cancel rollover';
   seasonPreview.disabled = !settings.channel_checked_at || Boolean(settings.channel_error)
     || Boolean(rollover && ['queued','posting','announced'].includes(rollover.phase));
+  refreshPendingSeason(result);
 }
 
-seasonGuild.addEventListener('input', () => { loadedSeason = undefined; seasonSettings.hidden = true; });
+seasonGuild.addEventListener('input', () => { clearTimeout(seasonRefresh); loadedSeason = undefined; seasonSettings.hidden = true; });
 document.querySelector('#seasonLoadForm').addEventListener('submit', async event => {
   event.preventDefault();
   try {
@@ -201,7 +219,7 @@ seasonPreview.addEventListener('click', async () => {
   if (!guildId) return;
   try {
     const preview = await getSeason('/preview',guildId);
-    const description = `Schedule Season ${preview.season} → ${preview.season+1} for server ${guildId}?\nChannel ${preview.channelId}\nReminder ${date(preview.reminderAt)}\nCutoff ${date(preview.cutoffAt)}`;
+    const description = `Schedule Season ${preview.season} → ${preview.season+1} for server ${guildId}?\nChannel ${preview.channelId}\nReminder on confirmation\nCutoff at the next claim reset, ${date(preview.cutoffAt)}`;
     if (!window.confirm(description)) return;
     showSeason(await apply('/api/game/seasons/confirm',{guildId,preview},'Season reminder queued.',seasonStatus));
   } catch (error) { feedback(seasonStatus,error.message,'error'); }
@@ -209,9 +227,9 @@ seasonPreview.addEventListener('click', async () => {
 seasonCancel.addEventListener('click', async () => {
   if (!loadedSeason?.rollover) return;
   const abandonUnconfirmed = loadedSeason.canAbandonReminder;
-  if (abandonUnconfirmed && !window.confirm('Discord may have posted this reminder. Abandon the rollover and resume the current season? If players saw the reminder, let them know the cutoff was canceled.')) return;
+  if (abandonUnconfirmed && !window.confirm('Discord may have posted this reminder. Abandon the rollover and resume the current season?')) return;
   try {
     showSeason(await apply('/api/game/seasons/cancel',{guildId:loadedSeason.guildId,revision:loadedSeason.rollover.revision,abandonUnconfirmed},
-      abandonUnconfirmed ? 'Unconfirmed reminder abandoned. The current season has resumed.' : 'Queued reminder canceled.',seasonStatus));
+      abandonUnconfirmed ? 'Unconfirmed reminder abandoned. The current season has resumed.' : 'Rollover canceled. The current season continues.',seasonStatus));
   } catch { /* apply displays the error. */ }
 });
