@@ -4,6 +4,7 @@ import test from "node:test";
 import { installEmptyFinalCatalog } from "../lib/catalogFinalSchema.js";
 import { installSeasonSchema } from "../lib/seasonSchema.js";
 import {
+  cancelRollover,
   getSeasonStatus,
   previewRollover,
   queueRollover,
@@ -11,6 +12,7 @@ import {
 } from "../features/seasons/seasonSchedule.js";
 import { runSeasonWork } from "../features/seasons/seasonRuntime.js";
 import { addSeasonMessage } from "../features/seasons/seasonStore.js";
+import { startRecoveryWorker } from "../app/recoveryWorker.js";
 
 function fixture(t) {
   const db = new DatabaseSync(":memory:");
@@ -24,6 +26,229 @@ function fixture(t) {
   saveSeasonSettings(db, { guildId: "10", channelId: "90", targetDays: 30 });
   return db;
 }
+
+function reminderFixture(t, send = undefined) {
+  const db = fixture(t);
+  db.exec("UPDATE guild_season_settings SET channel_checked_at=1");
+  const sent = [];
+  const edited = [];
+  let now = Date.now();
+  const channel = {
+    guildId: "10",
+    isTextBased: () => true,
+    permissionsFor: () => ({ has: () => true }),
+    messages: {
+      fetch: async () => new Map(sent.map((message) => [message.id, message])),
+      async edit(id, payload) {
+        edited.push({ id, ...payload });
+      },
+    },
+    async send(payload) {
+      await send?.(payload);
+      const message = {
+        ...payload,
+        id: String(sent.length + 1),
+        createdTimestamp: now,
+        author: { id: "99" },
+      };
+      sent.push(message);
+      return message;
+    },
+  };
+  const guild = {
+    channels: { fetch: async () => channel },
+    members: {
+      me: { id: "99" },
+      fetch: async () => new Map([["101", { user: { id: "101" } }]]),
+    },
+  };
+  const client = { user: { id: "99" }, guilds: { fetch: async () => guild } };
+  return {
+    db,
+    client,
+    sent,
+    edited,
+    guild,
+    channel,
+    setTime: (time) => {
+      now = time;
+    },
+    queue() {
+      return queueRollover(db, {
+        guildId: "10",
+        requester: "admin",
+        preview: previewRollover(db, "10", now),
+        now,
+      });
+    },
+    run: () => runSeasonWork({ db, client, now: () => now }),
+    cancel(rollover) {
+      cancelRollover(db, { guildId: "10", revision: rollover.revision, now });
+    },
+    status: () => getSeasonStatus(db, "10", now),
+  };
+}
+
+test("season polling picks up confirmations without waiting for general recovery", async (t) => {
+  const f = reminderFixture(t);
+  const callbacks = new Map();
+  startRecoveryWorker(
+    { yoshiko: { catalogDb: f.db, client: f.client }, recoveryOperations: {} },
+    {
+      schedule(callback, ms) {
+        callbacks.set(ms, callback);
+        return { unref() {} };
+      },
+      runRecovery: () => assert.fail("The fast poll must only run season work"),
+    },
+  );
+  f.queue();
+  assert.equal(typeof callbacks.get(1000), "function");
+  await callbacks.get(1000)();
+  assert.equal(f.status().rollover.phase, "announced");
+  assert.match(f.sent[0].content, /Choose the soulmate/);
+});
+
+test("the public reminder posts even when player mention lookup fails", async (t) => {
+  const f = reminderFixture(t);
+  f.setTime(1_800_000_000_000);
+  const fetch = f.guild.members.fetch;
+  f.guild.members.fetch = async () => {
+    throw new Error("Roster unavailable");
+  };
+  const rollover = f.queue();
+  await f.run();
+  assert.equal(f.status().rollover.phase, "announced");
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0].content, /Choose the soulmate/);
+  f.guild.members.fetch = fetch;
+  f.setTime(rollover.reminder_at + 6000);
+  await f.run();
+  assert.deepEqual(f.sent[1].allowedMentions.users, ["101"]);
+});
+
+test("an in-flight reminder is corrected after cancellation and reconfirmation", async (t) => {
+  const started = Promise.withResolvers();
+  const held = Promise.withResolvers();
+  const f = reminderFixture(t, () => {
+    started.resolve();
+    return held.promise;
+  });
+  f.setTime(1_800_000_000_000);
+  const old = f.queue();
+  const work = f.run();
+  await started.promise;
+  f.cancel(old);
+  const next = f.queue();
+  held.resolve();
+  await work;
+  await f.run();
+  assert.equal(next.revision, old.revision + 1);
+  assert.equal(f.status().rollover.revision, next.revision);
+  assert.equal(f.status().rollover.phase, "announced");
+  assert.equal(
+    f.sent.filter((message) => message.allowedMentions.users.length).length,
+    1,
+  );
+  assert.deepEqual(
+    f.edited.map(({ id }) => id),
+    ["1"],
+  );
+  assert.match(f.edited[0].content, /canceled/i);
+  f.cancel(next);
+  f.setTime(next.cutoff_at);
+  await f.run();
+  await f.run();
+  assert.equal(f.status().current.season, 1);
+  assert.equal(f.status().rollover.phase, "canceled");
+  assert.equal(f.edited.length, 2);
+});
+
+test("a definitive rejection retries at the original cutoff and cancels if still undelivered", async (t) => {
+  let attempts = 0;
+  const f = reminderFixture(t, () => {
+    attempts++;
+    throw Object.assign(new Error("Cannot post"), { status: 403 });
+  });
+  f.setTime(1_800_000_000_000);
+  const rollover = f.queue();
+  await f.run();
+  f.setTime(rollover.reminder_at + 6000);
+  await f.run();
+  assert.equal(attempts, 2);
+  assert.equal(f.status().rollover.cutoff_at, rollover.cutoff_at);
+  f.setTime(rollover.cutoff_at);
+  await f.run();
+  assert.equal(attempts, 2);
+  assert.equal(f.status().rollover.phase, "canceled");
+  assert.equal(f.status().current.season, 1);
+});
+
+test("a Discord reminder posted at cutoff is corrected without advancing the season", async (t) => {
+  const started = Promise.withResolvers();
+  const held = Promise.withResolvers();
+  const f = reminderFixture(t, () => {
+    started.resolve();
+    return held.promise;
+  });
+  const rollover = f.queue();
+  const work = f.run();
+  await started.promise;
+  f.setTime(rollover.cutoff_at);
+  held.resolve();
+  await work;
+  await f.run();
+  assert.equal(f.status().current.season, 1);
+  assert.equal(f.status().rollover.phase, "canceled");
+  assert.equal(f.sent.length, 1);
+  assert.match(f.edited[0].content, /canceled/i);
+});
+
+test("a canceled reminder with a lost acknowledgement is corrected before the new revision posts", async (t) => {
+  const f = reminderFixture(t);
+  f.setTime(1_800_000_000_000);
+  const send = f.channel.send;
+  f.channel.send = async (payload) => {
+    await send(payload);
+    throw new Error("Lost acknowledgement");
+  };
+  const first = f.queue();
+  await f.run();
+  f.cancel(first);
+  const next = f.queue();
+  f.channel.send = send;
+  f.setTime(first.reminder_at + 6000);
+  await f.run();
+  assert.deepEqual(
+    f.edited.map(({ id }) => id),
+    ["1"],
+  );
+  assert.equal(f.sent.length, 1);
+  await f.run();
+  assert.equal(f.status().rollover.revision, next.revision);
+  assert.equal(f.status().rollover.phase, "announced");
+  assert.notEqual(f.sent[0].nonce, f.sent[1].nonce);
+});
+
+test("history proves a reminder was posted before cutoff even after that cutoff passes", async (t) => {
+  const f = reminderFixture(t);
+  f.setTime(1_800_000_000_000);
+  const send = f.channel.send;
+  f.channel.send = async (payload) => {
+    await send(payload);
+    throw new Error("Lost acknowledgement");
+  };
+  const rollover = f.queue();
+  await f.run();
+  f.channel.send = send;
+  f.setTime(rollover.cutoff_at);
+  await f.run();
+  await f.run();
+  assert.equal(f.status().current.season, 2);
+  assert.equal(f.status().current.startedAt, rollover.cutoff_at);
+  assert.equal(f.sent.length, 2);
+  assert.match(f.sent[1].content, /Season 2 has started/);
+});
 
 test("the bot posts a reminder, pings only present players, and announces the next season after cutoff", async (t) => {
   const db = fixture(t);
@@ -50,7 +275,6 @@ test("the bot posts a reminder, pings only present players, and announces the ne
   await run();
   const preview = previewRollover(db, "10", now);
   queueRollover(db, { guildId: "10", requester: "admin", preview, now });
-  now = preview.reminderAt;
   await run();
   assert.equal(getSeasonStatus(db, "10").rollover.phase, "announced");
   assert.match(messages[0].content, /Choose the soulmate/);
@@ -113,7 +337,6 @@ test("a restart reconciles an ambiguous reminder send without changing its publi
   await run();
   const preview = previewRollover(db, "10", now);
   queueRollover(db, { guildId: "10", requester: "admin", preview, now });
-  now = preview.reminderAt;
   await run();
   assert.equal(getSeasonStatus(db, "10").rollover.phase, "posting");
   now += 6_000;
@@ -176,7 +399,10 @@ test("inaccessible ping batches yield to other guilds and expire at cutoff", asy
             };
           },
         },
-        members: { me: { id: "99" }, fetch: async () => new Map() },
+        members: {
+          me: { id: "99" },
+          fetch: async () => new Map([["201", { user: { id: "201" } }]]),
+        },
       }),
     },
   };

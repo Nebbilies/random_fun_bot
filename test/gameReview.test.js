@@ -71,8 +71,11 @@ test("portal schedules only a verified guild channel and a confirmed, current pr
   );
   const confirmed = await post("confirm", { guildId: "10", preview });
   assert.equal(confirmed.status, 200);
-  const { rollover } = await confirmed.json();
+  const { rollover, canCancel } = await confirmed.json();
   assert.equal(rollover.phase, "queued");
+  assert.equal(rollover.cutoff_at, preview.cutoffAt);
+  assert.equal(canCancel, true);
+  db.exec("UPDATE season_rollovers SET phase='announced'");
   assert.equal(
     (await post("cancel", { guildId: "10", revision: rollover.revision }))
       .status,
