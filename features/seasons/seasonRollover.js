@@ -9,6 +9,7 @@ import {
   recordSeasonPlayer,
   seasonPlayers,
 } from "./seasonStore.js";
+import { cancelWeeklyForSeason } from "../weeklyEvents/weeklyEvents.js";
 
 export function closingPlayerIds(db, guildId, season) {
   const owners = totalMarriedLeaderboard(db, guildId).map((row) => row.ownerId);
@@ -168,6 +169,7 @@ export function applySeasonRollover(
         now,
       });
     }
+    cancelWeeklyForSeason(db, guildId, rollover.cutoff_at);
     db.prepare(
       "UPDATE season_rollovers SET phase='applied',completed_at=? WHERE guild_id=? AND season=?",
     ).run(now, guildId, season);

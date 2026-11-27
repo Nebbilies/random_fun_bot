@@ -1,5 +1,46 @@
 import { feedback } from './portal.js';
 
+const weeklyGuild = document.querySelector('#weeklyGuildId');
+const weeklySettings = document.querySelector('#weeklySettingsForm');
+const weeklyEnabled = document.querySelector('#weeklyEnabled');
+const weeklyChannel = document.querySelector('#weeklyChannel');
+const weeklyTheme = document.querySelector('#weeklyTheme');
+const weeklyStatus = document.querySelector('#weeklyStatus');
+const weeklyUrl = '/api/game/weekly-events';
+
+function showWeekly({ guildId, controls, contest, themes, errors, schedule }) {
+  if (guildId !== weeklyGuild.value.trim()) return;
+  weeklySettings.hidden = false;
+  weeklyEnabled.checked = Boolean(controls?.enabled);
+  weeklyChannel.value = controls?.channel_id ?? '';
+  weeklyTheme.replaceChildren(new Option('Random', ''), ...Object.entries(themes).map(([id, [label]]) => new Option(label, id)));
+  weeklyTheme.value = controls?.next_theme ?? '';
+  const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][schedule.day];
+  const time = [Math.floor(schedule.minute / 60), schedule.minute % 60].map(value => String(value).padStart(2, '0')).join(':');
+  const state = contest ? `${themes[contest.theme][0]} ends ${new Date(contest.ends_at).toLocaleString()}.` : 'No active contest.';
+  const problems = errors?.map(error => ` ${error.kind}: ${error.last_error}`).join('') ?? '';
+  document.querySelector('#weeklyDetails').textContent = `${state} Configured start: ${day} ${time} game time.${problems}`;
+}
+
+weeklyGuild.addEventListener('input', () => { weeklySettings.hidden = true; });
+document.querySelector('#weeklyLoadForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    const response = await fetch(`${weeklyUrl}?guildId=${encodeURIComponent(weeklyGuild.value.trim())}`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    showWeekly(result);
+    feedback(weeklyStatus, 'Weekly Events loaded.', 'success');
+  } catch (error) { feedback(weeklyStatus, error.message, 'error'); }
+});
+weeklySettings.addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    showWeekly(await apply(weeklyUrl, { guildId: weeklyGuild.value.trim(), enabled: weeklyEnabled.checked,
+      channelId: weeklyChannel.value.trim(), nextTheme: weeklyTheme.value || null }, 'Weekly Event settings saved.', weeklyStatus));
+  } catch { /* apply displays the failure. */ }
+});
+
 const status = document.querySelector('#status');
 
 async function apply(path, body, success, target = status) {

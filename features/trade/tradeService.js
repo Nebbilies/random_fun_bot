@@ -5,6 +5,7 @@ import {
   readOpenEscape,
   writeOwnership,
 } from "./tradeRepository.js";
+import { scoreWeeklyGain } from "../weeklyEvents/weeklyEvents.js";
 import { withOwnershipOperationClock } from "../../lib/characterOwnershipHistory.js";
 import { DatabaseSync } from "node:sqlite";
 import { isValidCharacterId } from "../../lib/gameCharacterLookup.js";
@@ -146,6 +147,14 @@ function moveCharacters(db, guildId, moves, now, season) {
           };
         }
         invalidateCharacterCrown(db, guildId, characterId);
+        scoreWeeklyGain(
+          db,
+          guildId,
+          toOwnerId,
+          characterId,
+          `trade:${marriageId}:${now}`,
+          now,
+        );
       } catch (error) {
         throw Object.assign(
           new Error(error instanceof Error ? error.message : String(error), {

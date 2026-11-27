@@ -37,6 +37,7 @@ import {
 } from "../lib/itemRoster.js";
 import { addItemToInventory } from "../lib/itemStorage.js";
 import { handleSeasonRequest } from "./reviewSeasons.js";
+import { handleWeeklyEventsRequest } from "./reviewWeeklyEvents.js";
 import { assertSeasonWritable } from "../features/seasons/seasonStore.js";
 
 const html = readFileSync(
@@ -386,6 +387,18 @@ export function createReviewServer({
         return;
       if (
         await handleSeasonRequest({
+          db,
+          request,
+          response,
+          url,
+          origin: requestOrigin,
+          json,
+          readJsonBody,
+        })
+      )
+        return;
+      if (
+        await handleWeeklyEventsRequest({
           db,
           request,
           response,

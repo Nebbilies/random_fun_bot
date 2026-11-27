@@ -12,7 +12,9 @@ const at = (object, key) => key.split('.').reduce((value, part) => value?.[part]
 const pretty = (value) => JSON.stringify(value, null, 2);
 const title = (key) => key.replaceAll('_', ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('.', ' / ');
 const probability = (field) => field.max === 1 && /Rate$|Chance$/.test(field.key);
-const unit = (field) => field.section === 'itemExpiryDays' ? 'days' : probability(field) ? '%' : /Ms$/.test(field.key) ? 'milliseconds' : /Minutes$/.test(field.key) ? 'UTC offset minutes' : /weight/i.test(field.key) ? 'relative weight' : '';
+const unit = (field) => field.key === 'weeklyEvents.day' ? '0 Sunday – 6 Saturday'
+  : field.key === 'weeklyEvents.minute' ? 'minutes after midnight'
+  : field.section === 'itemExpiryDays' ? 'days' : probability(field) ? '%' : /Ms$/.test(field.key) ? 'milliseconds' : /Minutes$/.test(field.key) ? 'UTC offset minutes' : /weight/i.test(field.key) ? 'relative weight' : '';
 function node(tag, text, className) {
   const element = document.createElement(tag);
   if (text !== undefined) element.textContent = text;

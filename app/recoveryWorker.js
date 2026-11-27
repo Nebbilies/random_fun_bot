@@ -10,6 +10,8 @@ import {
   runSeasonWork,
 } from "../features/seasons/seasonRuntime.js";
 import { hasSeasonSchema } from "../lib/seasonSchema.js";
+import { hasWeeklyEventSchema } from "../lib/weeklyEventSchema.js";
+import { runWeeklyWork } from "../features/weeklyEvents/weeklyRuntime.js";
 /** @param {any} context @param {any} [options] */
 export function startRecoveryWorker(
   { yoshiko, recoveryOperations },
@@ -47,6 +49,14 @@ export function startRecoveryWorker(
           prefix: yoshiko.config?.prefix,
         }).catch((error) =>
           console.error("Season recovery failed:", recoveryError(error)),
+        );
+      }
+      if (hasWeeklyEventSchema(yoshiko.catalogDb)) {
+        await runWeeklyWork({
+          db: yoshiko.catalogDb,
+          client: yoshiko.client,
+        }).catch((error) =>
+          console.error("Weekly Event recovery failed:", recoveryError(error)),
         );
       }
       const counts = await runGameRecovery({

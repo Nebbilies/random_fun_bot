@@ -21,7 +21,7 @@ export function readRollSnapshot(db, rollId) {
 export function readPendingPublication(db, rollId) {
   return db
     .prepare(
-      `SELECT guild_id AS guildId, character_id AS characterId,
+      `SELECT guild_id AS guildId, channel_id AS channelId, character_id AS characterId,
     escape_marriage_id AS escapeMarriageId, escape_owner_id AS escapeOwnerId, rules_json AS rulesJson
     FROM ${currentSeasonRows(db, "character_rolls")} WHERE id = ? AND state = 'pending' AND mystery_session_id IS NULL`,
     )
