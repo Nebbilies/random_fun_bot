@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { EventEmitter } from "node:events";
 import { Collection, Events } from "discord.js";
 import { startBot } from "../app/bootstrap.js";
-import { openCatalog } from "../lib/catalogDb.js";
+import { createFinalCatalog, openCatalog } from "../lib/catalogDb.js";
+import { createRecoveryObserver } from "../lib/recoveryObservation.js";
 import { createInteractionHandler } from "../app/events/interactionCreate.js";
 import { registerUtilityCommands } from "../app/utilityCommands.js";
 
@@ -54,6 +57,43 @@ test("invalid restart state prevents handler registration and login", async (t) 
     /invalid restart/,
   );
   assert.equal(client.eventNames().length, 0);
+});
+
+test("normal bot boot scans affection once and validates restart in the catalog read snapshot", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bot-bootstrap-"));
+  const path = join(directory, "game.sqlite");
+  createFinalCatalog(path).close();
+  const records = [];
+  const client = Object.assign(new EventEmitter(), { login: async () => {} });
+  try {
+    const bot = await startBot(
+      { token: "test-token" },
+      {
+        client,
+        catalogPath: path,
+        startupObserver: createRecoveryObserver({
+          log: (line) => records.push(JSON.parse(line)),
+        }),
+        validateRestart(db, settings) {
+          assert.equal(db.isTransaction, true);
+          assert.equal(settings.affectionStateValidated, true);
+        },
+      },
+    );
+    bot.catalogDb.close();
+    const finished = records
+      .filter((record) => record.event === "stage-finish")
+      .map((record) => record.stage);
+    assert.equal(
+      finished.filter((stage) => stage === "affection-validation").length,
+      1,
+    );
+    assert.ok(finished.includes("catalog-integrity"));
+    assert.ok(finished.includes("restart-validation"));
+  } finally {
+    client.catalogDb?.isOpen && client.catalogDb.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("retired reward inbox is not routable and old controls only receive a removal notice", async () => {

@@ -22,6 +22,9 @@ export function startRecoveryWorker(
   const runGameRecovery = options.runRecovery ?? defaultRecovery;
   const createRecoveryObserver = options.createObserver ?? defaultObserver;
   let vaultRecoveryRunning = false;
+  let publicationRunning = false;
+  const publicationCursor = { unpublished: "", published: "" };
+  let lastPublicationReport = -Infinity;
   let lastRecoveryReport = performance.now();
   let recoveryTotals = {};
   let recoveryCycles = 0;
@@ -33,6 +36,40 @@ export function startRecoveryWorker(
     if (deadline === null || deadline - now > 2_147_483_647) return;
     deadlineTimer = setTimeout(tick, deadline - now);
     deadlineTimer.unref();
+  }
+  async function publishCards() {
+    if (publicationRunning) return;
+    publicationRunning = true;
+    const observer = createRecoveryObserver({
+      mode: "vault-publication",
+      verbose: false,
+    });
+    const stats = {};
+    try {
+      await observer.run("vault-publication", () =>
+        recoveryOperations.publishVaultRewardBatch(
+          yoshiko.catalogDb,
+          yoshiko.client,
+          publicationCursor,
+          { stats },
+        ),
+      );
+      const now = performance.now();
+      if (
+        stats.candidates &&
+        (stats.deferred ||
+          stats.rewardSends ||
+          stats.rewardEdits ||
+          now - lastPublicationReport >= 300000)
+      ) {
+        observer.finish(stats);
+        lastPublicationReport = now;
+      }
+    } catch (error) {
+      console.error("Vault publication failed:", recoveryError(error));
+    } finally {
+      publicationRunning = false;
+    }
   }
   async function tick() {
     if (vaultRecoveryRunning) return;
@@ -66,6 +103,7 @@ export function startRecoveryWorker(
         observer,
         operations: recoveryOperations,
       });
+      void publishCards();
       accumulateRecoveryCounts(recoveryTotals, counts);
       recoveryCycles++;
       // Interval totals include every completed pass; timings describe the

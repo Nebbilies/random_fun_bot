@@ -22,7 +22,8 @@ import {
   recoverMysteryRuntime,
 } from "../lib/mysteryRuntime.js";
 import {
-  recoverVaultRewards,
+  publishVaultRewardBatch,
+  settleVaultRewardsForRecovery,
   recoverVaultSessions,
 } from "../lib/vaultRuntime.js";
 import { recoverItemActionRuntime } from "../lib/itemActionRuntime.js";
@@ -49,7 +50,7 @@ import { runWeeklyWork } from "../features/weeklyEvents/weeklyRuntime.js";
 import { hasWeeklyEventSchema } from "../lib/weeklyEventSchema.js";
 /** @param {any} config @param {any} [options] */
 export async function startBot(config, options = {}) {
-  const startup = createRecoveryObserver();
+  const startup = options.startupObserver ?? createRecoveryObserver();
   let finishDiscordLogin;
   const recoveryOperations = {
     recoverBinocularsUses,
@@ -60,7 +61,8 @@ export async function startBot(config, options = {}) {
     recoverMysteryRuntime,
     recoverVaultSessions,
     recoverSelectedAffectionRewards,
-    recoverVaultRewards,
+    publishVaultRewardBatch,
+    settleVaultRewardsForRecovery,
     cleanupExpiredItems,
   };
   // Create a new client instance
@@ -79,20 +81,26 @@ export async function startBot(config, options = {}) {
       partials: [Partials.Message, Partials.Channel, Partials.Reaction],
     });
   client.cooldowns = new Collection();
-  client.catalogDb = startup.runSync("catalog-open", () =>
-    (options.openCatalog ?? openCatalog)(),
-  );
   // Final-schema startup must not silently cancel paid actions or guess recovery.
   // Run before handlers, timers, recovery writes, or Discord login are enabled.
-  startup.runSync("restart-validation", () => {
-    if (
-      client.catalogDb.prepare("PRAGMA user_version").get().user_version === 12
-    ) {
-      (options.validateRestart ?? assertCatalogRuntimeRestartReady)(
-        client.catalogDb,
-      );
-    }
-  });
+  const validateRestart =
+    options.validateRestart ?? assertCatalogRuntimeRestartReady;
+  client.catalogDb = startup.runSync("catalog-open", () =>
+    options.openCatalog
+      ? options.openCatalog()
+      : openCatalog(options.catalogPath, {
+          observer: startup,
+          validateRestart,
+        }),
+  );
+  if (
+    options.openCatalog &&
+    client.catalogDb.prepare("PRAGMA user_version").get().user_version === 12
+  ) {
+    startup.runSync("restart-validation", () =>
+      validateRestart(client.catalogDb),
+    );
+  }
   const catalogCache = getCatalogCache(client.catalogDb);
   const yoshiko = {
     client: client,

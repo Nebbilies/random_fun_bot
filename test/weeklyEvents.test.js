@@ -23,7 +23,10 @@ import {
   reserveMysteryAwareRoll,
 } from "../lib/mysteryCoordinator.js";
 import { addWish } from "../lib/characterWishlist.js";
-import { getAffectionTotal } from "../lib/characterAffection.js";
+import {
+  confirmSoulmate,
+  getAffectionTotal,
+} from "../lib/characterAffection.js";
 import { getClaimStatus } from "../features/rolls/rollAllowanceService.js";
 import { getConfigView, saveConfigSection } from "../lib/gameConfig.js";
 import { transferCharacter } from "../lib/characterTrade.js";
@@ -321,6 +324,56 @@ test("the affection prize increases a finalized roll award without a duplicate a
   assert.equal(publishRoll(db, result.rollId, "31", now + 1), true);
   assert.equal(publishRoll(db, result.rollId, "31", now + 2), false);
   assert.equal(getAffectionTotal(db, "1", "10", characterId), 130);
+});
+
+test("Unbroken Bond and the Weekly Event prize credit 260, limited by the character cap", (t) => {
+  const db = catalog(t);
+  addCharacter(db);
+  db.prepare(
+    "INSERT INTO marriages(guild_id,character_id,owner_id,married_at) VALUES(?,?,?,?)",
+  ).run("1", characterId, "10", new Date(sunday - 1000).toISOString());
+  db.prepare("INSERT INTO character_affection VALUES(?,?,?,?,?)").run(
+    "1",
+    "10",
+    characterId,
+    200,
+    sunday,
+  );
+  confirmSoulmate(db, { guildId: "1", userId: "10", characterId, now: sunday });
+  winWeek(db, "affection", "10", true);
+  const time = sunday + week + 1;
+  const publish = (commandMessageId, messageId, now) => {
+    const roll = reserveRoll(db, {
+      guildId: "1",
+      channelId: "2",
+      userId: "10",
+      commandMessageId,
+      pool: "w",
+      now,
+      random: () => 0,
+    });
+    assert.equal(publishRoll(db, roll.rollId, messageId, now + 1), true);
+  };
+  publish("30", "40", time);
+  assert.equal(getAffectionTotal(db, "1", "10", characterId), 460);
+  assert.equal(weeklyView(db, "1", "10", time + 1).score, 260);
+  db.prepare(
+    "UPDATE character_affection SET total=2050 WHERE guild_id='1' AND user_id='10'",
+  ).run();
+  publish("31", "41", time + 2);
+  assert.equal(getAffectionTotal(db, "1", "10", characterId), 2100);
+  assert.equal(weeklyView(db, "1", "10", time + 3).score, 310);
+  const award = db
+    .prepare(
+      "SELECT amount, milestones_json FROM affection_awards ORDER BY rowid DESC LIMIT 1",
+    )
+    .get();
+  assert.equal(award.amount, 50);
+  assert.ok(
+    JSON.parse(award.milestones_json).some(
+      (milestone) => milestone.threshold === 2100,
+    ),
+  );
 });
 
 test("the reclaim prize automatically closes an escape for its owner", (t) => {

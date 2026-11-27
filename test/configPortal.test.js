@@ -276,6 +276,32 @@ test("configuration portal validates atomic writes, inheritance, reset, revision
             "13",
         );
         assert.equal((await get()).sources["rolls.maxRolls"], "builtin");
+        const affection = page.getByLabel("Roll a character you own", {
+          exact: true,
+        });
+        assert.equal(await affection.inputValue(), "100");
+        assert.equal(await affection.getAttribute("min"), "0");
+        assert.equal(await affection.getAttribute("max"), "2100");
+        assert.equal(
+          await page
+            .getByLabel("Shared main franchise with 11 or more characters", {
+              exact: true,
+            })
+            .inputValue(),
+          "5",
+        );
+        await affection.fill("0");
+        await affection
+          .locator("xpath=ancestor::form")
+          .getByRole("button", { name: "Review changes…", exact: true })
+          .click();
+        await page.locator("#confirmChanges").click();
+        await page.waitForFunction(() =>
+          document
+            .querySelector("#configStatus")
+            .textContent.startsWith("Saved."),
+        );
+        assert.equal((await get()).effective.affection.ownAppearance, 0);
         const structured = page.locator('[data-key="mystery.oddsAnchors"]');
         await structured.fill("{bad");
         await structured

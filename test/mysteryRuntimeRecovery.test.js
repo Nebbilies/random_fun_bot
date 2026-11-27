@@ -15,6 +15,7 @@ import {
   setMysteryEventChannel,
 } from "../lib/mysteryCoordinator.js";
 import { onRollReaction } from "../lib/characterRollRuntime.js";
+import { recoverVaultRewards } from "../lib/vaultRuntime.js";
 import { addItemToInventory, getInventory } from "../lib/itemStorage.js";
 import {
   closesAt,
@@ -392,7 +393,6 @@ test("Chit reveals before intentionally pinged direct reward and recovers termin
     JSON.parse(getMysterySession(db, 1).stateJson).runtime.consolation.status,
     "activated",
   );
-  const { recoverVaultRewards } = await import("../lib/vaultRuntime.js");
   await recoverVaultRewards(db, client, { now: time.now });
   assert.equal(
     event.sent.some(
@@ -417,7 +417,7 @@ test("Chit reveals before intentionally pinged direct reward and recovers termin
   assert.equal(event.sent.length, count);
 });
 
-test("terminal Chit without reveal acknowledgement recovers reveal before reward without reroll", async (t) => {
+test("terminal Chit recovery acknowledges the reveal before deferred reward publication", async (t) => {
   const { db, client, event, time, start } = fixture(t);
   db.exec(`CREATE TABLE IF NOT EXISTS reward_sources(reward_id TEXT PRIMARY KEY REFERENCES vault_rewards(vault_id),
     source_kind TEXT NOT NULL,source_id TEXT NOT NULL,metadata_json TEXT NOT NULL,UNIQUE(source_kind,source_id))`);
@@ -438,6 +438,7 @@ test("terminal Chit without reveal acknowledgement recovers reveal before reward
         db,
         client,
         ...time,
+        recoverRewards: false,
         random: () => {
           throw new Error("no reroll");
         },
@@ -451,6 +452,14 @@ test("terminal Chit without reveal acknowledgement recovers reveal before reward
     true,
   );
   assert.deepEqual(getInventory(db, "1", "101", 7000), before);
+  assert.equal(
+    event.sent.some(
+      (m) =>
+        m.payload.nonce && m.payload.allowedMentions?.users?.includes("101"),
+    ),
+    false,
+  );
+  await recoverVaultRewards(db, client, { now: time.now });
   const state = JSON.parse(getMysterySession(db, 1).stateJson);
   assert.ok(
     event.sent.findIndex(

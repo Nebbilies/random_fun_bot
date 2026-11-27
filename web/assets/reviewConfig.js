@@ -11,6 +11,14 @@ let dirty = false;
 const at = (object, key) => key.split('.').reduce((value, part) => value?.[part], object);
 const pretty = (value) => JSON.stringify(value, null, 2);
 const title = (key) => key.replaceAll('_', ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replaceAll('.', ' / ');
+const affectionLabels = {
+  'affection.ownAppearance': 'Roll a character you own',
+  'affection.sharedFranchiseSmall': 'Shared main franchise with 2–5 characters',
+  'affection.sharedFranchiseMedium': 'Shared main franchise with 6–10 characters',
+  'affection.sharedFranchiseLarge': 'Shared main franchise with 11 or more characters',
+  'affection.ownerReclaim': 'Owner successfully reclaims a character',
+  'affection.rollerReclaim': 'Affection for the roller’s soulmate after an owner reclaims',
+};
 const probability = (field) => field.max === 1 && /Rate$|Chance$/.test(field.key);
 const unit = (field) => field.key === 'weeklyEvents.day' ? '0 Sunday – 6 Saturday'
   : field.key === 'weeklyEvents.minute' ? 'minutes after midnight'
@@ -53,6 +61,7 @@ function render() {
     const fieldset = node('fieldset');
     fieldset.append(node('legend', section === 'itemExpiryDays' ? 'Item lifetimes' : title(section)));
     if (section === 'itemExpiryDays') fieldset.append(node('p', 'Applies to newly acquired items only.', 'notice'));
+    if (section === 'affection') fieldset.append(node('p', 'Set a base gain to 0 for no award. When multiple main franchises match, the lowest value applies.', 'notice'));
     const grid = node('div', undefined, 'config-fields');
     const inputs = new Map();
     for (const field of fields) {
@@ -60,7 +69,7 @@ function render() {
       const structured = field.type === 'array';
       const wrapper = node('div', undefined, `config-field${structured ? ' structured' : ''}`);
       const fieldTitle = field.section === 'itemExpiryDays'
-        ? field.key.split('.').at(-1).replace(/^./, letter => letter.toUpperCase()) : title(field.key);
+        ? field.key.split('.').at(-1).replace(/^./, letter => letter.toUpperCase()) : affectionLabels[field.key] ?? title(field.key);
       const label = node('label', `${fieldTitle}${unit(field) ? ` (${unit(field)})` : ''}`);
       const input = node(structured ? 'textarea' : 'input');
       input.id = `field-${field.key}`;

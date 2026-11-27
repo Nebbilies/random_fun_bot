@@ -106,6 +106,12 @@ EOF
 cat > "$mocks/journalctl" <<'EOF'
 #!/usr/bin/env bash
 [[ " $* " == *' _PID=123 '* && " $* " == *' --since '* ]] || exit 2
+if [[ "${FAKE_STARTUP_LOG:-0}" == 1 ]]; then
+  echo '{"scope":"game-recovery","id":"startup-test","mode":"startup","event":"stage-finish","stage":"catalog-integrity","elapsedMs":25.5}'
+  echo '{"scope":"game-recovery","id":"startup-test","mode":"startup","event":"stage-start","stage":"vault-settlement"}'
+  echo '{"scope":"game-recovery","id":"worker-test","mode":"periodic","event":"stage-failure","stage":"unrelated-worker","elapsedMs":12}'
+  echo 'ordinary journal message secret-marker'
+fi
 read -r now < "$FAKE_CLOCK"
 if [[ "${FAKE_DISCORD_READY:-1}" == 1 ]] && (( now >= FAKE_READY_AT_MS )); then
   echo 'Character game ready.'
@@ -230,7 +236,7 @@ setup_case() {
       "$source_script" > "$home/deploy.sh"
   export FAKE_LOG="$home/service.log" FAKE_APP="$app" FAKE_NPM_FAIL=0 FAKE_LOCK_FAIL=0 FAKE_SERVICE_STATE=active FAKE_DISCORD_READY=1
   export FAKE_PORTAL_STATE=active FAKE_DENY=none FAKE_CRASH=none FAKE_PID_CHANGE=none FAKE_RESTART_CHANGE=none FAKE_HTTP_FAIL=none FAKE_HTTP_CRASH=0 FAKE_REDIRECT=303
-  export FAKE_CLOCK="$home/clock" FAKE_READY_AT_MS=0 FAKE_PROBE_COST_MS=0
+  export FAKE_CLOCK="$home/clock" FAKE_READY_AT_MS=0 FAKE_PROBE_COST_MS=0 FAKE_STARTUP_LOG=0
   printf '0\n' > "$FAKE_CLOCK"
   : > "$FAKE_LOG"
 }
@@ -333,12 +339,12 @@ assert_data
 echo 'PASS: both services preflight/install/stop/swap/restart in order; runtime data preserved'
 
 setup_case delayed-readiness
-export FAKE_READY_AT_MS=152000
+export FAKE_READY_AT_MS=339000
 bash "$home/deploy.sh" "$target" > "$home/output" 2>&1 || { cat "$home/output"; exit 1; }
 read -r elapsed < "$FAKE_CLOCK"
-(( elapsed >= 152000 && elapsed <= 300000 ))
+(( elapsed >= 339000 && elapsed <= 420000 ))
 assert_data
-echo 'PASS: real game readiness at 152 seconds succeeds within the elapsed budget'
+echo 'PASS: real game readiness at 339 seconds succeeds within the elapsed budget'
 
 # Timeout diagnostics must describe the installed release, not a skipped install.
 assert_readiness_timeout() {
@@ -355,20 +361,22 @@ assert_readiness_timeout() {
 }
 
 setup_case over-budget-readiness
-export FAKE_READY_AT_MS=301000
+export FAKE_READY_AT_MS=420000 FAKE_STARTUP_LOG=1
 if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
 assert_readiness_timeout
-[[ "$(< "$FAKE_CLOCK")" == 300000 ]]
-grep -Fq 'Elapsed readiness time: 300000 ms (budget: 300000 ms)' "$home/output"
+[[ "$(< "$FAKE_CLOCK")" == 420000 ]]
+grep -Fq 'Elapsed readiness time: 420000 ms (budget: 420000 ms)' "$home/output"
 grep -Fq 'Discord/game: not ready; portal HTTP/auth: ready' "$home/output"
-echo 'PASS: readiness beyond 300 seconds fails with installed SHA, elapsed/stability/readiness and retained paths'
+grep -Fxq 'Last bot startup stage: vault-settlement (stage-start)' "$home/output"
+! grep -Eq 'unrelated-worker|secret-marker' "$home/output"
+echo 'PASS: readiness at the deadline fails with scoped startup diagnostics'
 
 setup_case probe-cost
-export FAKE_READY_AT_MS=291000 FAKE_PROBE_COST_MS=4000
+export FAKE_READY_AT_MS=413000 FAKE_PROBE_COST_MS=4000
 if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
 assert_readiness_timeout
-[[ "$(< "$FAKE_CLOCK")" == 306000 ]]
-grep -Fq 'Elapsed readiness time: 306000 ms (budget: 300000 ms)' "$home/output"
+[[ "$(< "$FAKE_CLOCK")" == 425000 ]]
+grep -Fq 'Elapsed readiness time: 425000 ms (budget: 420000 ms)' "$home/output"
 grep -Fq 'Discord/game: ready; portal HTTP/auth: ready' "$home/output"
 echo 'PASS: probe cost counts; readiness whose probes finish over budget fails, with bounded-command overshoot reported'
 
@@ -466,7 +474,7 @@ export FAKE_DISCORD_READY=0
 if bash "$home/deploy.sh" "$target" > "$home/output" 2>&1; then exit 1; fi
 grep -q 'Discord/game readiness was not observed' "$home/output"
 assert_readiness_timeout
-[[ "$(< "$FAKE_CLOCK")" == 300000 ]]
+[[ "$(< "$FAKE_CLOCK")" == 420000 ]]
 echo 'PASS: a live process without Discord/game readiness cannot pass deployment'
 
 setup_case failed-service

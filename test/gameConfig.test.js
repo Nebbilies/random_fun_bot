@@ -424,3 +424,52 @@ test("catalog version 9 upgrades preserving settings; separate connections see c
     writer.close();
   }
 });
+test("Affection gains accept zero and inherit global defaults per server", () => {
+  const db = openCatalog(":memory:");
+  try {
+    initGameConfig(db);
+    const initial = getConfigView(db);
+    assert.deepEqual(initial.effective.affection, {
+      ownAppearance: 100,
+      sharedFranchiseSmall: 12,
+      sharedFranchiseMedium: 10,
+      sharedFranchiseLarge: 5,
+      ownerReclaim: 20,
+      rollerReclaim: 5,
+    });
+    const key = "affection.ownAppearance";
+    const saved = saveConfigSection(db, {
+      section: "affection",
+      values: { [key]: 71 },
+      expectedRevision: initial.revision,
+    });
+    const disabled = saveConfigSection(db, {
+      guildId: "1",
+      section: "affection",
+      values: { [key]: 0 },
+      expectedRevision: saved.revision,
+    });
+    assert.equal(disabled.effective.affection.ownAppearance, 0);
+    assert.equal(getGameConfig(db, "2").affection.ownAppearance, 71);
+    for (const value of [-1, 1.5, 2101]) {
+      assert.throws(
+        () =>
+          saveConfigSection(db, {
+            section: "affection",
+            values: { [key]: value },
+            expectedRevision: disabled.revision,
+          }),
+        /out of range/,
+      );
+    }
+    const reset = saveConfigSection(db, {
+      guildId: "1",
+      section: "affection",
+      reset: [key],
+      expectedRevision: disabled.revision,
+    });
+    assert.equal(reset.effective.affection.ownAppearance, 71);
+  } finally {
+    db.close();
+  }
+});
