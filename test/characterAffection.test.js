@@ -29,6 +29,7 @@ import {
 } from "../lib/affectionPerks.js";
 import { registerPendingTransfer } from "../lib/characterAvailability.js";
 import { validateAffectionState } from "../lib/affectionSchema.js";
+import { getConfigView, saveConfigSection } from "../lib/gameConfig.js";
 const a = "11111111-1111-4111-8111-111111111111",
   b = "22222222-2222-4222-8222-222222222222";
 const scope = { guildId: "g", userId: "u", channelId: "c" };
@@ -274,6 +275,56 @@ test("main franchise counts use published members and the minimum shared categor
     capture(db, "small", b).awards.find((x) => x.characterId === a).base,
     12,
   );
+});
+
+test("configured appearance amounts are captured and the lowest match includes zero", (t) => {
+  const db = fixture(t);
+  db.exec(
+    "INSERT INTO franchises(id,display_name,created_at) VALUES(1,'Small','d'),(2,'Medium','d')",
+  );
+  for (const id of [a, b])
+    db.prepare("INSERT INTO character_main_franchises VALUES(?,1),(?,2)").run(
+      id,
+      id,
+    );
+  for (let n = 3; n <= 6; n++) {
+    const id = `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+    db.prepare(
+      "INSERT INTO character_identities(id,creation_method) VALUES(?,'manual')",
+    ).run(id);
+    db.prepare(
+      "INSERT INTO characters(id,rank,favourites,tie_order,likes_source) VALUES(?,?,0,?,'generated')",
+    ).run(id, n, n);
+    db.prepare("INSERT INTO character_main_franchises VALUES(?,2)").run(id);
+  }
+  confirmSoulmate(db, { ...scope, characterId: a, now: 1 });
+  const set = (ownAppearance, sharedFranchiseSmall) =>
+    saveConfigSection(db, {
+      section: "affection",
+      expectedRevision: getConfigView(db).revision,
+      values: {
+        "affection.ownAppearance": ownAppearance,
+        "affection.sharedFranchiseSmall": sharedFranchiseSmall,
+        "affection.sharedFranchiseMedium": 17,
+      },
+    });
+  set(70, 9);
+  const snapshot = capture(db, "configured", b);
+  assert.equal(snapshot.version, 3);
+  assert.deepEqual(
+    snapshot.awards.map((row) => [row.characterId, row.base]),
+    [
+      [b, 70],
+      [a, 9],
+    ],
+  );
+  set(0, 0);
+  assert.deepEqual(capture(db, "disabled", b).awards, []);
+  assert.deepEqual(
+    complete(db, "configured").awards.map((row) => row.amount),
+    [70, 9],
+  );
+  validateAffectionState(db);
 });
 
 test("Soulmate related affection ignores a shared effective-only franchise", (t) => {
