@@ -45,6 +45,8 @@ import {
   registerUtilityCommands,
 } from "./utilityCommands.js";
 import { runSeasonWork } from "../features/seasons/seasonRuntime.js";
+import { runWeeklyWork } from "../features/weeklyEvents/weeklyRuntime.js";
+import { hasWeeklyEventSchema } from "../lib/weeklyEventSchema.js";
 /** @param {any} config @param {any} [options] */
 export async function startBot(config, options = {}) {
   const startup = createRecoveryObserver();
@@ -176,6 +178,17 @@ export async function prepareGameRuntime({
   }).catch((error) =>
     console.error("Season startup recovery failed:", recoveryError(error)),
   );
+  if (hasWeeklyEventSchema(yoshiko.catalogDb)) {
+    await runWeeklyWork({
+      db: yoshiko.catalogDb,
+      client: yoshiko.client,
+    }).catch((error) =>
+      console.error(
+        "Weekly Event startup recovery failed:",
+        recoveryError(error),
+      ),
+    );
+  }
   const stats = await startup.run("post-client-ready", () =>
     runRecovery({
       db: yoshiko.catalogDb,

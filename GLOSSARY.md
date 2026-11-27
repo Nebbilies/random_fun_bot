@@ -248,6 +248,9 @@ _Avoid_: Extra affection event, recursive multiplier
 A soulmate perk that can preserve the claim resource a successful marriage would otherwise spend and, when needed to enable that normal claim, Engagement Ring's prepared early-claim use. It does not grant another claim, refund the Ring's activation charge, or refresh expiry.
 _Avoid_: Claim reset, free reclaim
 
+**Weekly Event**:
+A competition that runs on a fixed weekly schedule in one Discord server. Players enter by performing a qualifying action, and the winner's prize is active in that server during the following week.
+
 **Season**:
 A period of character gameplay in one Discord server. Player progress resets when the next season starts, with an exception for the soulmate.
 _Avoid_: Claim window

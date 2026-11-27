@@ -34,6 +34,7 @@ const gameCommands = new Set([
   "wish",
   "wl",
   "wishlist",
+  "weekly",
 ]);
 export function resolveGameCommand(token) {
   if (/^(mm|mymarry)([a-z]*)$/.test(token)) return "mm";

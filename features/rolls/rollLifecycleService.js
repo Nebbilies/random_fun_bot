@@ -31,6 +31,15 @@ import {
   buffRules,
 } from "./rollAllowanceService.js";
 import { recordClaimUsage } from "./rollAllowanceRepository.js";
+import { findWishMatchers } from "../../lib/characterWishlist.js";
+import {
+  advanceWeeklyContest,
+  weeklyPrize,
+  scoreWeekly,
+  scoreWeeklyGain,
+  scoreWeeklyLoss,
+  tryWeeklyClaimReset,
+} from "../weeklyEvents/weeklyEvents.js";
 import { loadRollCharacterSnapshot } from "./rollSnapshot.js";
 import {
   readPendingPublication,
@@ -58,7 +67,14 @@ function validNow(now) {
   return Number.isSafeInteger(now) && now >= 0;
 }
 
-export function publishRoll(db, rollId, messageId, now = Date.now()) {
+export function publishRoll(
+  db,
+  rollId,
+  messageId,
+  now = Date.now(),
+  random = Math.random,
+  finalizedAt = now,
+) {
   if (!Number.isSafeInteger(rollId) || !validId(messageId) || !validNow(now))
     throw new Error("Invalid roll publication");
   return transaction(db, () => {
@@ -96,6 +112,46 @@ export function publishRoll(db, rollId, messageId, now = Date.now()) {
         now,
         rewardRoster: getResolvedItemDefinitions(db, roll.guildId),
       });
+    if (
+      published &&
+      advanceWeeklyContest(db, roll.guildId, finalizedAt)?.theme === "wishes" &&
+      findWishMatchers(db, roll).length
+    ) {
+      const roller = db
+        .prepare("SELECT roller_id FROM roll_delivery WHERE roll_id=?")
+        .get(rollId);
+      if (roller)
+        scoreWeekly(db, {
+          guildId: roll.guildId,
+          userId: roller.roller_id,
+          theme: "wishes",
+          key: `roll:${rollId}`,
+          now: finalizedAt,
+        });
+    }
+    if (published && roll.escapeOwnerId) {
+      const prize = weeklyPrize(
+        db,
+        roll.guildId,
+        roll.escapeOwnerId,
+        "reclaims",
+        finalizedAt,
+      );
+      if (prize && random() < prize.reclaimChance) {
+        const outcome = claimRollInTransaction(db, {
+          guildId: roll.guildId,
+          channelId: roll.channelId,
+          messageId,
+          userId: roll.escapeOwnerId,
+          now: finalizedAt,
+          random,
+        });
+        if (outcome.status === "reclaimed")
+          db.prepare(
+            "UPDATE character_rolls SET rules_json=json_set(rules_json,'$.weeklyReclaimPending',1) WHERE id=?",
+          ).run(rollId);
+      }
+    }
     return published;
   });
 }
@@ -206,6 +262,13 @@ export function claimRollInTransaction(
           throw new Error("Invalid completed roller reclaim origin");
         }
         closeEscape(db, roll, "reclaimed", now, userId);
+        scoreWeekly(db, {
+          guildId,
+          userId,
+          theme: "reclaims",
+          key: `escape:${roll.id}`,
+          now,
+        });
         closeCharacterRolls(db, guildId, roll.characterId);
         const affection = hasAffection(db)
           ? earnReclaimInTransaction(db, {
@@ -319,6 +382,16 @@ export function claimRollInTransaction(
       }
       return { status: "closed" };
     }
+    scoreWeeklyGain(
+      db,
+      guildId,
+      userId,
+      roll.characterId,
+      `roll:${roll.id}`,
+      now,
+    );
+    if (roll.escapeMarriageId)
+      scoreWeeklyLoss(db, guildId, userId, `escape:${roll.id}`, now);
     if (claimConserved) {
       // Preserve exactly the planned resource, including an enabling Ring use.
     } else if (doubleDateBuff) {
@@ -334,6 +407,14 @@ export function claimRollInTransaction(
       consumeBuffRoll(db, doubleDateBuff.id);
     } else if (normalSelected) {
       recordClaimUsage(db, guildId, userId, period, now);
+      if (tryWeeklyClaimReset(db, guildId, userId, period, now, random)) {
+        db.prepare(
+          "DELETE FROM claim_allowances WHERE guild_id=? AND user_id=? AND period=?",
+        ).run(guildId, userId, period);
+        db.prepare(
+          "DELETE FROM claim_events WHERE guild_id=? AND user_id=?",
+        ).run(guildId, userId);
+      }
       // The ring only pays for a claim it actually shortened.
       if (ringNeeded) consumeBuffRoll(db, ringBuff.id);
     } else if (crownBuff) {

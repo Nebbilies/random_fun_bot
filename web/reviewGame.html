@@ -296,6 +296,44 @@
           ></p>
         </section>
 
+        <section class="panel game-card" style="margin-top: 32px">
+          <h2>Weekly Events</h2>
+          <p>
+            Set up a server competition. Edit its schedule, themes, and prizes
+            in <a href="/config">Configuration</a>.
+          </p>
+          <form id="weeklyLoadForm">
+            <label for="weeklyGuildId">Discord server ID</label>
+            <input
+              id="weeklyGuildId"
+              inputmode="numeric"
+              pattern="[1-9][0-9]{0,19}"
+              maxlength="20"
+              required
+            />
+            <button type="submit">Load Weekly Events</button>
+          </form>
+          <form id="weeklySettingsForm" hidden>
+            <p id="weeklyDetails"></p>
+            <label
+              ><input id="weeklyEnabled" type="checkbox" /> Enable Weekly
+              Events</label
+            >
+            <label for="weeklyChannel">Announcement channel ID</label>
+            <input
+              id="weeklyChannel"
+              inputmode="numeric"
+              pattern="[1-9][0-9]{0,19}"
+              maxlength="20"
+              required
+            />
+            <label for="weeklyTheme">Next theme</label>
+            <select id="weeklyTheme"></select>
+            <button type="submit">Save Weekly Events</button>
+          </form>
+          <p id="weeklyStatus" class="feedback" role="status"></p>
+        </section>
+
         <p class="notice">
           Game rules and server rates have moved to
           <a href="/config">Configuration</a>.
