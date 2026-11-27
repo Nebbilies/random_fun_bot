@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { Worker } from "node:worker_threads";
 import { installEmptyFinalCatalog } from "../lib/catalogFinalSchema.js";
 import {
   createFinalCatalog,
+  openCatalog,
   openFinalCatalog,
   openFinalCatalogReadOnly,
   transaction,
+  validateCatalogForDeployment,
 } from "../lib/catalogDb.js";
 import { installConfiguredAffectionAwards } from "../lib/affectionSchema.js";
 import { installSeasonSchema } from "../lib/seasonSchema.js";
@@ -27,6 +31,92 @@ function insertAward(db, key, base, amount) {
     "INSERT INTO affection_awards VALUES(?, '1', '10', ?, ?, ?, ?, '[]', 1)",
   ).run(key, id, base, amount, amount);
 }
+
+test("concurrent service opens upgrade a season catalog missing both features", async (t) => {
+  const path = catalogPath(t);
+  const previous = new DatabaseSync(path);
+  installEmptyFinalCatalog(previous);
+  installSeasonSchema(previous);
+  previous.prepare("INSERT INTO character_identities(id) VALUES(?)").run(id);
+  insertAward(previous, "historical", 8, 16);
+  previous.close();
+
+  const module = new URL("../lib/catalogDb.js", import.meta.url).href;
+  const gate = new SharedArrayBuffer(4);
+  const workers = Array.from(
+    { length: 2 },
+    () =>
+      new Worker(
+        `const { parentPort, workerData } = require("node:worker_threads");
+    (async () => {
+      const { openCatalog } = await import(workerData.module);
+      const gate = new Int32Array(workerData.gate);
+      if (Atomics.add(gate, 0, 1) === 0) Atomics.wait(gate, 0, 1, 10_000);
+      else Atomics.notify(gate, 0);
+      const db = openCatalog(workerData.path);
+      let count;
+      try {
+        count = db.prepare("SELECT count(*) AS n FROM weekly_controls").get().n;
+      } finally {
+        db.close();
+      }
+      parentPort.postMessage(count);
+    })().catch((error) => { throw error; });`,
+        { eval: true, workerData: { path, module, gate } },
+      ),
+  );
+  const results = await Promise.all(
+    workers.map((worker) => once(worker, "message")),
+  );
+  assert.deepEqual(results, [[0], [0]]);
+
+  const db = openCatalog(path);
+  try {
+    assert.equal(
+      db.prepare("SELECT count(*) AS n FROM weekly_controls").get().n,
+      0,
+    );
+    assert.equal(
+      db.prepare("SELECT base FROM season_current_affection_awards").get().base,
+      8,
+    );
+    insertAward(db, "custom", 175, 455);
+  } finally {
+    db.close();
+  }
+  openCatalog(path).close();
+});
+
+test("deployment backs up the Affection predecessor and upgrades it before service startup", async (t) => {
+  const path = catalogPath(t);
+  const previous = new DatabaseSync(path);
+  installEmptyFinalCatalog(previous);
+  installSeasonSchema(previous);
+  installWeeklyEventSchema(previous);
+  previous.prepare("INSERT INTO character_identities(id) VALUES(?)").run(id);
+  insertAward(previous, "historical", 8, 16);
+  previous.close();
+
+  const { backupPath } = await validateCatalogForDeployment(path);
+  assert.ok(backupPath);
+  const backup = openFinalCatalogReadOnly(backupPath);
+  try {
+    assert.equal(
+      backup.prepare("SELECT base FROM season_current_affection_awards").get()
+        .base,
+      8,
+    );
+  } finally {
+    backup.close();
+  }
+  const live = new DatabaseSync(path);
+  try {
+    insertAward(live, "custom", 175, 455);
+  } finally {
+    live.close();
+  }
+  assert.equal((await validateCatalogForDeployment(path)).backupPath, null);
+});
 
 test("a writable catalog upgrade preserves old affection receipts and their season bindings", (t) => {
   const path = catalogPath(t);

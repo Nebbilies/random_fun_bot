@@ -128,7 +128,8 @@ for unit in "${services[@]}"; do
   sudo -n "$systemctl" restart "$unit"
 done
 readiness_started_ms=$(monotonic_ms)
-readiness_deadline_ms=$((readiness_started_ms + 300000))
+readiness_budget_ms=420000
+readiness_deadline_ms=$((readiness_started_ms + readiness_budget_ms))
 
 # Never follow redirects, send credentials, or print response bodies/headers.
 # The service accepts the configured loopback Host; public proxy origins remain
@@ -166,17 +167,35 @@ check_stability() {
 ready=0
 portal_is_ready=0
 process_stability=stable
+last_startup_stage() {
+  journalctl -b -u "$service" "_PID=${pids[$service]}" --since "$started_at" --no-pager -o cat |
+    awk '
+      /^\{"scope":"game-recovery","id":"[[:alnum:]-]+","mode":"startup","event":"stage-(start|finish|failure)","stage":"[a-z][a-z0-9-]*"[,}]/ {
+        match($0, /"event":"stage-[a-z]+"/)
+        event = substr($0, RSTART + 9, RLENGTH - 10)
+        match($0, /"stage":"[a-z][a-z0-9-]*"/)
+        stage = substr($0, RSTART + 9, RLENGTH - 10)
+        last = stage " (" event ")"
+        if (match($0, /,"elapsedMs":[0-9]+(\.[0-9]+)?[,}]/))
+          last = last ", " substr($0, RSTART + 13, RLENGTH - 14) " ms"
+      }
+      END { if (last != "") print last }
+    '
+}
 readiness_failure() {
-  local reason=$1 elapsed_ms game_status='not ready' portal_status='not ready'
+  local reason=$1 elapsed_ms game_status='not ready' portal_status='not ready' startup_stage
   elapsed_ms=$(( $(monotonic_ms) - readiness_started_ms ))
   (( ready )) && game_status=ready
   (( portal_is_ready )) && portal_status=ready
   echo "$reason" >&2
   echo 'Installation and service restarts completed; readiness was not verified within the budget.' >&2
   echo "Installed SHA: $target" >&2
-  echo "Elapsed readiness time: $elapsed_ms ms (budget: 300000 ms)" >&2
+  echo "Elapsed readiness time: $elapsed_ms ms (budget: $readiness_budget_ms ms)" >&2
   echo "Process stability: $process_stability; observed for $(( $(monotonic_ms) - stable_since_ms )) ms (minimum: 30000 ms)" >&2
   echo "Last observations — Discord/game: $game_status; portal HTTP/auth: $portal_status" >&2
+  if startup_stage=$(last_startup_stage) && [[ -n "$startup_stage" ]]; then
+    echo "Last bot startup stage: $startup_stage" >&2
+  fi
   # finish() retains and reports the recovery directory; never undo this install.
   exit 1
 }

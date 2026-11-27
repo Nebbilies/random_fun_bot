@@ -66,13 +66,16 @@ test("real periodic callback does not overlap and releases its guard after failu
     calls = 0;
   t.mock.method(console, "error", () => {});
   startRecoveryWorker(
-    { yoshiko: {}, recoveryOperations: {} },
+    { yoshiko: {}, recoveryOperations: { publishVaultRewardBatch() {} } },
     {
       schedule: (fn) => {
         callback = fn;
         return { unref() {} };
       },
-      createObserver: () => ({ finish() {} }),
+      createObserver: () => ({
+        run: async (_name, work) => work(),
+        finish() {},
+      }),
       runRecovery: async () => {
         calls++;
         if (calls === 1) {
@@ -99,13 +102,16 @@ test("periodic heartbeat accumulates earlier work and resets interval totals aft
     calls = 0;
   const reports = [];
   startRecoveryWorker(
-    { yoshiko: {}, recoveryOperations: {} },
+    { yoshiko: {}, recoveryOperations: { publishVaultRewardBatch() {} } },
     {
       schedule: (fn) => {
         callback = fn;
         return { unref() {} };
       },
-      createObserver: () => ({ finish: (...args) => reports.push(args) }),
+      createObserver: () => ({
+        run: async (_name, work) => work(),
+        finish: (...args) => reports.push(args),
+      }),
       runRecovery: async () =>
         ++calls === 1
           ? { rewardEdits: 3, candidates: 10 }

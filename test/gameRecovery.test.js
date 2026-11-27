@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createRecoveryObserver } from "../lib/recoveryObservation.js";
 import { runGameRecovery } from "../lib/gameRecovery.js";
+import { startRecoveryWorker } from "../app/recoveryWorker.js";
 
 function gate() {
   let release;
@@ -11,7 +12,7 @@ function gate() {
   return { promise, release };
 }
 
-test("startup recovery completes reveal/session/materialization before exactly one scheduled reward sweep", async () => {
+test("startup completes reveal, materialization, and durable reward recovery without publishing cards", async () => {
   const calls = [],
     held = gate();
   const names = [
@@ -23,7 +24,7 @@ test("startup recovery completes reveal/session/materialization before exactly o
     "recoverMysteryRuntime",
     "recoverVaultSessions",
     "recoverSelectedAffectionRewards",
-    "recoverVaultRewards",
+    "settleVaultRewardsForRecovery",
     "cleanupExpiredItems",
   ];
   const operations = Object.fromEntries(
@@ -31,10 +32,14 @@ test("startup recovery completes reveal/session/materialization before exactly o
       name,
       async (...args) => {
         calls.push(name);
-        if (name === "recoverMysteryRuntime") await held.promise;
+        if (name === "recoverMysteryRuntime") {
+          assert.equal(args[0].recoverRewards, false);
+          await held.promise;
+        }
         if (name === "recoverVaultSessions")
           assert.equal(args[2].recoverRewards, false);
-        if (name === "recoverVaultRewards") args[2].stats.candidates = 10;
+        if (name === "settleVaultRewardsForRecovery")
+          assert.equal(args[1].restoreDeadlines, true);
       },
     ]),
   );
@@ -52,7 +57,7 @@ test("startup recovery completes reveal/session/materialization before exactly o
   assert.deepEqual(calls, names.slice(0, 6));
   assert.equal(done, false);
   held.release();
-  assert.equal((await work).candidates, 10);
+  await work;
   assert.deepEqual(calls, names);
 });
 
@@ -65,7 +70,7 @@ test("periodic recovery uses the same ordering without repeating startup-only it
     "recoverMysteryRuntime",
     "recoverVaultSessions",
     "recoverSelectedAffectionRewards",
-    "recoverVaultRewards",
+    "settleVaultRewardsForRecovery",
     "cleanupExpiredItems",
   ];
   const operations = Object.fromEntries(
@@ -73,6 +78,44 @@ test("periodic recovery uses the same ordering without repeating startup-only it
   );
   await runGameRecovery({ db: {}, client: {}, operations });
   assert.deepEqual(calls, names);
+});
+
+test("later worker ticks continue durable recovery while card publication is single-flight", async () => {
+  const held = gate();
+  let tick;
+  let durablePasses = 0;
+  let publications = 0;
+  startRecoveryWorker(
+    {
+      yoshiko: {},
+      recoveryOperations: {
+        async publishVaultRewardBatch() {
+          publications++;
+          await held.promise;
+        },
+      },
+    },
+    {
+      schedule(callback) {
+        tick = callback;
+        return { unref() {} };
+      },
+      async runRecovery() {
+        durablePasses++;
+        return {};
+      },
+    },
+  );
+  assert.equal(publications, 0);
+  await tick();
+  assert.equal(publications, 1);
+  await tick();
+  assert.equal(durablePasses, 2);
+  assert.equal(publications, 1);
+  held.release();
+  await new Promise((resolve) => setImmediate(resolve));
+  await tick();
+  assert.equal(publications, 2);
 });
 
 test("recovery stage failures propagate and never run later stages", async () => {

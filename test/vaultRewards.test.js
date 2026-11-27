@@ -20,7 +20,12 @@ import {
   decideVaultReward,
   getVaultReward,
   reconcileVaultRewards,
+  markVaultRewardDelivered,
 } from "../lib/vaultRewards.js";
+import {
+  publishVaultRewardBatch,
+  settleVaultRewardsForRecovery,
+} from "../lib/vaultRuntime.js";
 
 function fixture(path = ":memory:") {
   const db = new DatabaseSync(path);
@@ -69,6 +74,112 @@ function fill(db) {
     );
   }
 }
+
+test("a restored reward deadline settles once while its Discord fetch is blocked", async (t) => {
+  const db = fixture();
+  t.after(() => db.close());
+  addItemToInventory(db, scope.guildId, scope.userId, "double_or_nothing");
+  const reward = reveal(db);
+  let now = reward.deadline - 42;
+  let fire;
+  settleVaultRewardsForRecovery(db, {
+    restoreDeadlines: true,
+    now: () => now,
+    setTimer(callback, delay) {
+      assert.equal(delay, 42);
+      fire = callback;
+      return { unref() {} };
+    },
+  });
+  let releaseFetch;
+  const response = new Promise((resolve) => {
+    releaseFetch = resolve;
+  });
+  let fetchStarted;
+  const started = new Promise((resolve) => {
+    fetchStarted = resolve;
+  });
+  const client = {
+    channels: {
+      fetch: () => {
+        fetchStarted();
+        return response;
+      },
+    },
+  };
+  const publication = publishVaultRewardBatch(db, client, {
+    unpublished: "",
+    published: "",
+  });
+  await started;
+  assert.equal(getVaultReward(db, reward.vaultId).state, "decision");
+  now += 42;
+  await fire();
+  assert.equal(getVaultReward(db, reward.vaultId).state, "delivered");
+  assert.equal(getInventory(db, scope.guildId, scope.userId, now).length, 2);
+  releaseFetch(null);
+  await publication;
+  settleVaultRewardsForRecovery(db, { now: () => now });
+  assert.equal(getInventory(db, scope.guildId, scope.userId, now).length, 2);
+});
+
+test("publication budgets both card groups and rotates past repeated failures", async (t) => {
+  const db = fixture();
+  t.after(() => db.close());
+  addItemToInventory(db, scope.guildId, scope.userId, "double_or_nothing");
+  for (const prefix of ["new", "old"]) {
+    for (let index = 1; index <= 7; index++) {
+      const id = `${prefix}-${index}`;
+      reveal(db, id, { channelId: id });
+      if (prefix === "old") markVaultRewardDelivered(db, id, 101);
+    }
+  }
+  const attempts = [];
+  const client = {
+    channels: {
+      async fetch(channelId) {
+        attempts.push(channelId);
+        throw Object.assign(new Error("temporary unavailable"), {
+          status: 503,
+        });
+      },
+    },
+  };
+  const cursor = { unpublished: "", published: "" };
+  const stats = {};
+  await publishVaultRewardBatch(db, client, cursor, { stats });
+  assert.deepEqual(attempts.splice(0), [
+    "new-1",
+    "new-2",
+    "new-3",
+    "new-4",
+    "new-5",
+    "old-1",
+    "old-2",
+    "old-3",
+    "old-4",
+    "old-5",
+  ]);
+  assert.equal(stats.deferred, 10);
+  await publishVaultRewardBatch(db, client, cursor);
+  assert.deepEqual(attempts.splice(0), [
+    "new-6",
+    "new-7",
+    "new-1",
+    "new-2",
+    "new-3",
+    "old-6",
+    "old-7",
+    "old-1",
+    "old-2",
+    "old-3",
+  ]);
+  db.exec(
+    "DELETE FROM vault_rewards WHERE vault_id LIKE 'old-%' AND vault_id <> 'old-7'",
+  );
+  await publishVaultRewardBatch(db, client, cursor);
+  assert.equal(attempts.length, 8);
+});
 
 test("Keep delivers the persisted original once and preserves the gambling entry", () => {
   const db = fixture();
