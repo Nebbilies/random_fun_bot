@@ -55,8 +55,8 @@ export async function runWeeklyWork({ db, client, now = Date.now() }) {
       const [title, condition] = weeklyThemes[notice.theme];
       const content =
         kind === "start"
-          ? `**Weekly Event · ${title}**\n${condition} Ends <t:${Math.floor(notice.ends_at / 1000)}:R>.`
-          : `**Weekly Event result · ${title}**\n${notice.winner_id ? `<@${notice.winner_id}> won.` : "No winner."}`;
+          ? `-# Weekly Event\n## ${title}\n${condition}\nEnds <t:${Math.floor(notice.ends_at / 1000)}:R>.`
+          : `-# Weekly Event result\n## ${title}\n${notice.winner_id ? `<@${notice.winner_id}> won.` : "No winner."}`;
       const nonce = createHash("sha256")
         .update(`weekly:${id}:${kind}`)
         .digest("hex")

@@ -6,16 +6,25 @@ const dayMs = 86_400_000;
 export const weekMs = 7 * dayMs;
 export const weeklyThemes = {
   steals: [
-    "Steals and divorces",
-    "Steal or forcibly divorce opposing characters.",
+    "Heart Heist",
+    "Every character you steal or forcibly divorce earns a point.",
   ],
-  affection: ["Affection", "Gain affection."],
-  wishes: ["Wish matches", "Roll characters on server wishlists."],
-  reclaims: ["Reclaims", "Successfully reclaim escaping characters."],
-  mystery: ["Mystery Champion", "Win mystery events."],
+  affection: [
+    "Love Rush",
+    "Every point of affection you gain counts toward your score.",
+  ],
+  wishes: [
+    "Wish Upon a Roll",
+    "Score when you roll a character on anyone’s wishlist, including your own.",
+  ],
+  reclaims: [
+    "Catch Me If You Can",
+    "Score every time you reclaim a character that escaped.",
+  ],
+  mystery: ["Mystery Mastermind", "Every mystery event you win earns a point."],
   franchise: [
-    "Franchise Collector",
-    "Gain distinct characters from a single franchise.",
+    "Franchise Fever",
+    "Your score is the number of distinct characters you collect from your best franchise.",
   ],
 };
 

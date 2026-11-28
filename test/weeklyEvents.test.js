@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
+import { ComponentType, MessageFlags } from "discord.js";
 import { installWeeklyEventSchema } from "../lib/weeklyEventSchema.js";
 import { createFinalCatalog } from "../lib/catalogDb.js";
 import { createReviewServer } from "../web/reviewCharacterTags.js";
@@ -179,10 +180,34 @@ test("the weekly prefix command displays current rules, leaders and the caller s
         },
       },
     });
-    const rendered = JSON.stringify(reply);
-    assert.match(rendered, /Wish matches/);
-    assert.match(rendered, /2×/);
-    assert.match(rendered, /Your rank: #1/);
+    assert.equal(reply.flags, MessageFlags.IsComponentsV2);
+    assert.deepEqual(reply.allowedMentions, { parse: [], repliedUser: false });
+    const card = reply.components[0].toJSON();
+    assert.equal(card.type, ComponentType.Container);
+    assert.equal(card.accent_color, 0x9e598f);
+    assert.deepEqual(
+      card.components.map(({ type }) => type),
+      [
+        ComponentType.TextDisplay,
+        ComponentType.Separator,
+        ComponentType.TextDisplay,
+        ComponentType.Separator,
+        ComponentType.TextDisplay,
+        ComponentType.Separator,
+        ComponentType.TextDisplay,
+      ],
+    );
+    const [header, prize, leaderboard, standing] = card.components
+      .filter(({ type }) => type === ComponentType.TextDisplay)
+      .map(({ content }) => content);
+    assert.match(header, /^-# Weekly Event\n## Wish Upon a Roll\n/);
+    assert.match(header, /Ends <t:\d+:F>$/);
+    assert.match(prize, /2× roll chance/);
+    assert.equal(leaderboard, "**Leaderboard**\n1. <@10> (**1 point**)");
+    assert.equal(
+      standing,
+      "**Your standing**\nYou’re **#1** with **1 point**.",
+    );
   } finally {
     db.close();
   }
